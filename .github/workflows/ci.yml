@@ -1,0 +1,32 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  checks:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: astral-sh/setup-uv@v6
+
+      - name: Install the workspace
+        run: uv sync --all-packages --all-groups --frozen
+
+      - name: Lint
+        run: uv run --all-packages --all-groups ruff check packages apps
+
+      - name: Check formatting
+        run: uv run --all-packages --all-groups ruff format --check packages apps
+
+      - name: Type check
+        run: uv run --all-packages --all-groups pyright
+
+      - name: Test
+        run: uv run --all-packages --all-groups pytest -q
