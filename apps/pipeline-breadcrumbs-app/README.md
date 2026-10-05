@@ -15,6 +15,7 @@ uv run pipeline_breadcrumbs_app --host hosted        # exceptions only go to tel
 uv run pipeline_breadcrumbs_app --time all           # a time on every line (none | boundaries | all)
 ```
 
-`main.py` is the application that calls the system, not part of it. It implements the artifact
-callback and builds the logger and its handlers. `document_analysis/` is the system, and its entry point is
+`main.py` is the application that calls the system, not part of it. It chooses the artifact sink
+(`FileSystemArtifactSink` locally, the `BlobStorageArtifactSink` stand-in when hosted) and builds the
+logger and its handlers. `document_analysis/` is the system, and its entry point is
 `DocumentAnalysisManager`. See the [workspace README](../../README.md) for the layout.

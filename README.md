@@ -9,7 +9,7 @@ This library answers it with two outputs from one source.
 1. **Step-numbered progress logs.** Every step announces itself, reports counts as it
    works, and closes with its elapsed time and outcome.
 2. **Artifacts.** Each step can hand a self-describing file, an interim capture or a real
-   output, to a callback the host controls.
+   output, to an artifact sink the host chooses.
 
 Together they leave an ordered trail on disk after every run. A person, or a coding
 assistant, reads the trail, finds the first step whose output went wrong, and fixes it.
@@ -107,7 +107,8 @@ and every record carries them.
 The demo separates the application from the system it calls, the way a production codebase does.
 
 ```
-main.py                           the application: chooses the callback and the logger, calls the system
+main.py                           the application: chooses the artifact sink and the logger, calls the system
+blob_storage_artifact_sink.py     a stand-in for blob storage, one implementation of the sink protocol
 document_analysis/                the system
   document_analysis_manager.py    its entry point: one public method that validates, then sequences four processors
   analysis_steps.py               the table of contents: every Step, declared in one place
@@ -125,7 +126,7 @@ document_analysis/                the system
   gateways/                       the model gateway protocol, and a fake that sleeps instead of calling out
 ```
 
-`main.py` is not the system. It builds the artifact callback and the logger, opens a
+`main.py` is not the system. It chooses the artifact sink, builds the logger, opens a
 `PipelineRun`, opens one work item per document, and hands that scope to the manager. The
 manager and the processors never see a path or a handler. Each processor opens its own step on
 the host it is given, so it owns its work, and the classifier passes its own step down, which
@@ -148,9 +149,11 @@ uv run pipeline_breadcrumbs_app --host hosted        # exceptions only go to tel
 The failing run exits with code 1, leaves the malformed reply on disk beside the replies
 that parsed, and still completes the second document.
 
-Where the application runs is its own choice, made in its artifact callback and its log handlers.
-The callback persists every artifact in both: artifacts are the record of what each step did, and
-what a later run could start from. The system shares one logger and passes every informational line
+Where the application runs is its own choice, made in the artifact sink it hands in and the log
+handlers it attaches. A local run uses `FileSystemArtifactSink`; a hosted run uses
+`BlobStorageArtifactSink`, a stand-in for a storage container. Both implement `ArtifactSinkProtocol`
+and persist every artifact: artifacts are the record of what each step did, and what a later run
+could start from. The system shares one logger and passes every informational line
 to it; the application decides who listens. A local run writes a `run.log` beside the artifacts. A
 hosted run leaves informational lines to the platform's process logs (the console here) and sends only
 exceptions to telemetry, as a stand-in for Application Insights (`telemetry.jsonl`). The system
@@ -160,7 +163,7 @@ runs identically in both.
 
 The tests are acceptance tests: each one runs through a system's public entry point
 (`PipelineRun` for the library, `DocumentAnalysisManager` and `run_demo` for the demo) and
-asserts on what the system returned, the artifacts it handed to the callback and the
+asserts on what the system returned, the artifacts it handed to the sink and the
 breadcrumbs it logged. Only the model is replaced.
 
 ```bash
