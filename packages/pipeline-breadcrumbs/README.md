@@ -20,4 +20,13 @@ for the reasoning.
 `create_run_folder`, `attached_run_log`). `pipeline_breadcrumbs.testing` holds
 `ArtifactRecorder` and `RecordCapture` for acceptance tests.
 
+Create a run with `PipelineRun(pipeline_name=..., sink=...)` and open each item
+with `pipeline_run.open_work_item(work_item)`. For deterministic run folders,
+pass `supplied_clock` to `create_run_folder`; `Clock.create_system_clock()` supplies
+the normal wall and monotonic clocks. `ArtifactRecorder.step_paths()` returns
+the distinct emitting step paths in first-emitted order.
+
+Manifest work-item records use `work_item_name`. Step records use `step_path`,
+`step_key`, and `step_name`, so each field identifies its domain meaning.
+
 The core knows no paths. A production host replaces the hosting helpers with its own sink.

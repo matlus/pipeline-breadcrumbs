@@ -16,7 +16,7 @@ class Clock:
     monotonic: Callable[[], float]
 
     @staticmethod
-    def system() -> Clock:
+    def create_system_clock() -> Clock:
         """The machine's clock in its local timezone, so run folders, run ids and banner times agree.
 
         Timestamps stay timezone-aware: manifest times carry their UTC offset.

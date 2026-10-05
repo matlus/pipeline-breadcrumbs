@@ -32,9 +32,10 @@ class TestRunManifest:
     ) -> None:
         # Arrange
         work_item: WorkItem = create_random_work_item()
-        pipeline_run: PipelineRun = PipelineRun(name="demo", sink=artifact_recorder, logger=run_logger, clock=clock_testing.clock)
+        pipeline_name: str = "demo"
+        pipeline_run: PipelineRun = PipelineRun(pipeline_name=pipeline_name, sink=artifact_recorder, logger=run_logger, clock=clock_testing.clock)
         expected_manifest: ExpectedManifest = ExpectedManifest(
-            pipeline_name="demo",
+            pipeline_name=pipeline_name,
             run_id=pipeline_run.run_id,
             run_status="COMPLETE",
             elapsed_seconds=4.0,
@@ -53,7 +54,7 @@ class TestRunManifest:
 
         # Act
         async with pipeline_run:
-            async with pipeline_run.work_item(work_item) as work_item_scope:
+            async with pipeline_run.open_work_item(work_item) as work_item_scope:
                 async with work_item_scope.step(LOAD_PAGES) as step_scope:
                     clock_testing.advance(1.5)
                     await step_scope.emit(PAGE_TEXT, b"hello", discriminator="page_0000")
@@ -72,10 +73,10 @@ class TestRunManifest:
     ) -> None:
         # Arrange
         work_item: WorkItem = create_random_work_item()
-        pipeline_run: PipelineRun = PipelineRun(name="demo", sink=artifact_recorder, logger=run_logger)
+        pipeline_run: PipelineRun = PipelineRun(pipeline_name="demo", sink=artifact_recorder, logger=run_logger)
 
         # Act
-        async with pipeline_run, pipeline_run.work_item(work_item) as work_item_scope, work_item_scope.step(LOAD_PAGES) as step_scope:
+        async with pipeline_run, pipeline_run.open_work_item(work_item) as work_item_scope, work_item_scope.step(LOAD_PAGES) as step_scope:
             await step_scope.emit(FINAL_REPORT, b"# Report")
 
         # Assert
@@ -91,9 +92,10 @@ class TestRunManifest:
         # Arrange
         failing_work_item: WorkItem = create_random_work_item()
         healthy_work_item: WorkItem = create_random_work_item()
-        pipeline_run: PipelineRun = PipelineRun(name="demo", sink=artifact_recorder, logger=run_logger, clock=clock_testing.clock)
+        pipeline_name: str = "demo"
+        pipeline_run: PipelineRun = PipelineRun(pipeline_name=pipeline_name, sink=artifact_recorder, logger=run_logger, clock=clock_testing.clock)
         expected_manifest: ExpectedManifest = ExpectedManifest(
-            pipeline_name="demo",
+            pipeline_name=pipeline_name,
             run_id=pipeline_run.run_id,
             run_status="FAILED",
             elapsed_seconds=0.0,
@@ -115,9 +117,9 @@ class TestRunManifest:
         # Act
         async with pipeline_run:
             with pytest.raises(ValueError, match="unreadable"):
-                async with pipeline_run.work_item(failing_work_item) as work_item_scope, work_item_scope.step(LOAD_PAGES):
+                async with pipeline_run.open_work_item(failing_work_item) as work_item_scope, work_item_scope.step(LOAD_PAGES):
                     raise ValueError("unreadable")
-            async with pipeline_run.work_item(healthy_work_item) as work_item_scope, work_item_scope.step(LOAD_PAGES):
+            async with pipeline_run.open_work_item(healthy_work_item) as work_item_scope, work_item_scope.step(LOAD_PAGES):
                 pass
 
         # Assert
@@ -128,9 +130,10 @@ class TestRunManifest:
     ) -> None:
         # Arrange
         work_item: WorkItem = create_random_work_item()
-        pipeline_run: PipelineRun = PipelineRun(name="demo", sink=artifact_recorder, logger=run_logger, clock=clock_testing.clock)
+        pipeline_name: str = "demo"
+        pipeline_run: PipelineRun = PipelineRun(pipeline_name=pipeline_name, sink=artifact_recorder, logger=run_logger, clock=clock_testing.clock)
         expected_manifest: ExpectedManifest = ExpectedManifest(
-            pipeline_name="demo",
+            pipeline_name=pipeline_name,
             run_id=pipeline_run.run_id,
             run_status="COMPLETE",
             elapsed_seconds=0.0,
@@ -147,7 +150,7 @@ class TestRunManifest:
         )
 
         # Act
-        async with pipeline_run, pipeline_run.work_item(work_item) as work_item_scope, work_item_scope.step(LOAD_PAGES) as step_scope:
+        async with pipeline_run, pipeline_run.open_work_item(work_item) as work_item_scope, work_item_scope.step(LOAD_PAGES) as step_scope:
             step_scope.skipped(DETECT_SECTIONS, "nothing to reconcile")
 
         # Assert
@@ -158,9 +161,10 @@ class TestRunManifest:
     ) -> None:
         # Arrange - a retry reopens the same work item; the failure of the first attempt must not be erased by the success of the second
         work_item: WorkItem = create_random_work_item()
-        pipeline_run: PipelineRun = PipelineRun(name="demo", sink=artifact_recorder, logger=run_logger, clock=clock_testing.clock)
+        pipeline_name: str = "demo"
+        pipeline_run: PipelineRun = PipelineRun(pipeline_name=pipeline_name, sink=artifact_recorder, logger=run_logger, clock=clock_testing.clock)
         expected_manifest: ExpectedManifest = ExpectedManifest(
-            pipeline_name="demo",
+            pipeline_name=pipeline_name,
             run_id=pipeline_run.run_id,
             run_status="FAILED",
             elapsed_seconds=0.0,
@@ -182,9 +186,9 @@ class TestRunManifest:
         # Act
         async with pipeline_run:
             with pytest.raises(ValueError, match="first attempt"):
-                async with pipeline_run.work_item(work_item) as work_item_scope, work_item_scope.step(LOAD_PAGES):
+                async with pipeline_run.open_work_item(work_item) as work_item_scope, work_item_scope.step(LOAD_PAGES):
                     raise ValueError("first attempt")
-            async with pipeline_run.work_item(work_item) as work_item_scope, work_item_scope.step(LOAD_PAGES):
+            async with pipeline_run.open_work_item(work_item) as work_item_scope, work_item_scope.step(LOAD_PAGES):
                 pass
 
         # Assert
@@ -195,9 +199,10 @@ class TestRunManifest:
     ) -> None:
         # Arrange
         work_item: WorkItem = create_random_work_item()
-        pipeline_run: PipelineRun = PipelineRun(name="demo", sink=artifact_recorder, logger=run_logger, clock=clock_testing.clock)
+        pipeline_name: str = "demo"
+        pipeline_run: PipelineRun = PipelineRun(pipeline_name=pipeline_name, sink=artifact_recorder, logger=run_logger, clock=clock_testing.clock)
         expected_manifest: ExpectedManifest = ExpectedManifest(
-            pipeline_name="demo",
+            pipeline_name=pipeline_name,
             run_id=pipeline_run.run_id,
             run_status="FAILED",
             elapsed_seconds=0.0,
@@ -223,7 +228,7 @@ class TestRunManifest:
         # Act - the second page fails, so the work item ends before a third opening
         async with pipeline_run:
             with pytest.raises(ValueError, match="page 1 is unreadable"):
-                async with pipeline_run.work_item(work_item) as work_item_scope:
+                async with pipeline_run.open_work_item(work_item) as work_item_scope:
                     await open_the_step_once_per_page(work_item_scope)
 
         # Assert
@@ -234,9 +239,10 @@ class TestRunManifest:
     ) -> None:
         # Arrange
         work_item: WorkItem = create_random_work_item()
-        pipeline_run: PipelineRun = PipelineRun(name="demo", sink=artifact_recorder, logger=run_logger, clock=clock_testing.clock)
+        pipeline_name: str = "demo"
+        pipeline_run: PipelineRun = PipelineRun(pipeline_name=pipeline_name, sink=artifact_recorder, logger=run_logger, clock=clock_testing.clock)
         expected_manifest: ExpectedManifest = ExpectedManifest(
-            pipeline_name="demo",
+            pipeline_name=pipeline_name,
             run_id=pipeline_run.run_id,
             run_status="COMPLETE",
             elapsed_seconds=0.0,
@@ -255,7 +261,7 @@ class TestRunManifest:
                 step_scope.outcome(f"page {page_number}")
 
         # Act - three scopes at the same step path run concurrently, the way a per-page fan-out does
-        async with pipeline_run, pipeline_run.work_item(work_item) as work_item_scope:
+        async with pipeline_run, pipeline_run.open_work_item(work_item) as work_item_scope:
             await asyncio.gather(*(load_one_page(work_item_scope, page_number) for page_number in range(3)))
 
         # Assert

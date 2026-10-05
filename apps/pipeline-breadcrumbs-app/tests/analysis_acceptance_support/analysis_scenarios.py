@@ -21,9 +21,8 @@ async def analyze_in_a_run(
     artifact_recorder: ArtifactRecorder,
     run_logger: logging.Logger,
 ) -> DocumentAnalysis:
-    """What an application does: open a run and a work item, hand the work item's scope to the system, close the run."""
     async with (
-        PipelineRun(name="document-analysis-test", sink=artifact_recorder, logger=run_logger) as pipeline_run,
-        pipeline_run.work_item(work_item) as work_item_scope,
+        PipelineRun(pipeline_name="document-analysis-test", sink=artifact_recorder, logger=run_logger) as pipeline_run,
+        pipeline_run.open_work_item(work_item) as work_item_scope,
     ):
         return await document_analysis_manager.analyze_document(work_item_scope, pages)

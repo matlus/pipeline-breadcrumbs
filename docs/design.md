@@ -233,13 +233,13 @@ failure. From the failed run, abridged:
   "run_status": "FAILED",
   "work_item_records": [
     {
-      "name": "Contract 12.pdf",
+      "work_item_name": "Contract 12.pdf",
       "work_item_status": "FAILED",
       "failure": "ModelResponseParseError: The model response for page 2 could not be parsed: ...",
       "step_records": [
-        { "path": "1", "key": "load_pages", "name": "Load Pages",
+        { "step_path": "1", "step_key": "load_pages", "step_name": "Load Pages",
           "step_status": "COMPLETE", "elapsed_seconds": 0.427, "outcome": "Loaded 4 page(s)" },
-        { "path": "2", "key": "detect_sections", "name": "Detect Sections",
+        { "step_path": "2", "step_key": "detect_sections", "step_name": "Detect Sections",
           "step_status": "FAILED", "elapsed_seconds": 0.615,
           "failure": "ModelResponseParseError: The model response for page 2 could not be parsed: ..." }
       ],

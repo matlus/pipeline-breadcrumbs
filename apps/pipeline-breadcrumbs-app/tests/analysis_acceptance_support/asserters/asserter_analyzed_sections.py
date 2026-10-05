@@ -4,8 +4,6 @@ from pipeline_breadcrumbs_app.document_analysis.models import ScoredSection
 
 
 class AsserterAnalyzedSections:
-    """Checks the sections the system returned, and reports every difference at once."""
-
     @staticmethod
     def assert_exactly_these_sections(expected_scored_sections: Sequence[ScoredSection], actual_scored_sections: Sequence[ScoredSection]) -> None:
         assertion_failures: list[str] = []

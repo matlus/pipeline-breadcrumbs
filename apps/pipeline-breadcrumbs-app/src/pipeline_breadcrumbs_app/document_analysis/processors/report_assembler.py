@@ -15,14 +15,14 @@ class ReportAssembler:
         async with step_host.step(ASSEMBLE_REPORT) as step_scope:
             step_scope.info("Assembling the report", sections=len(scored_sections))
             # A real processor renders a template, merges tables and checks the result here.
-            await self._simulated_work.take_time()
-            report: str = self._render(scored_sections)
+            await self._simulated_work.simulate_processing()
+            report: str = self._render_analysis_report(scored_sections)
             await step_scope.emit(ANALYSIS_REPORT, report.encode("utf-8"))
             step_scope.outcome("Report assembled", characters=len(report))
         return report
 
     @staticmethod
-    def _render(scored_sections: list[ScoredSection]) -> str:
+    def _render_analysis_report(scored_sections: list[ScoredSection]) -> str:
         report_lines: list[str] = ["# Section analysis", ""]
         report_lines.extend(
             f"- Page {scored_section.page_number}: {scored_section.title} ({scored_section.category}, confidence {scored_section.confidence:.2f})"

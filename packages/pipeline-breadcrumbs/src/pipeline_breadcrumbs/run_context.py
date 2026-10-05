@@ -35,7 +35,6 @@ class RunContext:
         self._base_attributes: AttributeBag = base_attributes
 
     def log(self, level: int, message: str, attributes: Mapping[str, AttributeValue]) -> None:
-        """Write one record. The run's attributes are merged under the caller's."""
         merged_attributes: AttributeBag = {**self._base_attributes, **attributes}
         self.logger.log(level, message, extra=merged_attributes)
 

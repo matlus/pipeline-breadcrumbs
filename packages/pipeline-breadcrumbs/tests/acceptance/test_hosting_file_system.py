@@ -60,27 +60,31 @@ class TestSafePathComponent:
 class TestRunFolder:
     def test_create_run_folder_WhenCreated_ThenTheNameIsTimestampThenLabel(self, tmp_path: Path, clock_testing: ClockTesting) -> None:
         # Arrange / Act
-        actual_run_folder: Path = create_run_folder(tmp_path, "Contract 12", clock=clock_testing.clock)
+        actual_run_folder: Path = create_run_folder(tmp_path, "Contract 12", supplied_clock=clock_testing.clock)
 
         # Assert
         assert actual_run_folder.name == "20261003_140322_Contract 12"
         assert actual_run_folder.is_dir()
 
     def test_create_run_folder_WhenTwoRunsStartInTheSameSecond_ThenTheyDoNotCollide(self, tmp_path: Path, clock_testing: ClockTesting) -> None:
-        # Arrange / Act
-        actual_first_folder: Path = create_run_folder(tmp_path, "batch", clock=clock_testing.clock)
-        actual_second_folder: Path = create_run_folder(tmp_path, "batch", clock=clock_testing.clock)
+        # Arrange
+        run_folder_label: str = "batch"
+
+        # Act
+        actual_first_folder: Path = create_run_folder(tmp_path, run_folder_label, supplied_clock=clock_testing.clock)
+        actual_second_folder: Path = create_run_folder(tmp_path, run_folder_label, supplied_clock=clock_testing.clock)
 
         # Assert
         assert (actual_first_folder.name, actual_second_folder.name) == ("20261003_140322_batch", "20261003_140322_batch_2")
 
     def test_create_run_folder_WhenTheSameFileIsRunLater_ThenTheEarlierRunIsKept(self, tmp_path: Path, clock_testing: ClockTesting) -> None:
         # Arrange
-        actual_first_folder: Path = create_run_folder(tmp_path, "Contract 12", clock=clock_testing.clock)
+        run_folder_label: str = "Contract 12"
+        actual_first_folder: Path = create_run_folder(tmp_path, run_folder_label, supplied_clock=clock_testing.clock)
         clock_testing.advance(60)
 
         # Act
-        actual_second_folder: Path = create_run_folder(tmp_path, "Contract 12", clock=clock_testing.clock)
+        actual_second_folder: Path = create_run_folder(tmp_path, run_folder_label, supplied_clock=clock_testing.clock)
 
         # Assert
         assert sorted(actual_path.name for actual_path in tmp_path.iterdir()) == [actual_first_folder.name, actual_second_folder.name]
@@ -165,8 +169,8 @@ class TestAttachedRunLog:
 
         # Act
         with attached_run_log(run_logger, tmp_path, BreadcrumbFormatter(time_display=TimeDisplay.NONE)):
-            pipeline_run: PipelineRun = PipelineRun(name="demo", sink=FileSystemArtifactSink(tmp_path), logger=run_logger)
-            async with pipeline_run, pipeline_run.work_item(work_item) as work_item_scope, work_item_scope.step(LOAD_PAGES) as step_scope:
+            pipeline_run: PipelineRun = PipelineRun(pipeline_name="demo", sink=FileSystemArtifactSink(tmp_path), logger=run_logger)
+            async with pipeline_run, pipeline_run.open_work_item(work_item) as work_item_scope, work_item_scope.step(LOAD_PAGES) as step_scope:
                 step_scope.info("Loading pages", count=3)
                 await step_scope.emit(PAGE_TEXT, b"hello")
 

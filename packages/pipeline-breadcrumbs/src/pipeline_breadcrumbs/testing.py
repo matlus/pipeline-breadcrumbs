@@ -29,7 +29,7 @@ class ArtifactRecorder:
     def filenames(self) -> list[str]:
         return [artifact.filename for artifact in self.artifacts]
 
-    def step_numbers(self) -> list[str]:
+    def step_paths(self) -> list[str]:
         """The distinct step paths that emitted at least one artifact, in first-emitted order."""
         seen_step_paths: dict[str, None] = {}
         for artifact in self.artifacts:

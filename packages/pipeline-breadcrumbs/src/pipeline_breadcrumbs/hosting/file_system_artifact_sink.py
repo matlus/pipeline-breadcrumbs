@@ -46,7 +46,6 @@ class FileSystemArtifactSink:
         return self._run_directory / self._claim_folder(artifact.work_item) / safe_path_component(artifact.filename)
 
     def _claim_folder(self, work_item: WorkItem) -> str:
-        """The work item's folder name, claimed for it; a second work item mapping to the same folder is refused."""
         folder_name: str = safe_path_component(work_item.stem)
         owner_id: str = self._work_item_id_by_folder.setdefault(folder_name.casefold(), work_item.id)
         if owner_id != work_item.id:

@@ -18,8 +18,6 @@ FAILED_AT_STEP_KEY_KEY: Final[str] = "FailedAtStepKey"
 
 @runtime_checkable
 class ContextualExceptionProtocol(Protocol):
-    """The shape of an exception that carries named diagnostic data."""
-
     @property
     def contextual_data_by_name(self) -> ContextualDataDict: ...
 

@@ -14,5 +14,5 @@ class SimulatedWork:
     def __init__(self, delay_seconds: float = 0.0) -> None:
         self._delay_seconds: float = delay_seconds
 
-    async def take_time(self) -> None:
+    async def simulate_processing(self) -> None:
         await asyncio.sleep(self._delay_seconds)

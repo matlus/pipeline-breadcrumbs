@@ -24,10 +24,10 @@ class TestEmit:
         # Arrange
         work_item: WorkItem = create_random_work_item()
         expected_content: bytes = b'{"ok": true}'
-        pipeline_run: PipelineRun = PipelineRun(name="demo", sink=artifact_recorder, logger=run_logger)
+        pipeline_run: PipelineRun = PipelineRun(pipeline_name="demo", sink=artifact_recorder, logger=run_logger)
 
         # Act
-        async with pipeline_run, pipeline_run.work_item(work_item) as work_item_scope, work_item_scope.step(METADATA_AUDIT) as step_scope:
+        async with pipeline_run, pipeline_run.open_work_item(work_item) as work_item_scope, work_item_scope.step(METADATA_AUDIT) as step_scope:
             actual_emitted_artifact: StepArtifact = await step_scope.emit(PAGE_EVIDENCE, expected_content, discriminator="page_0003")
 
         # Assert
@@ -45,27 +45,31 @@ class TestEmit:
     ) -> None:
         # Arrange
         work_item: WorkItem = create_random_work_item()
-        pipeline_run: PipelineRun = PipelineRun(name="demo", sink=artifact_recorder, logger=run_logger)
+        pipeline_run: PipelineRun = PipelineRun(pipeline_name="demo", sink=artifact_recorder, logger=run_logger)
 
         # Act
-        async with pipeline_run, pipeline_run.work_item(work_item) as work_item_scope, work_item_scope.step(METADATA_AUDIT) as step_scope:
+        async with pipeline_run, pipeline_run.open_work_item(work_item) as work_item_scope, work_item_scope.step(METADATA_AUDIT) as step_scope:
             await step_scope.emit(PAGE_EVIDENCE, b"{}")
 
         # Assert - the sink can persist it blindly: what it holds, its media type and its bytes travel with it
-        actual_artifact: StepArtifact = next(
+        actual_step_artifact: StepArtifact = next(
             actual_recorded for actual_recorded in artifact_recorder.artifacts if isinstance(actual_recorded, StepArtifact)
         )
-        assert (actual_artifact.artifact_type, actual_artifact.content_type, actual_artifact.content) == ("page_evidence", "application/json", b"{}")
+        assert (actual_step_artifact.artifact_type, actual_step_artifact.content_type, actual_step_artifact.content) == (
+            "page_evidence",
+            "application/json",
+            b"{}",
+        )
 
     async def test_StepScope_WhenStepsEmitPastStepNine_ThenADirectoryListingSortsInPipelineOrder(
         self, artifact_recorder: ArtifactRecorder, run_logger: logging.Logger
     ) -> None:
         # Arrange
         work_item: WorkItem = create_random_work_item()
-        pipeline_run: PipelineRun = PipelineRun(name="demo", sink=artifact_recorder, logger=run_logger)
+        pipeline_run: PipelineRun = PipelineRun(pipeline_name="demo", sink=artifact_recorder, logger=run_logger)
 
         # Act - steps are declared out of order on purpose
-        async with pipeline_run, pipeline_run.work_item(work_item) as work_item_scope:
+        async with pipeline_run, pipeline_run.open_work_item(work_item) as work_item_scope:
             for step_number in (10, 2, 1, 9, 11):
                 async with work_item_scope.step(Step(step_number, f"Step {step_number}")) as step_scope:
                     await step_scope.emit(PAGE_EVIDENCE, b"")
@@ -85,11 +89,11 @@ class TestEmit:
     ) -> None:
         # Arrange
         work_item: WorkItem = create_random_work_item()
-        pipeline_run: PipelineRun = PipelineRun(name="demo", sink=artifact_recorder, logger=run_logger)
+        pipeline_run: PipelineRun = PipelineRun(pipeline_name="demo", sink=artifact_recorder, logger=run_logger)
 
         # Act / Assert
         with pytest.raises(ValueError, match="discriminator"):
-            async with pipeline_run, pipeline_run.work_item(work_item) as work_item_scope, work_item_scope.step(METADATA_AUDIT) as step_scope:
+            async with pipeline_run, pipeline_run.open_work_item(work_item) as work_item_scope, work_item_scope.step(METADATA_AUDIT) as step_scope:
                 await step_scope.emit(PAGE_EVIDENCE, b"{}", discriminator=unsafe_discriminator)
 
 
@@ -147,7 +151,7 @@ class TestRunLevelArtifact:
         self, artifact_recorder: ArtifactRecorder, run_logger: logging.Logger
     ) -> None:
         # Arrange
-        pipeline_run: PipelineRun = PipelineRun(name="demo", sink=artifact_recorder, logger=run_logger)
+        pipeline_run: PipelineRun = PipelineRun(pipeline_name="demo", sink=artifact_recorder, logger=run_logger)
 
         # Act
         async with pipeline_run:

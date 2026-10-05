@@ -9,7 +9,7 @@ from pipeline_breadcrumbs.hosting.paths import safe_path_component
 _MAX_COLLISION_SUFFIX: Final[int] = 1000
 
 
-def create_run_folder(root: Path, label: str, *, clock: Clock | None = None) -> Path:
+def create_run_folder(root: Path, label: str, *, supplied_clock: Clock | None = None) -> Path:
     """Create `<root>/<yyyymmdd_hhmmss>_<label>/` and return it.
 
     The timestamp is part of the folder name, so folders sort by time and running the same
@@ -17,7 +17,7 @@ def create_run_folder(root: Path, label: str, *, clock: Clock | None = None) -> 
     single-file run, `batch` for several. If two runs start in the same second the second
     folder gets a numeric suffix instead of colliding.
     """
-    resolved_clock: Clock = clock or Clock.system()
+    resolved_clock: Clock = supplied_clock or Clock.create_system_clock()
     base_name: str = f"{resolved_clock.now():%Y%m%d_%H%M%S}_{safe_path_component(label)}"
     root.mkdir(parents=True, exist_ok=True)
     for attempt in range(1, _MAX_COLLISION_SUFFIX + 1):
