@@ -2,8 +2,8 @@
 # DocumentAnalysisManager.analyze_document. The application's part is played the way an
 # application plays it: open a run, open a work item, hand that scope to the system. Only the
 # model is replaced (ModelGatewayTesting); the processors, the parsing, the library's scopes and
-# the artifact callback all run for real. The observations are what the system returned, the
-# artifacts it handed to the callback, and the breadcrumbs it logged.
+# the artifact sink all run for real. The observations are what the system returned, the
+# artifacts it handed to the sink, and the breadcrumbs it logged.
 
 import logging
 from typing import Final

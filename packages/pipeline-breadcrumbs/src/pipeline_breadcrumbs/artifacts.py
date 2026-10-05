@@ -11,10 +11,9 @@ filename, so no caller composes names.
 """
 
 import re
-from collections.abc import Awaitable, Callable
 from dataclasses import dataclass
 from enum import StrEnum
-from typing import Final, final
+from typing import Final, Protocol, final
 
 from pipeline_breadcrumbs.steps import StepPath
 from pipeline_breadcrumbs.work_items import WorkItem
@@ -121,5 +120,17 @@ class RunArtifact:
 
 type Artifact = StepArtifact | RunArtifact
 
-type ArtifactSink = Callable[[Artifact], Awaitable[None]]
-"""The host's persistence callback. A step never calls it directly; it emits through a scope."""
+
+class ArtifactSinkProtocol(Protocol):
+    """Where a run's artifacts go. The application builds one implementation and hands it to `PipelineRun`.
+
+    An implementation owns whatever it needs to persist: a run directory and the folders it has
+    claimed, a blob container client, a connection. The application chooses which implementation
+    to hand in, the way it chooses any other service it composes, and a test hands in an in-memory
+    one. A step never calls the sink directly; it emits through a scope.
+
+    `persist` raises whatever error is natural for the destination. The run wraps it in
+    `ArtifactSinkError` and keeps the artifact's identity on it.
+    """
+
+    async def persist(self, artifact: Artifact) -> None: ...

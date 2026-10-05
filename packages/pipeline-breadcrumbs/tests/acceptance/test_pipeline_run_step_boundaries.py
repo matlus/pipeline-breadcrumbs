@@ -35,7 +35,7 @@ class TestStepBoundaries:
         work_item: WorkItem = create_random_work_item()
         expected_elapsed_seconds: float = 2.5
         expected_step_number: str = "1"
-        pipeline_run: PipelineRun = PipelineRun(pipeline_name="demo", sink=artifact_recorder, logger=run_logger, clock=clock_testing.clock)
+        pipeline_run: PipelineRun = PipelineRun(pipeline_name="demo", artifact_sink=artifact_recorder, logger=run_logger, clock=clock_testing.clock)
 
         # Act
         async with pipeline_run, pipeline_run.open_work_item(work_item) as work_item_scope, work_item_scope.step(PAGE_IMAGE_EXTRACTION):
@@ -59,7 +59,7 @@ class TestStepBoundaries:
     ) -> None:
         # Arrange
         work_item: WorkItem = create_random_work_item()
-        pipeline_run: PipelineRun = PipelineRun(pipeline_name="demo", sink=artifact_recorder, logger=run_logger)
+        pipeline_run: PipelineRun = PipelineRun(pipeline_name="demo", artifact_sink=artifact_recorder, logger=run_logger)
 
         # Act
         async with pipeline_run, pipeline_run.open_work_item(work_item) as work_item_scope, work_item_scope.step(METADATA_AUDIT) as step_scope:
@@ -79,7 +79,7 @@ class TestStepBoundaries:
         work_item: WorkItem = create_random_work_item()
         expected_parent_step_number: str = "3"
         expected_child_step_number: str = "3.2"
-        pipeline_run: PipelineRun = PipelineRun(pipeline_name="demo", sink=artifact_recorder, logger=run_logger)
+        pipeline_run: PipelineRun = PipelineRun(pipeline_name="demo", artifact_sink=artifact_recorder, logger=run_logger)
 
         # Act
         async with (
@@ -109,7 +109,7 @@ class TestStepBoundaries:
     ) -> None:
         # Arrange
         work_item: WorkItem = create_random_work_item()
-        pipeline_run: PipelineRun = PipelineRun(pipeline_name="demo", sink=artifact_recorder, logger=run_logger)
+        pipeline_run: PipelineRun = PipelineRun(pipeline_name="demo", artifact_sink=artifact_recorder, logger=run_logger)
 
         # Act
         async with pipeline_run, pipeline_run.open_work_item(work_item) as work_item_scope, work_item_scope.step(CLASSIFICATION) as parent_step_scope:
@@ -131,7 +131,7 @@ class TestProgressLinesAndAttributes:
         # Arrange
         work_item: WorkItem = create_random_work_item()
         expected_progress_message: str = "Auditing metadata"
-        pipeline_run: PipelineRun = PipelineRun(pipeline_name="demo", sink=artifact_recorder, logger=run_logger)
+        pipeline_run: PipelineRun = PipelineRun(pipeline_name="demo", artifact_sink=artifact_recorder, logger=run_logger)
 
         # Act
         async with pipeline_run, pipeline_run.open_work_item(work_item) as work_item_scope, work_item_scope.step(METADATA_AUDIT) as step_scope:
@@ -149,7 +149,7 @@ class TestProgressLinesAndAttributes:
         # Arrange
         work_item: WorkItem = create_random_work_item()
         expected_progress_message: str = "Reading"
-        pipeline_run: PipelineRun = PipelineRun(pipeline_name="demo", sink=artifact_recorder, logger=run_logger)
+        pipeline_run: PipelineRun = PipelineRun(pipeline_name="demo", artifact_sink=artifact_recorder, logger=run_logger)
 
         # Act - `name`, `message` and `filename` are LogRecord attributes the standard library refuses as `extra` keys
         async with pipeline_run, pipeline_run.open_work_item(work_item) as work_item_scope, work_item_scope.step(METADATA_AUDIT) as step_scope:
@@ -167,7 +167,7 @@ class TestProgressLinesAndAttributes:
         expected_trace_id: str = "abc123"
         trace_id_attribute_name: str = "trace_id"
         pipeline_run: PipelineRun = PipelineRun(
-            pipeline_name="demo", sink=artifact_recorder, logger=run_logger, attributes={trace_id_attribute_name: expected_trace_id}
+            pipeline_name="demo", artifact_sink=artifact_recorder, logger=run_logger, attributes={trace_id_attribute_name: expected_trace_id}
         )
 
         # Act
@@ -187,7 +187,7 @@ class TestProgressLinesAndAttributes:
     ) -> None:
         # Arrange
         work_item: WorkItem = create_random_work_item()
-        pipeline_run: PipelineRun = PipelineRun(pipeline_name="demo", sink=artifact_recorder, logger=run_logger)
+        pipeline_run: PipelineRun = PipelineRun(pipeline_name="demo", artifact_sink=artifact_recorder, logger=run_logger)
 
         # Act
         async with pipeline_run, pipeline_run.open_work_item(work_item) as work_item_scope, work_item_scope.step(METADATA_AUDIT):
@@ -201,9 +201,9 @@ class TestProgressLinesAndAttributes:
     def test_PipelineRun_WhenCallerAttributesShadowALogRecordAttribute_ThenTheRunIsRefused(self, artifact_recorder: ArtifactRecorder) -> None:
         # Arrange / Act / Assert
         with pytest.raises(ValueError, match="reserved logging attribute names"):
-            PipelineRun(pipeline_name="demo", sink=artifact_recorder, attributes={"name": "x"})
+            PipelineRun(pipeline_name="demo", artifact_sink=artifact_recorder, attributes={"name": "x"})
 
     def test_PipelineRun_WhenTheNameIsBlank_ThenTheRunIsRefused(self, artifact_recorder: ArtifactRecorder) -> None:
         # Arrange / Act / Assert
         with pytest.raises(ValueError, match="needs a name"):
-            PipelineRun(pipeline_name=" ", sink=artifact_recorder)
+            PipelineRun(pipeline_name=" ", artifact_sink=artifact_recorder)

@@ -21,7 +21,7 @@ TIME_OF_DAY_AT_LINE_START: Final[re.Pattern[str]] = re.compile(r"^\d\d:\d\d:\d\d
 
 async def _run_one_step(clock_testing: ClockTesting, run_logger: logging.Logger, *, fails: bool = False) -> None:
     work_item: WorkItem = create_random_work_item()
-    pipeline_run: PipelineRun = PipelineRun(pipeline_name="demo", sink=ArtifactRecorder(), logger=run_logger, clock=clock_testing.clock)
+    pipeline_run: PipelineRun = PipelineRun(pipeline_name="demo", artifact_sink=ArtifactRecorder(), logger=run_logger, clock=clock_testing.clock)
     with contextlib.suppress(ValueError):
         async with pipeline_run, pipeline_run.open_work_item(work_item) as work_item_scope, work_item_scope.step(METADATA_AUDIT) as step_scope:
             step_scope.info("Auditing metadata", pages=14)

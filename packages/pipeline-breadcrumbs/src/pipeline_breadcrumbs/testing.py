@@ -9,18 +9,19 @@ diagnosed by whether its file exists.
 import logging
 from typing import final, override
 
-from pipeline_breadcrumbs.artifacts import Artifact, ArtifactKind, StepArtifact
+from pipeline_breadcrumbs.artifacts import Artifact, ArtifactKind, ArtifactSinkProtocol, StepArtifact
 from pipeline_breadcrumbs.attributes import AttributeKey
 
 
 @final
-class ArtifactRecorder:
+class ArtifactRecorder(ArtifactSinkProtocol):
     """An in-memory artifact sink. Pass the instance wherever a sink is expected."""
 
     def __init__(self) -> None:
         self.artifacts: list[Artifact] = []
 
-    async def __call__(self, artifact: Artifact) -> None:
+    @override
+    async def persist(self, artifact: Artifact) -> None:
         self.artifacts.append(artifact)
 
     def of_kind(self, artifact_kind: ArtifactKind) -> list[Artifact]:

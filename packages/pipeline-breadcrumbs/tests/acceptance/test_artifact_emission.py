@@ -24,7 +24,7 @@ class TestEmit:
         # Arrange
         work_item: WorkItem = create_random_work_item()
         expected_content: bytes = b'{"ok": true}'
-        pipeline_run: PipelineRun = PipelineRun(pipeline_name="demo", sink=artifact_recorder, logger=run_logger)
+        pipeline_run: PipelineRun = PipelineRun(pipeline_name="demo", artifact_sink=artifact_recorder, logger=run_logger)
 
         # Act
         async with pipeline_run, pipeline_run.open_work_item(work_item) as work_item_scope, work_item_scope.step(METADATA_AUDIT) as step_scope:
@@ -45,7 +45,7 @@ class TestEmit:
     ) -> None:
         # Arrange
         work_item: WorkItem = create_random_work_item()
-        pipeline_run: PipelineRun = PipelineRun(pipeline_name="demo", sink=artifact_recorder, logger=run_logger)
+        pipeline_run: PipelineRun = PipelineRun(pipeline_name="demo", artifact_sink=artifact_recorder, logger=run_logger)
 
         # Act
         async with pipeline_run, pipeline_run.open_work_item(work_item) as work_item_scope, work_item_scope.step(METADATA_AUDIT) as step_scope:
@@ -66,7 +66,7 @@ class TestEmit:
     ) -> None:
         # Arrange
         work_item: WorkItem = create_random_work_item()
-        pipeline_run: PipelineRun = PipelineRun(pipeline_name="demo", sink=artifact_recorder, logger=run_logger)
+        pipeline_run: PipelineRun = PipelineRun(pipeline_name="demo", artifact_sink=artifact_recorder, logger=run_logger)
 
         # Act - steps are declared out of order on purpose
         async with pipeline_run, pipeline_run.open_work_item(work_item) as work_item_scope:
@@ -89,7 +89,7 @@ class TestEmit:
     ) -> None:
         # Arrange
         work_item: WorkItem = create_random_work_item()
-        pipeline_run: PipelineRun = PipelineRun(pipeline_name="demo", sink=artifact_recorder, logger=run_logger)
+        pipeline_run: PipelineRun = PipelineRun(pipeline_name="demo", artifact_sink=artifact_recorder, logger=run_logger)
 
         # Act / Assert
         with pytest.raises(ValueError, match="discriminator"):
@@ -151,7 +151,7 @@ class TestRunLevelArtifact:
         self, artifact_recorder: ArtifactRecorder, run_logger: logging.Logger
     ) -> None:
         # Arrange
-        pipeline_run: PipelineRun = PipelineRun(pipeline_name="demo", sink=artifact_recorder, logger=run_logger)
+        pipeline_run: PipelineRun = PipelineRun(pipeline_name="demo", artifact_sink=artifact_recorder, logger=run_logger)
 
         # Act
         async with pipeline_run:

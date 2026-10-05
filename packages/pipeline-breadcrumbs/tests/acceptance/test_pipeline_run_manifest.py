@@ -33,7 +33,9 @@ class TestRunManifest:
         # Arrange
         work_item: WorkItem = create_random_work_item()
         pipeline_name: str = "demo"
-        pipeline_run: PipelineRun = PipelineRun(pipeline_name=pipeline_name, sink=artifact_recorder, logger=run_logger, clock=clock_testing.clock)
+        pipeline_run: PipelineRun = PipelineRun(
+            pipeline_name=pipeline_name, artifact_sink=artifact_recorder, logger=run_logger, clock=clock_testing.clock
+        )
         expected_manifest: ExpectedManifest = ExpectedManifest(
             pipeline_name=pipeline_name,
             run_id=pipeline_run.run_id,
@@ -73,7 +75,7 @@ class TestRunManifest:
     ) -> None:
         # Arrange
         work_item: WorkItem = create_random_work_item()
-        pipeline_run: PipelineRun = PipelineRun(pipeline_name="demo", sink=artifact_recorder, logger=run_logger)
+        pipeline_run: PipelineRun = PipelineRun(pipeline_name="demo", artifact_sink=artifact_recorder, logger=run_logger)
 
         # Act
         async with pipeline_run, pipeline_run.open_work_item(work_item) as work_item_scope, work_item_scope.step(LOAD_PAGES) as step_scope:
@@ -93,7 +95,9 @@ class TestRunManifest:
         failing_work_item: WorkItem = create_random_work_item()
         healthy_work_item: WorkItem = create_random_work_item()
         pipeline_name: str = "demo"
-        pipeline_run: PipelineRun = PipelineRun(pipeline_name=pipeline_name, sink=artifact_recorder, logger=run_logger, clock=clock_testing.clock)
+        pipeline_run: PipelineRun = PipelineRun(
+            pipeline_name=pipeline_name, artifact_sink=artifact_recorder, logger=run_logger, clock=clock_testing.clock
+        )
         expected_manifest: ExpectedManifest = ExpectedManifest(
             pipeline_name=pipeline_name,
             run_id=pipeline_run.run_id,
@@ -131,7 +135,9 @@ class TestRunManifest:
         # Arrange
         work_item: WorkItem = create_random_work_item()
         pipeline_name: str = "demo"
-        pipeline_run: PipelineRun = PipelineRun(pipeline_name=pipeline_name, sink=artifact_recorder, logger=run_logger, clock=clock_testing.clock)
+        pipeline_run: PipelineRun = PipelineRun(
+            pipeline_name=pipeline_name, artifact_sink=artifact_recorder, logger=run_logger, clock=clock_testing.clock
+        )
         expected_manifest: ExpectedManifest = ExpectedManifest(
             pipeline_name=pipeline_name,
             run_id=pipeline_run.run_id,
@@ -162,7 +168,9 @@ class TestRunManifest:
         # Arrange - a retry reopens the same work item; the failure of the first attempt must not be erased by the success of the second
         work_item: WorkItem = create_random_work_item()
         pipeline_name: str = "demo"
-        pipeline_run: PipelineRun = PipelineRun(pipeline_name=pipeline_name, sink=artifact_recorder, logger=run_logger, clock=clock_testing.clock)
+        pipeline_run: PipelineRun = PipelineRun(
+            pipeline_name=pipeline_name, artifact_sink=artifact_recorder, logger=run_logger, clock=clock_testing.clock
+        )
         expected_manifest: ExpectedManifest = ExpectedManifest(
             pipeline_name=pipeline_name,
             run_id=pipeline_run.run_id,
@@ -200,7 +208,9 @@ class TestRunManifest:
         # Arrange
         work_item: WorkItem = create_random_work_item()
         pipeline_name: str = "demo"
-        pipeline_run: PipelineRun = PipelineRun(pipeline_name=pipeline_name, sink=artifact_recorder, logger=run_logger, clock=clock_testing.clock)
+        pipeline_run: PipelineRun = PipelineRun(
+            pipeline_name=pipeline_name, artifact_sink=artifact_recorder, logger=run_logger, clock=clock_testing.clock
+        )
         expected_manifest: ExpectedManifest = ExpectedManifest(
             pipeline_name=pipeline_name,
             run_id=pipeline_run.run_id,
@@ -240,7 +250,9 @@ class TestRunManifest:
         # Arrange
         work_item: WorkItem = create_random_work_item()
         pipeline_name: str = "demo"
-        pipeline_run: PipelineRun = PipelineRun(pipeline_name=pipeline_name, sink=artifact_recorder, logger=run_logger, clock=clock_testing.clock)
+        pipeline_run: PipelineRun = PipelineRun(
+            pipeline_name=pipeline_name, artifact_sink=artifact_recorder, logger=run_logger, clock=clock_testing.clock
+        )
         expected_manifest: ExpectedManifest = ExpectedManifest(
             pipeline_name=pipeline_name,
             run_id=pipeline_run.run_id,

@@ -7,7 +7,7 @@ from types import TracebackType
 from typing import Final, Self, final
 from uuid import uuid4
 
-from pipeline_breadcrumbs.artifacts import ArtifactSink, RunArtifact
+from pipeline_breadcrumbs.artifacts import ArtifactSinkProtocol, RunArtifact
 from pipeline_breadcrumbs.attributes import AttributeBag, AttributeKey, AttributeValue, EventKind
 from pipeline_breadcrumbs.clock import Clock
 from pipeline_breadcrumbs.errors import ArtifactSinkError
@@ -45,7 +45,7 @@ class PipelineRun:
         self,
         *,
         pipeline_name: str,
-        sink: ArtifactSink,
+        artifact_sink: ArtifactSinkProtocol,
         logger: logging.Logger | None = None,
         attributes: Mapping[str, AttributeValue] | None = None,
         clock: Clock | None = None,
@@ -60,7 +60,7 @@ class PipelineRun:
         self._run_id: str = f"{resolved_clock.now():%Y%m%d_%H%M%S}_{uuid4().hex[:8]}"
         self._pipeline_name: str = pipeline_name
         self._run_context: RunContext = RunContext(
-            sink=sink,
+            artifact_sink=artifact_sink,
             logger=logger or logging.getLogger(DEFAULT_LOGGER_NAME),
             base_attributes={
                 **caller_attributes,
