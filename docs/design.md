@@ -528,13 +528,47 @@ FINAL_REPORT  = ArtifactKind("final_report", "md", "text/markdown", role=Artifac
 - The sink is a class that implements `ArtifactSinkProtocol`, which has one method:
   `async def persist(self, artifact: Artifact) -> None`. The application builds the sink and hands it
   to `PipelineRun`. The library ships `FileSystemArtifactSink` and, for tests, `ArtifactRecorder`. The
-  demo adds `BlobStorageArtifactSink`, a stand-in for a storage container.
+  demo adds `BlobStorageArtifactSink`, a stand-in for a storage container. The choice of a class over
+  a callback is explained in [the next section](#decision-how-the-host-receives-artifacts).
 - A sink that raises is translated to `ArtifactSinkError`, which carries the artifact's identity, so a
   storage outage does not read as a failure in the pipeline's logic. An implementation raises whatever
   error is natural for its destination, and the run does the wrapping.
 - Steps never know where a file lands. They call `emit`, and the host owns the sink.
 - **Emit before you validate.** Capture a raw model reply before parsing it, so that a parse failure
   leaves its evidence on disk.
+
+### Decision: how the host receives artifacts
+
+A step emits an artifact, and something the host controls has to persist it. The library needs one
+contract for that, and there are two reasonable shapes for it.
+
+**Option 1: a callback.** The host passes an async function, `Callable[[Artifact], Awaitable[None]]`.
+It is the smallest possible contract, and a lambda or a local function is enough for a test.
+
+**Option 2: a class that implements a protocol.** The host passes an object with one method,
+`persist(artifact)`, declared by `ArtifactSinkProtocol`. The file-system sink, the blob-storage sink and
+the in-memory test recorder are three classes with the same method.
+
+| | Callback | Class implementing a protocol |
+|---|---|---|
+| Lifetime and state | None of its own. A claimed-folder registry, a container client or a connection has to be captured in a closure or kept somewhere else. | The class owns that state and has a clear lifetime. |
+| Readability | A delegate type with no name for what it does. Finding the implementations means searching for a signature. | A named type with a named method. Implementations are found by name. |
+| Swapping | Possible, but the application swaps a function where it swaps every other service as an object. | The application replaces one implementation with another the way it replaces any service it composes. |
+| Testing | A lambda that appends to a list. | An in-memory implementation, `ArtifactRecorder`, with helper methods for assertions. |
+
+**Decision: the class.** Lifetime and state decided it. Every real sink keeps something between calls, so
+a callback would end up as a closure standing in for a class. The remaining rows point the same way, and
+the library already uses protocols for its other seams (`StepHostProtocol`, `ModelGatewayProtocol` and
+`ContextualExceptionProtocol`), so a sink follows the same convention.
+
+Consequences:
+
+- The library accepts only the protocol. Offering both forms would give the contract two ways to do one
+  thing, and every place that calls the sink would have to handle both.
+- The method name is `persist`, and the parameter on `PipelineRun` is `artifact_sink`, so the call site
+  names its type.
+- A sink raises whatever error is natural for its destination. `RunContext.persist` wraps it in
+  `ArtifactSinkError`, which keeps the artifact's identity.
 
 ### Run folder and manifest
 
@@ -626,8 +660,7 @@ diagnosed by whether its file exists.
 | Artifacts always persisted | They are the record of what a step did, and a later run could start from them. | A production mode that keeps only outputs |
 | Role is information | Hosts can apply retention rules, such as colder storage for interim files. | Using the role as a filter |
 | Emit before validate | A malformed reply is the evidence you most need. | Emitting only after a successful parse |
-| The sink is a class that implements `ArtifactSinkProtocol` | **Lifetime:** a class owns its state (a claimed-folder registry, a container client, a connection), where a callback hides that state in a closure. **Readability:** a named type with a named method is easier to find and read than a delegate. **Swapping:** the application replaces one implementation with another, as it would any composed service. **Testing:** an in-memory implementation captures artifacts for assertions. The pipeline never knows whether files go to disk or blob storage. | A bare async callback; a storage path or client inside the steps |
-| One way to supply a sink | The callable form was removed rather than accepted beside the class. The library has no released users, so a shim would only add a second way to do one thing. | Accepting either a callable or a protocol implementation |
+| The sink is a class that implements `ArtifactSinkProtocol` | A sink keeps state across calls, and a class owns it. The pipeline never knows whether files go to disk or blob storage. See [the decision](#decision-how-the-host-receives-artifacts). | A bare async callback; a storage path or client inside the steps |
 | Sink failures become `ArtifactSinkError` | A storage outage should not read as a bug in the pipeline's logic. | Letting the raw exception escape |
 | One folder per run, timestamp in the name | A repeat run never overwrites an earlier one. | A fixed output folder, cleaned by hand |
 | The manifest is built from immutable events | No record is edited after it is made. A retry or a per-page step keeps every opening. | Mutable records edited in place, which let a reopened id erase the first attempt |
