@@ -6,7 +6,7 @@ outcome. The result is an ordered trail on disk that a person, or a coding assis
 read to find the first step whose output went wrong.
 """
 
-from pipeline_breadcrumbs.artifacts import Artifact, ArtifactKind, ArtifactRole, ArtifactSink, RunArtifact, StepArtifact
+from pipeline_breadcrumbs.artifacts import Artifact, ArtifactKind, ArtifactRole, ArtifactSinkProtocol, RunArtifact, StepArtifact
 from pipeline_breadcrumbs.attributes import AttributeBag, AttributeKey, AttributeValue, EventKind
 from pipeline_breadcrumbs.breadcrumb_formatter import BreadcrumbFormatter, TimeDisplay
 from pipeline_breadcrumbs.clock import Clock
@@ -24,8 +24,8 @@ __all__ = [
     "Artifact",
     "ArtifactKind",
     "ArtifactRole",
-    "ArtifactSink",
     "ArtifactSinkError",
+    "ArtifactSinkProtocol",
     "AttributeBag",
     "AttributeKey",
     "AttributeValue",

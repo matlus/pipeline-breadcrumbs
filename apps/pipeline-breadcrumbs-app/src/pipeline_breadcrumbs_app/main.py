@@ -3,15 +3,16 @@
 The system is `DocumentAnalysisManager`. This module is the application around it, and it makes
 every decision the system must not make:
 
-* where artifacts go: it implements the artifact callback. Every artifact is persisted, wherever the
-  application runs, because artifacts are the record of what each step did;
+* where artifacts go: it chooses the artifact sink, a class that implements `ArtifactSinkProtocol`. A
+  local run hands in the file-system sink and a hosted run hands in the blob-storage one. Every artifact
+  is persisted either way, because artifacts are the record of what each step did;
 * where log lines go: it builds the one logger the system shares and decides which handlers listen
   to it. That is the only thing a local run and a hosted run do differently;
 * what to run and what to do when it fails: it opens the run, opens one work item per document,
   calls the system, and logs a failure once, at this outer boundary.
 
-The system receives the callback and the logger through the scope it is handed, and never sees
-a path or a handler.
+The system receives the sink and the logger through the scope it is handed, and never sees a path, a
+container or a handler.
 
     uv run pipeline_breadcrumbs_app                     # local: console, a run log beside the artifacts
     uv run pipeline_breadcrumbs_app --host hosted       # hosted: console, and exceptions only to telemetry
@@ -31,7 +32,7 @@ from typing import Final
 from uuid import uuid4
 
 from pipeline_breadcrumbs import (
-    ArtifactSink,
+    ArtifactSinkProtocol,
     AttributeKey,
     BreadcrumbFormatter,
     PipelineRun,
@@ -40,6 +41,7 @@ from pipeline_breadcrumbs import (
     WorkItemScope,
 )
 from pipeline_breadcrumbs.hosting import FileSystemArtifactSink, attached_run_log, create_run_folder
+from pipeline_breadcrumbs_app.blob_storage_artifact_sink import BlobStorageArtifactSink
 from pipeline_breadcrumbs_app.document_analysis.document_analysis_manager import DocumentAnalysisManager
 from pipeline_breadcrumbs_app.document_analysis.exceptions import DocumentAnalysisError
 from pipeline_breadcrumbs_app.document_analysis.gateways.fake_model_gateway import FakeModelGateway
@@ -48,6 +50,7 @@ from pipeline_breadcrumbs_app.sample_documents import SAMPLE_DOCUMENTS, InvalidF
 from pipeline_breadcrumbs_app.telemetry import TELEMETRY_FILENAME, attached_exception_telemetry
 
 PIPELINE_NAME: Final[str] = "document-analysis-demo"
+BLOB_CONTAINER_NAME: Final[str] = "artifact-container"
 LOGGER_NAME: Final[str] = "pipeline_breadcrumbs_app"
 
 # How long a simulated model call takes. Other simulated work takes a third of it. The delay is
@@ -61,8 +64,9 @@ class HostProfile(StrEnum):
     """Where the application runs. The system behaves the same in both; only the log handlers differ.
 
     Local keeps every informational line in a `run.log` beside the artifacts, for a developer who is
-    watching the run. Hosted leaves informational lines to the platform's own process logs (the console
-    here) and sends only exceptions to telemetry, the way an Azure ML pipeline reports to Application Insights.
+    watching the run, and writes the artifacts to the file system. Hosted leaves informational lines to the
+    platform's own process logs (the console here), sends only exceptions to telemetry, the way an Azure ML
+    pipeline reports to Application Insights, and uploads the artifacts to blob storage.
     """
 
     LOCAL = "local"
@@ -71,18 +75,35 @@ class HostProfile(StrEnum):
 
 @dataclass(frozen=True, slots=True)
 class DemoResult:
+    """Where the trail landed: the run's own folder, the place its artifacts went, and which documents failed.
+
+    A local run keeps its artifacts in its run folder, so the two are the same. A hosted run keeps only its
+    telemetry there and uploads its artifacts to the blob container.
+    """
+
     run_directory: Path
+    artifact_directory: Path
     failed_work_items: list[str]
 
 
-def _create_artifact_callback(run_directory: Path) -> ArtifactSink:
-    """The application's persistence callback. The system only ever sees `ArtifactSink`.
+@dataclass(frozen=True, slots=True)
+class ArtifactDestination:
+    """The sink the application chose, and the folder its artifacts land in."""
 
-    It persists every artifact: they are the record of what each step did, and they are what a later
-    run could start from. A hosted application would hand the system a blob-storage sink here; this
-    one writes to disk so the demo needs nothing else.
+    artifact_sink: ArtifactSinkProtocol
+    directory: Path
+
+
+def _create_artifact_destination(host_profile: HostProfile, output_root: Path, run_directory: Path) -> ArtifactDestination:
+    """The application's choice of artifact sink. The system only ever sees `ArtifactSinkProtocol`.
+
+    Every profile persists every artifact: they are the record of what each step did, and they are what a
+    later run could start from. Only where they go differs.
     """
-    return FileSystemArtifactSink(run_directory)
+    if host_profile is HostProfile.LOCAL:
+        return ArtifactDestination(FileSystemArtifactSink(run_directory), run_directory)
+    blob_storage_artifact_sink: BlobStorageArtifactSink = BlobStorageArtifactSink(output_root / BLOB_CONTAINER_NAME, run_directory.name)
+    return ArtifactDestination(blob_storage_artifact_sink, blob_storage_artifact_sink.run_directory)
 
 
 @contextmanager
@@ -111,13 +132,13 @@ def _console_logger(formatter: logging.Formatter) -> Generator[logging.Logger]:
 async def _analyze_documents(
     pages_by_document_name: Mapping[str, list[str]],
     document_analysis_manager: DocumentAnalysisManager,
-    artifact_callback: ArtifactSink,
+    artifact_sink: ArtifactSinkProtocol,
     logger: logging.Logger,
 ) -> list[str]:
     failed_document_names: list[str] = []
     document_name: str
     pages: list[str]
-    async with PipelineRun(pipeline_name=PIPELINE_NAME, sink=artifact_callback, logger=logger) as pipeline_run:
+    async with PipelineRun(pipeline_name=PIPELINE_NAME, artifact_sink=artifact_sink, logger=logger) as pipeline_run:
         for document_name, pages in pages_by_document_name.items():
             try:
                 work_item_scope: WorkItemScope
@@ -173,10 +194,11 @@ async def run_demo(
             logging_scope.enter_context(attached_run_log(run_logger, run_directory, breadcrumb_formatter))
         else:
             logging_scope.enter_context(attached_exception_telemetry(run_logger, run_directory / TELEMETRY_FILENAME))
+        artifact_destination: ArtifactDestination = _create_artifact_destination(host_profile, output_root, run_directory)
         failed_work_items: list[str] = await _analyze_documents(
-            pages_by_document_name, document_analysis_manager, _create_artifact_callback(run_directory), run_logger
+            pages_by_document_name, document_analysis_manager, artifact_destination.artifact_sink, run_logger
         )
-    return DemoResult(run_directory=run_directory, failed_work_items=failed_work_items)
+    return DemoResult(run_directory=run_directory, artifact_directory=artifact_destination.directory, failed_work_items=failed_work_items)
 
 
 def _default_output_root() -> Path:
@@ -193,7 +215,7 @@ def main() -> None:
         "--host",
         choices=[host_profile.value for host_profile in HostProfile],
         default=HostProfile.LOCAL.value,
-        help="local writes a run log beside the artifacts; hosted sends only exceptions to telemetry.",
+        help="local writes a run log and the artifacts to disk; hosted uploads artifacts to blob storage and sends only exceptions to telemetry.",
     )
     arguments: argparse.Namespace = argument_parser.parse_args()
     try:

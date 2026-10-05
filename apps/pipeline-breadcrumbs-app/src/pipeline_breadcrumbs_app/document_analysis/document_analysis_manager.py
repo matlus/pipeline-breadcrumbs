@@ -5,7 +5,7 @@ it cannot analyze, then sequences the processors and passes each one's result to
 no work of its own: every step is a processor's, and each processor opens its own step on the host
 it is given.
 
-The caller hands in the host (a work item scope). The scope carries the artifact callback and
+The caller hands in the host (a work item scope). The scope carries the artifact sink and
 the logger the application chose, so the manager and everything below it know neither where
 artifacts land nor how the log is written.
 """

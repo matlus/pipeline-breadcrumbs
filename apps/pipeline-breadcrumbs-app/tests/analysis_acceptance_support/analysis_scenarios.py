@@ -22,7 +22,7 @@ async def analyze_in_a_run(
     run_logger: logging.Logger,
 ) -> DocumentAnalysis:
     async with (
-        PipelineRun(pipeline_name="document-analysis-test", sink=artifact_recorder, logger=run_logger) as pipeline_run,
+        PipelineRun(pipeline_name="document-analysis-test", artifact_sink=artifact_recorder, logger=run_logger) as pipeline_run,
         pipeline_run.open_work_item(work_item) as work_item_scope,
     ):
         return await document_analysis_manager.analyze_document(work_item_scope, pages)

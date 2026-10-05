@@ -1,4 +1,4 @@
-# Acceptance tests for the demo application as a whole: `run_demo` builds the callback and the
+# Acceptance tests for the demo application as a whole: `run_demo` builds the artifact sink and the
 # logger, runs the system over the sample documents and returns where the trail landed. The
 # observations are the files and the log the run left behind, read the way an engineer would.
 # The model is the application's fake, with no delay.
@@ -25,7 +25,7 @@ class TestDemoRunExpectedPaths:
 
         # Assert
         assert actual_demo_result.failed_work_items == []
-        actual_manifest: dict[str, Any] = AsserterRunFolder.read_manifest(actual_demo_result.run_directory)
+        actual_manifest: dict[str, Any] = AsserterRunFolder.read_manifest(actual_demo_result.artifact_directory)
         assert actual_manifest["run_status"] == "COMPLETE"
         assert actual_manifest["pipeline_name"] == "document-analysis-demo"
         AsserterRunFolder.assert_step_statuses(
@@ -39,7 +39,7 @@ class TestDemoRunExpectedPaths:
         actual_demo_result: DemoResult = await run_demo(tmp_path, time_display=TimeDisplay.NONE, pace_seconds=NO_DELAY_SECONDS)
 
         # Assert - the lease has no doubtful section; the contract has one
-        actual_manifest: dict[str, Any] = AsserterRunFolder.read_manifest(actual_demo_result.run_directory)
+        actual_manifest: dict[str, Any] = AsserterRunFolder.read_manifest(actual_demo_result.artifact_directory)
         actual_lease: dict[str, Any] = AsserterRunFolder.find_work_item("Lease 4.pdf", actual_manifest)
         actual_contract: dict[str, Any] = AsserterRunFolder.find_work_item("Contract 12.pdf", actual_manifest)
         assert {actual_step["step_path"]: actual_step["step_status"] for actual_step in actual_lease["step_records"]}["3.3"] == "SKIPPED"
@@ -55,9 +55,9 @@ class TestDemoRunExpectedPaths:
 
         # Assert
         AsserterRunFolder.assert_exactly_these_entries(
-            {"run.log", "manifest.json", expected_work_item_folder_name, "Lease 4"}, actual_demo_result.run_directory
+            {"run.log", "manifest.json", expected_work_item_folder_name, "Lease 4"}, actual_demo_result.artifact_directory
         )
-        actual_contract_folder: Path = actual_demo_result.run_directory / expected_work_item_folder_name
+        actual_contract_folder: Path = actual_demo_result.artifact_directory / expected_work_item_folder_name
         assert (actual_contract_folder / "Contract 12_step_04_analysis_report.md").read_text(encoding="utf-8").startswith("# Section analysis")
         assert (actual_contract_folder / "Contract 12_step_01_page_text_page_0000.txt").exists()
         assert (actual_contract_folder / "Contract 12_step_02_raw_detection_response_page_0003.txt").exists()
@@ -67,7 +67,7 @@ class TestDemoRunExpectedPaths:
         actual_demo_result: DemoResult = await run_demo(tmp_path, time_display=TimeDisplay.NONE, pace_seconds=NO_DELAY_SECONDS)
 
         # Assert - the step path in each filename, read in the order an ordinary file listing shows them, never goes backwards
-        actual_contract_folder: Path = actual_demo_result.run_directory / "Contract 12"
+        actual_contract_folder: Path = actual_demo_result.artifact_directory / "Contract 12"
         actual_listing: list[str] = AsserterRunFolder.list_entry_names(actual_contract_folder)
         actual_step_paths: list[tuple[int, ...]] = AsserterRunFolder.read_step_paths_from_filenames(actual_listing)
         assert len(actual_step_paths) == len(actual_listing)
@@ -112,8 +112,8 @@ class TestDemoRunExpectedPaths:
 
         # Assert
         assert actual_first_result.run_directory != actual_second_result.run_directory
-        assert (actual_first_result.run_directory / expected_manifest_filename).exists()
-        assert (actual_second_result.run_directory / expected_manifest_filename).exists()
+        assert (actual_first_result.artifact_directory / expected_manifest_filename).exists()
+        assert (actual_second_result.artifact_directory / expected_manifest_filename).exists()
 
 
 @pytest.mark.acceptance
@@ -130,14 +130,14 @@ class TestDemoRunFailures:
 
         # Assert
         assert actual_demo_result.failed_work_items == [expected_failed_work_item_name]
-        actual_manifest: dict[str, Any] = AsserterRunFolder.read_manifest(actual_demo_result.run_directory)
+        actual_manifest: dict[str, Any] = AsserterRunFolder.read_manifest(actual_demo_result.artifact_directory)
         assert actual_manifest["run_status"] == "FAILED"
         AsserterRunFolder.assert_step_statuses({"1": "COMPLETE", "2": "FAILED"}, expected_failed_work_item_name, actual_manifest)
         actual_contract: dict[str, Any] = AsserterRunFolder.find_work_item(expected_failed_work_item_name, actual_manifest)
         assert actual_contract["work_item_status"] == "FAILED"
         assert "ModelResponseParseError" in actual_contract["failure"]
         # Emit-before-validate: all four raw replies, including the malformed one, are on disk beside the replies that parsed.
-        actual_contract_folder: Path = actual_demo_result.run_directory / "Contract 12"
+        actual_contract_folder: Path = actual_demo_result.artifact_directory / "Contract 12"
         actual_raw_reply_names: list[str] = [
             actual_name for actual_name in AsserterRunFolder.list_entry_names(actual_contract_folder) if "raw_detection_response" in actual_name
         ]
@@ -178,7 +178,7 @@ class TestDemoHosts:
         )
 
         # Assert - a developer watching a local run keeps every informational line, and nothing is sent to telemetry
-        AsserterRunFolder.assert_exactly_these_entries({"run.log", "manifest.json", "Contract 12", "Lease 4"}, actual_demo_result.run_directory)
+        AsserterRunFolder.assert_exactly_these_entries({"run.log", "manifest.json", "Contract 12", "Lease 4"}, actual_demo_result.artifact_directory)
         assert AsserterRunFolder.read_telemetry(actual_demo_result.run_directory) == []
 
     async def test_run_demo_WhenRunHosted_ThenEveryArtifactIsStillPersistedExactlyAsItIsLocally(self, tmp_path: Path) -> None:
@@ -192,10 +192,32 @@ class TestDemoHosts:
 
         # Assert - the artifacts are the record of what each step did, so where the application runs never changes them
         for actual_work_item_folder_name in ("Contract 12", "Lease 4"):
-            actual_local_listing: list[str] = AsserterRunFolder.list_entry_names(actual_local_result.run_directory / actual_work_item_folder_name)
-            actual_hosted_listing: list[str] = AsserterRunFolder.list_entry_names(actual_hosted_result.run_directory / actual_work_item_folder_name)
+            actual_local_listing: list[str] = AsserterRunFolder.list_entry_names(
+                actual_local_result.artifact_directory / actual_work_item_folder_name
+            )
+            actual_hosted_listing: list[str] = AsserterRunFolder.list_entry_names(
+                actual_hosted_result.artifact_directory / actual_work_item_folder_name
+            )
             assert actual_hosted_listing == actual_local_listing
-        AsserterRunFolder.assert_exactly_these_entries({"manifest.json", "Contract 12", "Lease 4"}, actual_hosted_result.run_directory)
+        AsserterRunFolder.assert_exactly_these_entries({"manifest.json", "Contract 12", "Lease 4"}, actual_hosted_result.artifact_directory)
+
+    async def test_run_demo_WhenRunHosted_ThenTheArtifactsAreUploadedAsBlobsNamedByRunAndWorkItemWithTheManifestAmongThem(
+        self, tmp_path: Path
+    ) -> None:
+        # Arrange / Act
+        actual_demo_result: DemoResult = await run_demo(
+            tmp_path, host_profile=HostProfile.HOSTED, time_display=TimeDisplay.NONE, pace_seconds=NO_DELAY_SECONDS
+        )
+
+        # Assert - the container holds one run, every blob name starts with the run's name, and the manifest sits directly under it
+        actual_container: Path = tmp_path / "artifact-container"
+        actual_blob_names: list[str] = AsserterRunFolder.list_blob_names(actual_container)
+        expected_run_name: str = actual_demo_result.run_directory.name
+        assert all(actual_blob_name.startswith(f"{expected_run_name}/") for actual_blob_name in actual_blob_names)
+        assert f"{expected_run_name}/manifest.json" in actual_blob_names
+        assert f"{expected_run_name}/Contract 12/Contract 12_step_01_page_text_page_0000.txt" in actual_blob_names
+        assert actual_demo_result.artifact_directory == actual_container / expected_run_name
+        assert not (actual_demo_result.run_directory / "manifest.json").exists()
 
     async def test_run_demo_WhenRunHostedWithoutAFailure_ThenNothingIsSentToTelemetry(self, tmp_path: Path) -> None:
         # Arrange / Act
@@ -226,7 +248,7 @@ class TestDemoHosts:
         assert actual_exception_telemetry["severity"] == "ERROR"
         assert actual_exception_telemetry["exception_type"] == "ModelResponseParseError"
         assert "Traceback" in actual_exception_telemetry["stack_trace"]
-        actual_manifest: dict[str, Any] = AsserterRunFolder.read_manifest(actual_demo_result.run_directory)
+        actual_manifest: dict[str, Any] = AsserterRunFolder.read_manifest(actual_demo_result.artifact_directory)
         expected_custom_dimensions: dict[str, Any] = {
             "pipeline.name": "document-analysis-demo",
             "pipeline.run.id": actual_manifest["run_id"],

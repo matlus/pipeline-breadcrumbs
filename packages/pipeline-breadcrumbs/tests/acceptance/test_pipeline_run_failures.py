@@ -3,7 +3,7 @@
 # storage outage is its own exception, and a lost manifest never hides the failure that ended the run.
 
 import logging
-from typing import Final
+from typing import Final, final, override
 
 import pytest
 from breadcrumbs_acceptance_support.asserters.asserter_contextual_data import AsserterContextualData
@@ -12,7 +12,7 @@ from breadcrumbs_acceptance_support.clock_testing import ClockTesting
 from breadcrumbs_acceptance_support.data_generators import create_random_work_item
 from breadcrumbs_acceptance_support.exceptions_testing import DiagnosticTestingError
 
-from pipeline_breadcrumbs import Artifact, ArtifactKind, ArtifactSinkError, AttributeKey, EventKind, PipelineRun, Step, WorkItem
+from pipeline_breadcrumbs import Artifact, ArtifactKind, ArtifactSinkError, ArtifactSinkProtocol, AttributeKey, EventKind, PipelineRun, Step, WorkItem
 from pipeline_breadcrumbs.testing import ArtifactRecorder, RecordCapture
 
 METADATA_AUDIT: Final[Step] = Step(2, "Metadata Audit")
@@ -21,8 +21,13 @@ SCORE_SECTIONS: Final[Step] = Step(2, "Score Sections")
 PAGE_EVIDENCE: Final[ArtifactKind] = ArtifactKind("page_evidence", "json", "application/json")
 
 
-async def _sink_that_cannot_store(artifact: Artifact) -> None:
-    raise ConnectionError("blob storage unreachable")
+@final
+class UnreachableArtifactSink(ArtifactSinkProtocol):
+    """A sink whose destination is down: every `persist` raises the destination's own error."""
+
+    @override
+    async def persist(self, artifact: Artifact) -> None:
+        raise ConnectionError("blob storage unreachable")
 
 
 async def _run_a_step_that_fails_after(clock_testing: ClockTesting, pipeline_run: PipelineRun, work_item: WorkItem, elapsed_seconds: float) -> None:
@@ -39,7 +44,7 @@ class TestFailingStep:
         # Arrange
         work_item: WorkItem = create_random_work_item()
         expected_elapsed_seconds: float = 1.25
-        pipeline_run: PipelineRun = PipelineRun(pipeline_name="demo", sink=artifact_recorder, logger=run_logger, clock=clock_testing.clock)
+        pipeline_run: PipelineRun = PipelineRun(pipeline_name="demo", artifact_sink=artifact_recorder, logger=run_logger, clock=clock_testing.clock)
 
         # Act
         with pytest.raises(ValueError, match="bad json"):
@@ -63,7 +68,7 @@ class TestFailingStep:
         # Arrange
         work_item: WorkItem = create_random_work_item()
         diagnostic_testing_error: DiagnosticTestingError = DiagnosticTestingError("response was not json")
-        pipeline_run: PipelineRun = PipelineRun(pipeline_name="demo", sink=artifact_recorder, logger=run_logger)
+        pipeline_run: PipelineRun = PipelineRun(pipeline_name="demo", artifact_sink=artifact_recorder, logger=run_logger)
 
         # Act
         with pytest.raises(DiagnosticTestingError):
@@ -86,7 +91,7 @@ class TestFailingStep:
     ) -> None:
         # Arrange
         work_item: WorkItem = create_random_work_item()
-        pipeline_run: PipelineRun = PipelineRun(pipeline_name="demo", sink=artifact_recorder, logger=run_logger)
+        pipeline_run: PipelineRun = PipelineRun(pipeline_name="demo", artifact_sink=artifact_recorder, logger=run_logger)
 
         # Act / Assert
         with pytest.raises(KeyError):
@@ -102,7 +107,7 @@ class TestFailingSink:
         # Arrange
         work_item: WorkItem = create_random_work_item()
         expected_artifact_kind_key: str = PAGE_EVIDENCE.key
-        pipeline_run: PipelineRun = PipelineRun(pipeline_name="demo", sink=_sink_that_cannot_store, logger=run_logger)
+        pipeline_run: PipelineRun = PipelineRun(pipeline_name="demo", artifact_sink=UnreachableArtifactSink(), logger=run_logger)
 
         # Act
         with pytest.raises(ArtifactSinkError) as actual_raised:
@@ -129,7 +134,7 @@ class TestFailingSink:
     ) -> None:
         # Arrange
         real_problem_message: str = "the real problem"
-        pipeline_run: PipelineRun = PipelineRun(pipeline_name="demo", sink=_sink_that_cannot_store, logger=run_logger)
+        pipeline_run: PipelineRun = PipelineRun(pipeline_name="demo", artifact_sink=UnreachableArtifactSink(), logger=run_logger)
 
         # Act / Assert - the run's own failure, not the storage outage, reaches the caller
         with pytest.raises(ValueError, match=real_problem_message):
@@ -138,7 +143,7 @@ class TestFailingSink:
 
     async def test_PipelineRun_WhenTheManifestCannotBeWrittenAndNothingElseFailed_ThenTheOutageIsReported(self, run_logger: logging.Logger) -> None:
         # Arrange
-        pipeline_run: PipelineRun = PipelineRun(pipeline_name="demo", sink=_sink_that_cannot_store, logger=run_logger)
+        pipeline_run: PipelineRun = PipelineRun(pipeline_name="demo", artifact_sink=UnreachableArtifactSink(), logger=run_logger)
 
         # Act / Assert
         with pytest.raises(ArtifactSinkError):
@@ -154,7 +159,7 @@ class TestRunSummary:
         # Arrange
         healthy_work_item: WorkItem = create_random_work_item()
         failing_work_item: WorkItem = create_random_work_item()
-        pipeline_run: PipelineRun = PipelineRun(pipeline_name="demo", sink=artifact_recorder, logger=run_logger)
+        pipeline_run: PipelineRun = PipelineRun(pipeline_name="demo", artifact_sink=artifact_recorder, logger=run_logger)
 
         # Act
         async with pipeline_run:

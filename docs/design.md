@@ -37,7 +37,7 @@ The library answers both with two outputs from one source.
 
 1. **Step-numbered progress logs.** Every step announces itself, reports counts as it works, and
    closes with its elapsed time and outcome.
-2. **Artifacts.** A step hands a self-describing file to a callback the host controls. The file
+2. **Artifacts.** A step hands a self-describing file to an artifact sink the host chooses. The file
    might be a captured model reply, a prepared prompt, an intermediate result or the final report.
 
 Logs and artifacts are different things, and the library keeps them apart.
@@ -371,7 +371,7 @@ What is built:
 | Step-numbered boundaries | STARTED, COMPLETE, FAILED and SKIPPED for every step, with elapsed time and an outcome |
 | Nested steps | Step numbers compose (3.2); an engine runs whole or inside another step unchanged |
 | Progress lines | Counts and identifiers between the boundaries, as named attributes on one clean record |
-| Artifacts | Self-describing files with derived, step-ordered names, handed to a host-owned callback |
+| Artifacts | Self-describing files with derived, step-ordered names, handed to a host-chosen sink |
 | Always persisted | Every artifact is kept in every environment; the role (interim or output) is information |
 | Emit before validate | Raw model output is saved before it is parsed, so a parse failure leaves its evidence |
 | Run folders | One folder per run, timestamp in the name, nothing overwritten |
@@ -383,10 +383,10 @@ What is built:
 | Retries and fan-out | A reopened work item or a step opened per page keeps every record |
 | OpenTelemetry fit | Attributes travel as standard `extra`; the library has no OpenTelemetry dependency |
 | Test helpers | A recording sink and a log capture for acceptance tests |
-| Local filesystem hosting | A sink, a run folder helper and a run log attachment, kept apart from the core |
+| Local filesystem hosting | A file-system sink, a run folder helper and a run log attachment, kept apart from the core |
 
 What the design leaves room for: restarting a run from a given step, a sequence number inside a
-step, ordered work item folders, trace ids, a blob storage sink and a C# twin (see
+step, ordered work item folders, trace ids, a production blob storage sink and a C# twin (see
 [what the design makes easy later](#what-the-design-makes-easy-later)).
 
 ## Design
@@ -408,7 +408,7 @@ methods, `step(step) -> StepScope` and `skipped(step, reason)`. A reusable engin
 inside another step.
 
 A scope travels **as an argument**. It replaces the four parameters every step used to take (logger,
-artifact callback, work item and step number), and it is never kept on a long-lived object.
+artifact sink, work item and step number), and it is never kept on a long-lived object.
 
 ### Step identity
 
@@ -525,12 +525,50 @@ FINAL_REPORT  = ArtifactKind("final_report", "md", "text/markdown", role=Artifac
   such as the manifest, belongs to the run. `Artifact` is their union, so a sink never meets an optional
   work item. Both expose `artifact_type`, `content_type`, `content` and `filename`.
 - An artifact derives its own filename, so no caller composes names.
-- The sink is `Callable[[Artifact], Awaitable[None]]`. A sink that raises is translated to
-  `ArtifactSinkError`, which carries the artifact's identity, so a storage outage does not read as a
-  failure in the pipeline's logic.
+- The sink is a class that implements `ArtifactSinkProtocol`, which has one method:
+  `async def persist(self, artifact: Artifact) -> None`. The application builds the sink and hands it
+  to `PipelineRun`. The library ships `FileSystemArtifactSink` and, for tests, `ArtifactRecorder`. The
+  demo adds `BlobStorageArtifactSink`, a stand-in for a storage container. The choice of a class over
+  a callback is explained in [the next section](#decision-how-the-host-receives-artifacts).
+- A sink that raises is translated to `ArtifactSinkError`, which carries the artifact's identity, so a
+  storage outage does not read as a failure in the pipeline's logic. An implementation raises whatever
+  error is natural for its destination, and the run does the wrapping.
 - Steps never know where a file lands. They call `emit`, and the host owns the sink.
 - **Emit before you validate.** Capture a raw model reply before parsing it, so that a parse failure
   leaves its evidence on disk.
+
+### Decision: how the host receives artifacts
+
+A step emits an artifact, and something the host controls has to persist it. The library needs one
+contract for that, and there are two reasonable shapes for it.
+
+**Option 1: a callback.** The host passes an async function, `Callable[[Artifact], Awaitable[None]]`.
+It is the smallest possible contract, and a lambda or a local function is enough for a test.
+
+**Option 2: a class that implements a protocol.** The host passes an object with one method,
+`persist(artifact)`, declared by `ArtifactSinkProtocol`. The file-system sink, the blob-storage sink and
+the in-memory test recorder are three classes with the same method.
+
+| | Callback | Class implementing a protocol |
+|---|---|---|
+| Lifetime and state | None of its own. A claimed-folder registry, a container client or a connection has to be captured in a closure or kept somewhere else. | The class owns that state and has a clear lifetime. |
+| Readability | A delegate type with no name for what it does. Finding the implementations means searching for a signature. | A named type with a named method. Implementations are found by name. |
+| Swapping | Possible, but the application swaps a function where it swaps every other service as an object. | The application replaces one implementation with another the way it replaces any service it composes. |
+| Testing | A lambda that appends to a list. | An in-memory implementation, `ArtifactRecorder`, with helper methods for assertions. |
+
+**Decision: the class.** Lifetime and state decided it. Every real sink keeps something between calls, so
+a callback would end up as a closure standing in for a class. The remaining rows point the same way, and
+the library already uses protocols for its other seams (`StepHostProtocol`, `ModelGatewayProtocol` and
+`ContextualExceptionProtocol`), so a sink follows the same convention.
+
+Consequences:
+
+- The library accepts only the protocol. Offering both forms would give the contract two ways to do one
+  thing, and every place that calls the sink would have to handle both.
+- The method name is `persist`, and the parameter on `PipelineRun` is `artifact_sink`, so the call site
+  names its type.
+- A sink raises whatever error is natural for its destination. `RunContext.persist` wraps it in
+  `ArtifactSinkError`, which keeps the artifact's identity.
 
 ### Run folder and manifest
 
@@ -549,20 +587,24 @@ sizes, and any failure.
 Host-side helpers (`FileSystemArtifactSink`, run folder creation, run log attachment) live in
 `pipeline_breadcrumbs.hosting`. The core knows no paths.
 
+A hosted run does not keep its artifacts in a run folder. The demo's blob stand-in names each artifact
+as a blob, `<run name>/<work item>/<filename>`, with the manifest directly under the run name. The
+filenames, and so the step order, are the same as in a local folder.
+
 ### Where the run happens: local and hosted
 
 The system behaves identically wherever it runs. The application around it decides two things, and
 only these two:
 
-1. **Where artifacts go.** The sink is the application's choice: the local disk while developing,
-   blob storage in production. Either one receives every artifact.
+1. **Where artifacts go.** The application picks the sink implementation: the file-system sink while
+   developing, a blob-storage sink in production. Either one receives every artifact.
 2. **Who listens to the log.** The application creates one logger, or is handed one by a calling
    application, and the system shares that single instance. Each destination is a handler with its own
    level.
 
 | | Local | Hosted |
 |---|---|---|
-| Artifacts | every one, to disk | every one, to the application's sink |
+| Artifacts | every one, to the file-system sink | every one, to the blob-storage sink |
 | Console or process log | informational and above | informational and above (the platform keeps it) |
 | `run.log` beside the artifacts | yes | no |
 | Application Insights | not attached | exceptions only, at error level |
@@ -590,7 +632,7 @@ fact it carries.
 ### Testing
 
 The tests are acceptance tests. Each one runs through a public entry point and checks what the system
-returned, the artifacts it handed to the callback and the breadcrumbs it logged. Only the model is
+returned, the artifacts it handed to the sink and the breadcrumbs it logged. Only the model is
 replaced. They follow the PWI guidance for functional acceptance testing at the boundary, using the
 Meridian tests as the reference: behavior-style names, Arrange, Act and Assert sections, `expected_` and
 `actual_` prefixes, and asserters that report every difference at once.
@@ -618,7 +660,7 @@ diagnosed by whether its file exists.
 | Artifacts always persisted | They are the record of what a step did, and a later run could start from them. | A production mode that keeps only outputs |
 | Role is information | Hosts can apply retention rules, such as colder storage for interim files. | Using the role as a filter |
 | Emit before validate | A malformed reply is the evidence you most need. | Emitting only after a successful parse |
-| The sink is a callback owned by the host | The pipeline never knows whether files go to disk or blob storage. | A storage path or client inside the steps |
+| The sink is a class that implements `ArtifactSinkProtocol` | A sink keeps state across calls, and a class owns it. The pipeline never knows whether files go to disk or blob storage. See [the decision](#decision-how-the-host-receives-artifacts). | A bare async callback; a storage path or client inside the steps |
 | Sink failures become `ArtifactSinkError` | A storage outage should not read as a bug in the pipeline's logic. | Letting the raw exception escape |
 | One folder per run, timestamp in the name | A repeat run never overwrites an earlier one. | A fixed output folder, cleaned by hand |
 | The manifest is built from immutable events | No record is edited after it is made. A retry or a per-page step keeps every opening. | Mutable records edited in place, which let a reopened id erase the first attempt |
@@ -673,7 +715,7 @@ Findings left open on purpose, because removing them would cost clarity more tha
   stateless.
 - `ArtifactSinkError` and `DocumentAnalysisError` accumulate contextual data as they propagate, the way
   the Meridian exception base does.
-- `StepScope` keeps its run context instead of receiving the artifact callback on every `emit`.
+- `StepScope` keeps its run context instead of receiving the artifact sink on every `emit`.
 
 Open: each emitted artifact logs one informational line. That is right for a local trail, and the
 manifest lists them all anyway. With hundreds of per-page artifacts per document, a host that sends
@@ -721,11 +763,13 @@ complete enough to resume from. It is not a rewrite.
   before the summary). A small change to how an artifact derives its name.
 - **Ordered work item folders**, if the processing order should show at the top of a run.
 - **Trace and span ids**, through the existing attribute seam on `PipelineRun`.
-- **A blob storage sink**, as another callable that takes an `Artifact`. Nothing else changes.
+- **A production blob storage sink**, as another class that implements `ArtifactSinkProtocol`, built on the
+  storage SDK's container client. The demo's `BlobStorageArtifactSink` already shows the shape. Nothing
+  else changes.
 - **Filtering the per-artifact log line** at an Application Insights handler.
 - **A C# twin.** Nothing here depends on Python: a frozen `Step`, `ArtifactKind` and artifact types, an
-  async sink delegate, a scope tree built on `IAsyncDisposable`, and `ILogger` message templates with
-  named properties, which is how Application Insights receives the same attributes. The articles and the
+  async sink interface (an `IArtifactSink` with `Task PersistAsync(Artifact artifact)`), a scope tree
+  built on `IAsyncDisposable`, and `ILogger` message templates with named properties, which is how Application Insights receives the same attributes. The articles and the
   two repositories will link to each other.
 
 ## The demo
@@ -735,6 +779,7 @@ levels of abstraction a real system has.
 
 ```
 main.py                           the application: chooses the sink and the log handlers, calls the system
+blob_storage_artifact_sink.py     a stand-in for blob storage: an ArtifactSinkProtocol implementation
 telemetry.py                      a stand-in for Application Insights that records exceptions only
 document_analysis/                the system
   document_analysis_manager.py    its entry point: validates, then sequences four processors
@@ -753,7 +798,7 @@ document_analysis/                the system
   gateways/                       the model gateway protocol, and a fake that sleeps instead of calling out
 ```
 
-- **The application is not the system.** `main.py` builds the artifact callback and the logger, opens the
+- **The application is not the system.** `main.py` chooses the artifact sink and builds the logger, opens the
   run and one work item per document, calls the system and logs a failure once at its outer boundary.
   It contains no steps.
 - **The manager has one public method that only sequences.** It passes each processor's result to the next
@@ -767,8 +812,9 @@ document_analysis/                the system
   sleeps instead of calling out. Non-model processors call `SimulatedWork`. Both mark where real work
   would go. Model processors log the way real ones do: a start line, progress lines with counts and
   identifiers, the raw reply emitted before it is validated, and a closing outcome.
-- **Two hosts.** `--host local` is the default and writes a run log. `--host hosted` sends only exceptions
-  to telemetry. Both persist every artifact.
+- **Two hosts.** `--host local` is the default. It writes a run log and hands the system the file-system
+  sink. `--host hosted` hands it the blob-storage stand-in and sends only exceptions to telemetry. Both
+  persist every artifact.
 
 ```bash
 uv run pipeline_breadcrumbs_app                       # local: a clean run of two documents

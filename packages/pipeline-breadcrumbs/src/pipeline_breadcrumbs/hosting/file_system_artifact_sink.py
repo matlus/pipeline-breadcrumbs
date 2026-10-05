@@ -2,15 +2,15 @@
 
 import asyncio
 from pathlib import Path
-from typing import final
+from typing import final, override
 
-from pipeline_breadcrumbs.artifacts import Artifact, RunArtifact
+from pipeline_breadcrumbs.artifacts import Artifact, ArtifactSinkProtocol, RunArtifact
 from pipeline_breadcrumbs.hosting.paths import safe_path_component
 from pipeline_breadcrumbs.work_items import WorkItem
 
 
 @final
-class FileSystemArtifactSink:
+class FileSystemArtifactSink(ArtifactSinkProtocol):
     """Writes each artifact under the run directory, in a folder per work item.
 
     ```
@@ -36,7 +36,8 @@ class FileSystemArtifactSink:
         self._run_directory: Path = run_directory
         self._work_item_id_by_folder: dict[str, str] = {}
 
-    async def __call__(self, artifact: Artifact) -> None:
+    @override
+    async def persist(self, artifact: Artifact) -> None:
         target: Path = self._target_path(artifact)
         await asyncio.to_thread(self._write, target, artifact.content)
 

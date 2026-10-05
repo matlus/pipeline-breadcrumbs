@@ -2,7 +2,7 @@
 
     PipelineRun -> WorkItemScope -> StepScope -> child StepScope ...
 
-A scope travels as an argument. It replaces the logger, the artifact callback, the work
+A scope travels as an argument. It replaces the logger, the artifact sink, the work
 item and the step number that every step used to receive separately, and it is never
 stored on a long-lived object.
 

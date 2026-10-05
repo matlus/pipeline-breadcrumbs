@@ -40,6 +40,11 @@ class AsserterRunFolder:
         return sorted(actual_entry.name for actual_entry in actual_folder.iterdir())
 
     @staticmethod
+    def list_blob_names(actual_container: Path) -> list[str]:
+        """Every blob in a container folder, named by its path from the container root with forward slashes."""
+        return sorted(actual_file.relative_to(actual_container).as_posix() for actual_file in actual_container.rglob("*") if actual_file.is_file())
+
+    @staticmethod
     def read_step_paths_from_filenames(actual_filenames: list[str]) -> list[tuple[int, ...]]:
         """The step path each filename carries after its work item name, such as `_step_03.02_` read as (3, 2)."""
         actual_step_paths: list[tuple[int, ...]] = []
