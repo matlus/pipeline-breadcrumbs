@@ -1,0 +1,14 @@
+{
+  "version": "0.2.0",
+  "configurations": [
+    {
+      "name": "Pipeline Breadcrumbs App",
+      "type": "debugpy",
+      "request": "launch",
+      "program": "${workspaceFolder}/apps/pipeline-breadcrumbs-app/src/pipeline_breadcrumbs_app/entry_point.py",
+      "console": "integratedTerminal",
+      "cwd": "${workspaceFolder}",
+      "envFile": "${workspaceFolder}/.env"
+    }
+  ]
+}

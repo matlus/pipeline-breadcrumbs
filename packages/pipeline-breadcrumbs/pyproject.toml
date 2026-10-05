@@ -1,0 +1,33 @@
+[build-system]
+requires = ["setuptools>=61.0", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "pipeline-breadcrumbs"
+version = "0.1.0"
+description = "Step-numbered progress logs and ordered artifacts for long-running pipelines."
+readme = "README.md"
+requires-python = ">=3.14"
+license = "MIT"
+authors = [{ name = "Shiv Kumar" }]
+dependencies = []
+
+[tool.setuptools.packages.find]
+where = ["src"]
+include = ["pipeline_breadcrumbs*"]
+namespaces = false
+
+[tool.setuptools.package-data]
+"pipeline_breadcrumbs" = ["py.typed"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+python_files = ["test_*.py"]
+python_classes = ["Test*"]
+python_functions = ["test_*"]
+asyncio_mode = "auto"
+addopts = "-ra --strict-config --strict-markers --import-mode=importlib"
+pythonpath = ["src", "tests"]
+markers = [
+    "acceptance: a functional acceptance test that runs through the system's public boundary",
+]

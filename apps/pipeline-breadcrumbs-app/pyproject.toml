@@ -1,0 +1,41 @@
+[build-system]
+requires = ["setuptools>=61.0", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "pipeline-breadcrumbs-app"
+version = "0.1.0"
+description = "A runnable, offline demo of the Pipeline Breadcrumbs library."
+readme = "README.md"
+requires-python = ">=3.14"
+license = "MIT"
+authors = [{ name = "Shiv Kumar" }]
+dependencies = [
+    "pipeline-breadcrumbs",
+]
+
+[tool.uv.sources]
+pipeline-breadcrumbs = { workspace = true }
+
+[project.scripts]
+pipeline_breadcrumbs_app = "pipeline_breadcrumbs_app.main:main"
+
+[tool.setuptools.packages.find]
+where = ["src"]
+include = ["pipeline_breadcrumbs_app*"]
+namespaces = false
+
+[tool.setuptools.package-data]
+"pipeline_breadcrumbs_app" = ["py.typed"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+python_files = ["test_*.py"]
+python_classes = ["Test*"]
+python_functions = ["test_*"]
+asyncio_mode = "auto"
+addopts = "-ra --strict-config --strict-markers --import-mode=importlib"
+pythonpath = ["src", "tests", "../../packages/pipeline-breadcrumbs/src", "../../packages/pipeline-breadcrumbs/tests"]
+markers = [
+    "acceptance: a functional acceptance test that runs through the system's public boundary",
+]
