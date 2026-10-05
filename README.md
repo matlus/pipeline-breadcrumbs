@@ -173,3 +173,11 @@ uv run --all-packages --all-groups pytest -q
 
 The Python library and demo are built and tested. A C# equivalent is planned for this
 repository. Articles that explain the practice will be linked here when they are published.
+
+## Teaching article
+
+[Pipeline Breadcrumbs](https://matlus.com/writing/pipeline-breadcrumbs/) explains
+how numbered steps, progress logs, artifacts and a run manifest help people and
+coding assistants investigate failed runs and incorrect results. It includes a
+runnable example and the reasoning behind the sink-class design. The setup
+commands pin the source revision used by the examples.
