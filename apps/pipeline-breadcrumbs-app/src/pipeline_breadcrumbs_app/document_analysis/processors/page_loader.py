@@ -23,7 +23,7 @@ class PageLoader:
         page_text: str
         for page_number, page_text in enumerate(pages):
             # A real pipeline renders each PDF page to an image and extracts its text here.
-            await self._simulated_work.take_time()
+            await self._simulated_work.simulate_processing()
             step_scope.info("Loaded page", page=page_number, characters=len(page_text))
             await step_scope.emit(PAGE_TEXT, page_text.encode("utf-8"), discriminator=page_discriminator(page_number))
             loaded_pages.append(page_text)

@@ -48,7 +48,7 @@ class AsserterManifest:
         AsserterManifest._compare(
             "work item names",
             [expected_work_item.name for expected_work_item in expected_manifest.work_item_records],
-            [actual_work_item["name"] for actual_work_item in actual_work_item_records],
+            [actual_work_item["work_item_name"] for actual_work_item in actual_work_item_records],
             assertion_failures,
         )
         for expected_work_item, actual_work_item in zip(expected_manifest.work_item_records, actual_work_item_records, strict=False):
@@ -70,7 +70,7 @@ class AsserterManifest:
         AsserterManifest._compare(
             f"{label} step paths",
             [expected_step.path for expected_step in expected_work_item.step_records],
-            [actual_step["path"] for actual_step in actual_step_records],
+            [actual_step["step_path"] for actual_step in actual_step_records],
             assertion_failures,
         )
         for expected_step, actual_step in zip(expected_work_item.step_records, actual_step_records, strict=False):

@@ -24,7 +24,7 @@ class PromptBuilder:
         classification_prompts: list[ClassificationPrompt] = []
         for detected_section in detected_sections:
             # A real processor merges the section's text into a prompt template loaded from a prompt file.
-            await self._simulated_work.take_time()
+            await self._simulated_work.simulate_processing()
             prompt_text: str = f"Classify the section titled '{detected_section.title}' on page {detected_section.page_number} into one category."
             classification_prompts.append(ClassificationPrompt(detected_section.page_number, detected_section.title, prompt_text))
         return classification_prompts

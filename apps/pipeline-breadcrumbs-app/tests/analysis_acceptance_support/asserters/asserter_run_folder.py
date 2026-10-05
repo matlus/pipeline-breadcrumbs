@@ -28,7 +28,7 @@ class AsserterRunFolder:
     ) -> None:
         actual_work_item: Mapping[str, Any] = AsserterRunFolder.find_work_item(work_item_name, actual_manifest)
         actual_step_status_by_path: dict[str, str] = {
-            actual_step["path"]: actual_step["step_status"] for actual_step in actual_work_item["step_records"]
+            actual_step["step_path"]: actual_step["step_status"] for actual_step in actual_work_item["step_records"]
         }
         expected_step_statuses: dict[str, str] = dict(expected_step_status_by_path)
         assert expected_step_statuses == actual_step_status_by_path, (
@@ -63,4 +63,6 @@ class AsserterRunFolder:
 
     @staticmethod
     def find_work_item(work_item_name: str, actual_manifest: Mapping[str, Any]) -> dict[str, Any]:
-        return next(actual_work_item for actual_work_item in actual_manifest["work_item_records"] if actual_work_item["name"] == work_item_name)
+        return next(
+            actual_work_item for actual_work_item in actual_manifest["work_item_records"] if actual_work_item["work_item_name"] == work_item_name
+        )

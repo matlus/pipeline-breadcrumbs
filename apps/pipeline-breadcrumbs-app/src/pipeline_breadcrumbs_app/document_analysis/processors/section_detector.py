@@ -15,11 +15,11 @@ MAX_CONCURRENCY: Final[int] = 3
 
 
 class SectionDetector:
-    def __init__(self, model_gateway: ModelGatewayProtocol) -> None:
-        self._model_gateway: ModelGatewayProtocol = model_gateway
+    def __init__(self, model_gateway_protocol: ModelGatewayProtocol) -> None:
+        self._model_gateway_protocol: ModelGatewayProtocol = model_gateway_protocol
 
-    async def detect(self, step_host: StepHostProtocol, pages: list[str]) -> list[DetectedSection]:
-        async with step_host.step(DETECT_SECTIONS) as step_scope:
+    async def detect(self, step_host_protocol: StepHostProtocol, pages: list[str]) -> list[DetectedSection]:
+        async with step_host_protocol.step(DETECT_SECTIONS) as step_scope:
             step_scope.info("Detecting sections", pages=len(pages), concurrency=MAX_CONCURRENCY)
             page_outcomes: list[DetectedSection | BaseException] = await self._detect_all_pages(step_scope, pages)
             detected_sections: list[DetectedSection] = self._sections_or_first_failure(page_outcomes)
@@ -38,7 +38,7 @@ class SectionDetector:
         async with page_semaphore:
             step_scope.info("Calling the model", page=page_number)
             # A real processor sends the page and its prompt to the model here.
-            raw_reply: str = await self._model_gateway.detect_section(page_number, page_text)
+            raw_reply: str = await self._model_gateway_protocol.detect_section(page_number, page_text)
             # Emit before validating: if parsing fails, the raw reply is already on disk.
             await step_scope.emit(RAW_DETECTION_RESPONSE, raw_reply.encode("utf-8"), discriminator=page_discriminator(page_number))
             detected_section: DetectedSection = self._parse(page_number, raw_reply)
@@ -47,7 +47,6 @@ class SectionDetector:
 
     @staticmethod
     def _sections_or_first_failure(page_outcomes: list[DetectedSection | BaseException]) -> list[DetectedSection]:
-        # Every page ran, so every raw reply is on disk; then the first failure, in page order, ends the step.
         detected_sections: list[DetectedSection] = []
         for page_outcome in page_outcomes:
             if isinstance(page_outcome, BaseException):

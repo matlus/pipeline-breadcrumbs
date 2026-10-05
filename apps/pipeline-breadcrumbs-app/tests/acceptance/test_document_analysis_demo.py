@@ -42,17 +42,22 @@ class TestDemoRunExpectedPaths:
         actual_manifest: dict[str, Any] = AsserterRunFolder.read_manifest(actual_demo_result.run_directory)
         actual_lease: dict[str, Any] = AsserterRunFolder.find_work_item("Lease 4.pdf", actual_manifest)
         actual_contract: dict[str, Any] = AsserterRunFolder.find_work_item("Contract 12.pdf", actual_manifest)
-        assert {actual_step["path"]: actual_step["step_status"] for actual_step in actual_lease["step_records"]}["3.3"] == "SKIPPED"
+        assert {actual_step["step_path"]: actual_step["step_status"] for actual_step in actual_lease["step_records"]}["3.3"] == "SKIPPED"
         assert not any("reconciled_scores" in actual_artifact["filename"] for actual_artifact in actual_lease["artifact_records"])
         assert any("reconciled_scores" in actual_artifact["filename"] for actual_artifact in actual_contract["artifact_records"])
 
     async def test_run_demo_WhenTheRunFinishes_ThenTheRunFolderHoldsTheLogTheManifestAndAFolderPerWorkItem(self, tmp_path: Path) -> None:
-        # Arrange / Act
+        # Arrange
+        expected_work_item_folder_name: str = "Contract 12"
+
+        # Act
         actual_demo_result: DemoResult = await run_demo(tmp_path, time_display=TimeDisplay.NONE, pace_seconds=NO_DELAY_SECONDS)
 
         # Assert
-        AsserterRunFolder.assert_exactly_these_entries({"run.log", "manifest.json", "Contract 12", "Lease 4"}, actual_demo_result.run_directory)
-        actual_contract_folder: Path = actual_demo_result.run_directory / "Contract 12"
+        AsserterRunFolder.assert_exactly_these_entries(
+            {"run.log", "manifest.json", expected_work_item_folder_name, "Lease 4"}, actual_demo_result.run_directory
+        )
+        actual_contract_folder: Path = actual_demo_result.run_directory / expected_work_item_folder_name
         assert (actual_contract_folder / "Contract 12_step_04_analysis_report.md").read_text(encoding="utf-8").startswith("# Section analysis")
         assert (actual_contract_folder / "Contract 12_step_01_page_text_page_0000.txt").exists()
         assert (actual_contract_folder / "Contract 12_step_02_raw_detection_response_page_0003.txt").exists()
@@ -98,14 +103,17 @@ class TestDemoRunExpectedPaths:
         assert actual_first_document_boundaries == expected_first_document_boundaries
 
     async def test_run_demo_WhenTheSameDemoRunsTwice_ThenEachRunKeepsItsOwnFolder(self, tmp_path: Path) -> None:
-        # Arrange / Act
+        # Arrange
+        expected_manifest_filename: str = "manifest.json"
+
+        # Act
         actual_first_result: DemoResult = await run_demo(tmp_path, time_display=TimeDisplay.NONE, pace_seconds=NO_DELAY_SECONDS)
         actual_second_result: DemoResult = await run_demo(tmp_path, time_display=TimeDisplay.NONE, pace_seconds=NO_DELAY_SECONDS)
 
         # Assert
         assert actual_first_result.run_directory != actual_second_result.run_directory
-        assert (actual_first_result.run_directory / "manifest.json").exists()
-        assert (actual_second_result.run_directory / "manifest.json").exists()
+        assert (actual_first_result.run_directory / expected_manifest_filename).exists()
+        assert (actual_second_result.run_directory / expected_manifest_filename).exists()
 
 
 @pytest.mark.acceptance
@@ -113,6 +121,7 @@ class TestDemoRunFailures:
     async def test_run_demo_WhenAModelReplyIsMalformed_ThenOnlyThatDocumentFailsAndTheEvidenceIsKept(self, tmp_path: Path) -> None:
         # Arrange
         malformed_page_number: int = 2
+        expected_failed_work_item_name: str = "Contract 12.pdf"
 
         # Act
         actual_demo_result: DemoResult = await run_demo(
@@ -120,11 +129,11 @@ class TestDemoRunFailures:
         )
 
         # Assert
-        assert actual_demo_result.failed_work_items == ["Contract 12.pdf"]
+        assert actual_demo_result.failed_work_items == [expected_failed_work_item_name]
         actual_manifest: dict[str, Any] = AsserterRunFolder.read_manifest(actual_demo_result.run_directory)
         assert actual_manifest["run_status"] == "FAILED"
-        AsserterRunFolder.assert_step_statuses({"1": "COMPLETE", "2": "FAILED"}, "Contract 12.pdf", actual_manifest)
-        actual_contract: dict[str, Any] = AsserterRunFolder.find_work_item("Contract 12.pdf", actual_manifest)
+        AsserterRunFolder.assert_step_statuses({"1": "COMPLETE", "2": "FAILED"}, expected_failed_work_item_name, actual_manifest)
+        actual_contract: dict[str, Any] = AsserterRunFolder.find_work_item(expected_failed_work_item_name, actual_manifest)
         assert actual_contract["work_item_status"] == "FAILED"
         assert "ModelResponseParseError" in actual_contract["failure"]
         # Emit-before-validate: all four raw replies, including the malformed one, are on disk beside the replies that parsed.

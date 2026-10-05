@@ -44,31 +44,31 @@ class PipelineRun:
     def __init__(
         self,
         *,
-        name: str,
+        pipeline_name: str,
         sink: ArtifactSink,
         logger: logging.Logger | None = None,
         attributes: Mapping[str, AttributeValue] | None = None,
         clock: Clock | None = None,
     ) -> None:
-        if not name.strip():
+        if not pipeline_name.strip():
             raise ValueError("A pipeline run needs a name, such as 'invoice-field-extraction'")
-        resolved_clock: Clock = clock or Clock.system()
+        resolved_clock: Clock = clock or Clock.create_system_clock()
         caller_attributes: AttributeBag = dict(attributes or {})
         reserved_names: frozenset[str] = _RESERVED_RECORD_ATTRIBUTES.intersection(caller_attributes)
         if reserved_names:
             raise ValueError(f"Run attributes may not use reserved logging attribute names: {sorted(reserved_names)}")
         self._run_id: str = f"{resolved_clock.now():%Y%m%d_%H%M%S}_{uuid4().hex[:8]}"
-        self._name: str = name
+        self._pipeline_name: str = pipeline_name
         self._run_context: RunContext = RunContext(
             sink=sink,
             logger=logger or logging.getLogger(DEFAULT_LOGGER_NAME),
             base_attributes={
                 **caller_attributes,
-                AttributeKey.PIPELINE_NAME: name,
+                AttributeKey.PIPELINE_NAME: pipeline_name,
                 AttributeKey.RUN_ID: self._run_id,
             },
             clock=resolved_clock,
-            run_recorder=RunRecorder(pipeline_name=name, run_id=self._run_id),
+            run_recorder=RunRecorder(pipeline_name=pipeline_name, run_id=self._run_id),
         )
         self._started: float = 0.0
         self._started_at: datetime = resolved_clock.now()
@@ -82,7 +82,7 @@ class PipelineRun:
         self._started_at = self._run_context.clock.now()
         self._run_context.log(
             logging.INFO,
-            f"Run {self._run_id} of {self._name} started",
+            f"Run {self._run_id} of {self._pipeline_name} started",
             self._boundary_attributes(StepStatus.STARTED),
         )
         return self
@@ -93,7 +93,7 @@ class PipelineRun:
         self._log_run_finished(elapsed_seconds, run_status)
         await self._emit_manifest(elapsed_seconds, run_status, original_error=exc)
 
-    def work_item(self, work_item: WorkItem) -> WorkItemScope:
+    def open_work_item(self, work_item: WorkItem) -> WorkItemScope:
         """Open a work item on this run."""
         return WorkItemScope(self._run_context, work_item)
 
@@ -111,7 +111,7 @@ class PipelineRun:
         level: int = logging.WARNING if run_status is StepStatus.FAILED else logging.INFO
         self._run_context.log(
             level,
-            f"Run {self._run_id} of {self._name} {run_status.value.lower()} in {format_elapsed(elapsed_seconds)}: {summary}",
+            f"Run {self._run_id} of {self._pipeline_name} {run_status.value.lower()} in {format_elapsed(elapsed_seconds)}: {summary}",
             attributes,
         )
 
@@ -122,7 +122,7 @@ class PipelineRun:
         }
 
     async def _emit_manifest(self, elapsed_seconds: float, run_status: StepStatus, *, original_error: BaseException | None) -> None:
-        content: bytes = self._run_context.run_recorder.serialize(
+        content: bytes = self._run_context.run_recorder.serialize_manifest(
             started_at=self._started_at,
             finished_at=self._run_context.clock.now(),
             elapsed_seconds=elapsed_seconds,

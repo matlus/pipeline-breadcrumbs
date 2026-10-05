@@ -34,19 +34,23 @@ class TestStepBoundaries:
         # Arrange
         work_item: WorkItem = create_random_work_item()
         expected_elapsed_seconds: float = 2.5
-        pipeline_run: PipelineRun = PipelineRun(name="demo", sink=artifact_recorder, logger=run_logger, clock=clock_testing.clock)
+        expected_step_number: str = "1"
+        pipeline_run: PipelineRun = PipelineRun(pipeline_name="demo", sink=artifact_recorder, logger=run_logger, clock=clock_testing.clock)
 
         # Act
-        async with pipeline_run, pipeline_run.work_item(work_item) as work_item_scope, work_item_scope.step(PAGE_IMAGE_EXTRACTION):
+        async with pipeline_run, pipeline_run.open_work_item(work_item) as work_item_scope, work_item_scope.step(PAGE_IMAGE_EXTRACTION):
             clock_testing.advance(expected_elapsed_seconds)
 
         # Assert
         AsserterStepBoundaries.assert_exactly_these_step_boundaries(
-            [ExpectedStepBoundary("1", "STARTED"), ExpectedStepBoundary("1", "COMPLETE", elapsed_seconds=expected_elapsed_seconds)],
+            [
+                ExpectedStepBoundary(expected_step_number, "STARTED"),
+                ExpectedStepBoundary(expected_step_number, "COMPLETE", elapsed_seconds=expected_elapsed_seconds),
+            ],
             record_capture.records,
         )
         actual_completion_record: logging.LogRecord = record_capture.boundaries(EventKind.STEP)[-1]
-        expected_message: str = "Step 1 Page Image Extraction complete in 2.500s"
+        expected_message: str = f"Step {expected_step_number} Page Image Extraction complete in 2.500s"
         assert actual_completion_record.getMessage() == expected_message
         assert RecordCapture.attribute(actual_completion_record, AttributeKey.STEP_KEY) == "page_image_extraction"
 
@@ -55,10 +59,10 @@ class TestStepBoundaries:
     ) -> None:
         # Arrange
         work_item: WorkItem = create_random_work_item()
-        pipeline_run: PipelineRun = PipelineRun(name="demo", sink=artifact_recorder, logger=run_logger)
+        pipeline_run: PipelineRun = PipelineRun(pipeline_name="demo", sink=artifact_recorder, logger=run_logger)
 
         # Act
-        async with pipeline_run, pipeline_run.work_item(work_item) as work_item_scope, work_item_scope.step(METADATA_AUDIT) as step_scope:
+        async with pipeline_run, pipeline_run.open_work_item(work_item) as work_item_scope, work_item_scope.step(METADATA_AUDIT) as step_scope:
             step_scope.outcome("Found 5 write-up starts", starts=5)
 
         # Assert
@@ -73,12 +77,14 @@ class TestStepBoundaries:
     ) -> None:
         # Arrange
         work_item: WorkItem = create_random_work_item()
-        pipeline_run: PipelineRun = PipelineRun(name="demo", sink=artifact_recorder, logger=run_logger)
+        expected_parent_step_number: str = "3"
+        expected_child_step_number: str = "3.2"
+        pipeline_run: PipelineRun = PipelineRun(pipeline_name="demo", sink=artifact_recorder, logger=run_logger)
 
         # Act
         async with (
             pipeline_run,
-            pipeline_run.work_item(work_item) as work_item_scope,
+            pipeline_run.open_work_item(work_item) as work_item_scope,
             work_item_scope.step(CLASSIFICATION) as parent_step_scope,
             parent_step_scope.step(SCORE_SECTIONS) as child_step_scope,
         ):
@@ -87,10 +93,10 @@ class TestStepBoundaries:
         # Assert
         AsserterStepBoundaries.assert_exactly_these_step_boundaries(
             [
-                ExpectedStepBoundary("3", "STARTED"),
-                ExpectedStepBoundary("3.2", "STARTED"),
-                ExpectedStepBoundary("3.2", "COMPLETE"),
-                ExpectedStepBoundary("3", "COMPLETE"),
+                ExpectedStepBoundary(expected_parent_step_number, "STARTED"),
+                ExpectedStepBoundary(expected_child_step_number, "STARTED"),
+                ExpectedStepBoundary(expected_child_step_number, "COMPLETE"),
+                ExpectedStepBoundary(expected_parent_step_number, "COMPLETE"),
             ],
             record_capture.records,
         )
@@ -103,10 +109,10 @@ class TestStepBoundaries:
     ) -> None:
         # Arrange
         work_item: WorkItem = create_random_work_item()
-        pipeline_run: PipelineRun = PipelineRun(name="demo", sink=artifact_recorder, logger=run_logger)
+        pipeline_run: PipelineRun = PipelineRun(pipeline_name="demo", sink=artifact_recorder, logger=run_logger)
 
         # Act
-        async with pipeline_run, pipeline_run.work_item(work_item) as work_item_scope, work_item_scope.step(CLASSIFICATION) as parent_step_scope:
+        async with pipeline_run, pipeline_run.open_work_item(work_item) as work_item_scope, work_item_scope.step(CLASSIFICATION) as parent_step_scope:
             parent_step_scope.skipped(RECONCILE_SCORES, "no low-confidence sections")
 
         # Assert
@@ -124,14 +130,15 @@ class TestProgressLinesAndAttributes:
     ) -> None:
         # Arrange
         work_item: WorkItem = create_random_work_item()
-        pipeline_run: PipelineRun = PipelineRun(name="demo", sink=artifact_recorder, logger=run_logger)
+        expected_progress_message: str = "Auditing metadata"
+        pipeline_run: PipelineRun = PipelineRun(pipeline_name="demo", sink=artifact_recorder, logger=run_logger)
 
         # Act
-        async with pipeline_run, pipeline_run.work_item(work_item) as work_item_scope, work_item_scope.step(METADATA_AUDIT) as step_scope:
-            step_scope.info("Auditing metadata", pages=14, concurrency=5)
+        async with pipeline_run, pipeline_run.open_work_item(work_item) as work_item_scope, work_item_scope.step(METADATA_AUDIT) as step_scope:
+            step_scope.info(expected_progress_message, pages=14, concurrency=5)
 
         # Assert
-        actual_progress_record: logging.LogRecord = _find_record(record_capture.records, "Auditing metadata")
+        actual_progress_record: logging.LogRecord = _find_record(record_capture.records, expected_progress_message)
         assert RecordCapture.attribute(actual_progress_record, f"{AttributeKey.DETAIL_PREFIX}pages") == 14
         assert RecordCapture.attribute(actual_progress_record, f"{AttributeKey.DETAIL_PREFIX}concurrency") == 5
         assert AttributeKey.EVENT not in actual_progress_record.__dict__
@@ -141,14 +148,15 @@ class TestProgressLinesAndAttributes:
     ) -> None:
         # Arrange
         work_item: WorkItem = create_random_work_item()
-        pipeline_run: PipelineRun = PipelineRun(name="demo", sink=artifact_recorder, logger=run_logger)
+        expected_progress_message: str = "Reading"
+        pipeline_run: PipelineRun = PipelineRun(pipeline_name="demo", sink=artifact_recorder, logger=run_logger)
 
         # Act - `name`, `message` and `filename` are LogRecord attributes the standard library refuses as `extra` keys
-        async with pipeline_run, pipeline_run.work_item(work_item) as work_item_scope, work_item_scope.step(METADATA_AUDIT) as step_scope:
-            step_scope.info("Reading", name="Contract 12", message="x", filename="a.pdf")
+        async with pipeline_run, pipeline_run.open_work_item(work_item) as work_item_scope, work_item_scope.step(METADATA_AUDIT) as step_scope:
+            step_scope.info(expected_progress_message, name="Contract 12", message="x", filename="a.pdf")
 
         # Assert
-        actual_progress_record: logging.LogRecord = _find_record(record_capture.records, "Reading")
+        actual_progress_record: logging.LogRecord = _find_record(record_capture.records, expected_progress_message)
         assert RecordCapture.attribute(actual_progress_record, f"{AttributeKey.DETAIL_PREFIX}name") == "Contract 12"
 
     async def test_PipelineRun_WhenCallerAttributesAreGiven_ThenEveryRecordCarriesThem(
@@ -157,17 +165,20 @@ class TestProgressLinesAndAttributes:
         # Arrange
         work_item: WorkItem = create_random_work_item()
         expected_trace_id: str = "abc123"
-        pipeline_run: PipelineRun = PipelineRun(name="demo", sink=artifact_recorder, logger=run_logger, attributes={"trace_id": expected_trace_id})
+        trace_id_attribute_name: str = "trace_id"
+        pipeline_run: PipelineRun = PipelineRun(
+            pipeline_name="demo", sink=artifact_recorder, logger=run_logger, attributes={trace_id_attribute_name: expected_trace_id}
+        )
 
         # Act
-        async with pipeline_run, pipeline_run.work_item(work_item) as work_item_scope, work_item_scope.step(METADATA_AUDIT) as step_scope:
+        async with pipeline_run, pipeline_run.open_work_item(work_item) as work_item_scope, work_item_scope.step(METADATA_AUDIT) as step_scope:
             step_scope.info("Working")
             await step_scope.emit(PAGE_EVIDENCE, b"{}")
 
         # Assert
         assert record_capture.records
         for actual_log_record in record_capture.records:
-            assert RecordCapture.attribute(actual_log_record, "trace_id") == expected_trace_id
+            assert RecordCapture.attribute(actual_log_record, trace_id_attribute_name) == expected_trace_id
             assert RecordCapture.attribute(actual_log_record, AttributeKey.PIPELINE_NAME) == "demo"
             assert RecordCapture.attribute(actual_log_record, AttributeKey.RUN_ID) == pipeline_run.run_id
 
@@ -176,10 +187,10 @@ class TestProgressLinesAndAttributes:
     ) -> None:
         # Arrange
         work_item: WorkItem = create_random_work_item()
-        pipeline_run: PipelineRun = PipelineRun(name="demo", sink=artifact_recorder, logger=run_logger)
+        pipeline_run: PipelineRun = PipelineRun(pipeline_name="demo", sink=artifact_recorder, logger=run_logger)
 
         # Act
-        async with pipeline_run, pipeline_run.work_item(work_item) as work_item_scope, work_item_scope.step(METADATA_AUDIT):
+        async with pipeline_run, pipeline_run.open_work_item(work_item) as work_item_scope, work_item_scope.step(METADATA_AUDIT):
             pass
 
         # Assert
@@ -190,9 +201,9 @@ class TestProgressLinesAndAttributes:
     def test_PipelineRun_WhenCallerAttributesShadowALogRecordAttribute_ThenTheRunIsRefused(self, artifact_recorder: ArtifactRecorder) -> None:
         # Arrange / Act / Assert
         with pytest.raises(ValueError, match="reserved logging attribute names"):
-            PipelineRun(name="demo", sink=artifact_recorder, attributes={"name": "x"})
+            PipelineRun(pipeline_name="demo", sink=artifact_recorder, attributes={"name": "x"})
 
     def test_PipelineRun_WhenTheNameIsBlank_ThenTheRunIsRefused(self, artifact_recorder: ArtifactRecorder) -> None:
         # Arrange / Act / Assert
         with pytest.raises(ValueError, match="needs a name"):
-            PipelineRun(name=" ", sink=artifact_recorder)
+            PipelineRun(pipeline_name=" ", sink=artifact_recorder)

@@ -47,11 +47,11 @@ class StepHostProtocol(Protocol):
     def skipped(self, step: Step, reason: str) -> None: ...
 
 
-def _detail_attributes(fields: Mapping[str, AttributeValue]) -> AttributeBag:
+def _detail_attributes(attribute_values_by_field_name: Mapping[str, AttributeValue]) -> AttributeBag:
     detail_attributes: AttributeBag = {}
     field_name: str
     field_value: AttributeValue
-    for field_name, field_value in fields.items():
+    for field_name, field_value in attribute_values_by_field_name.items():
         detail_attributes[detail_key(field_name)] = field_value
     return detail_attributes
 
@@ -84,7 +84,7 @@ class WorkItemScope:
 
     async def __aenter__(self) -> Self:
         self._started = self._run_context.clock.monotonic()
-        self._run_context.run_recorder.record(
+        self._run_context.run_recorder.record_run_event(
             WorkItemOpened(
                 work_item_id=self._work_item.id,
                 work_item_name=self._work_item.name,
@@ -106,15 +106,13 @@ class WorkItemScope:
         self._fail(elapsed_seconds, exc)
 
     def step(self, step: Step) -> StepScope:
-        """Open a top-level step of the pipeline on this work item."""
         return StepScope(self._run_context, self, StepPath().child(step.step_number), step)
 
     def skipped(self, step: Step, reason: str) -> None:
-        """Record that a top-level step did not run, and why."""
         _record_skipped(self._run_context, self, StepPath().child(step.step_number), step, reason)
 
     def _complete(self, elapsed_seconds: float) -> None:
-        self._run_context.run_recorder.record(
+        self._run_context.run_recorder.record_run_event(
             WorkItemClosed(
                 work_item_id=self._work_item.id,
                 work_item_status=StepStatus.COMPLETE,
@@ -127,7 +125,7 @@ class WorkItemScope:
         self._run_context.log(logging.INFO, f"Work item {self._work_item.name} complete in {format_elapsed(elapsed_seconds)}", attributes)
 
     def _fail(self, elapsed_seconds: float, exc: BaseException) -> None:
-        self._run_context.run_recorder.record(
+        self._run_context.run_recorder.record_run_event(
             WorkItemClosed(
                 work_item_id=self._work_item.id,
                 work_item_status=StepStatus.FAILED,
@@ -159,14 +157,14 @@ def _step_attributes(work_item_scope: WorkItemScope, step_path: StepPath, step: 
 
 
 def _record_skipped(run_context: RunContext, work_item_scope: WorkItemScope, step_path: StepPath, step: Step, reason: str) -> None:
-    run_context.run_recorder.record(
+    run_context.run_recorder.record_run_event(
         StepRecorded(
             work_item_id=work_item_scope.work_item.id,
             step_instance_id=uuid4().hex,
             step_record=StepRecord(
-                path=str(step_path),
-                key=step.key,
-                name=step.name,
+                step_path=str(step_path),
+                step_key=step.key,
+                step_name=step.name,
                 step_status=StepStatus.SKIPPED,
                 started_at=run_context.clock.now().isoformat(),
                 outcome=reason,
@@ -208,14 +206,14 @@ class StepScope:
 
     async def __aenter__(self) -> Self:
         self._started = self._run_context.clock.monotonic()
-        self._run_context.run_recorder.record(
+        self._run_context.run_recorder.record_run_event(
             StepRecorded(
                 work_item_id=self._work_item_scope.work_item.id,
                 step_instance_id=self._step_instance_id,
                 step_record=StepRecord(
-                    path=str(self._step_path),
-                    key=self._step.key,
-                    name=self._step.name,
+                    step_path=str(self._step_path),
+                    step_key=self._step.key,
+                    step_name=self._step.name,
                     step_status=StepStatus.STARTED,
                     started_at=self._run_context.clock.now().isoformat(),
                 ),
@@ -240,7 +238,6 @@ class StepScope:
         return StepScope(self._run_context, self._work_item_scope, self._step_path.child(step.step_number), step)
 
     def skipped(self, step: Step, reason: str) -> None:
-        """Record that a child step did not run, and why."""
         _record_skipped(self._run_context, self._work_item_scope, self._step_path.child(step.step_number), step, reason)
 
     def info(self, message: str, /, **fields: AttributeValue) -> None:
@@ -275,7 +272,7 @@ class StepScope:
         return step_artifact
 
     def _complete(self, elapsed_seconds: float) -> None:
-        self._run_context.run_recorder.record(
+        self._run_context.run_recorder.record_run_event(
             StepClosed(
                 work_item_id=self._work_item_scope.work_item.id,
                 step_instance_id=self._step_instance_id,
@@ -297,7 +294,7 @@ class StepScope:
     def _fail(self, elapsed_seconds: float, exc: BaseException) -> None:
         self._stamp_failing_step_onto(exc)
         failure_text: str = _failure_message(exc)
-        self._run_context.run_recorder.record(
+        self._run_context.run_recorder.record_run_event(
             StepClosed(
                 work_item_id=self._work_item_scope.work_item.id,
                 step_instance_id=self._step_instance_id,
@@ -320,7 +317,7 @@ class StepScope:
         )
 
     def _record_artifact(self, step_artifact: StepArtifact) -> None:
-        self._run_context.run_recorder.record(
+        self._run_context.run_recorder.record_run_event(
             ArtifactRecorded(
                 work_item_id=self._work_item_scope.work_item.id,
                 artifact_record=ArtifactRecord(

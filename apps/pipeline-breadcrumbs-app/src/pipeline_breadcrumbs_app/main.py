@@ -114,15 +114,14 @@ async def _analyze_documents(
     artifact_callback: ArtifactSink,
     logger: logging.Logger,
 ) -> list[str]:
-    """Run every document through the system and return the names of those that failed."""
     failed_document_names: list[str] = []
     document_name: str
     pages: list[str]
-    async with PipelineRun(name=PIPELINE_NAME, sink=artifact_callback, logger=logger) as pipeline_run:
+    async with PipelineRun(pipeline_name=PIPELINE_NAME, sink=artifact_callback, logger=logger) as pipeline_run:
         for document_name, pages in pages_by_document_name.items():
             try:
                 work_item_scope: WorkItemScope
-                async with pipeline_run.work_item(WorkItem(id=str(uuid4()), name=document_name)) as work_item_scope:
+                async with pipeline_run.open_work_item(WorkItem(id=str(uuid4()), name=document_name)) as work_item_scope:
                     await document_analysis_manager.analyze_document(work_item_scope, pages)
             except DocumentAnalysisError as document_analysis_error:
                 # The application's single outer boundary: the exception is logged once, with its

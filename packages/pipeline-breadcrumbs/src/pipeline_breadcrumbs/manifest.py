@@ -25,9 +25,9 @@ _ELAPSED_SECONDS_DECIMALS: Final[int] = 3
 @final
 @dataclass(frozen=True, slots=True)
 class StepRecord:
-    path: str
-    key: str
-    name: str
+    step_path: str
+    step_key: str
+    step_name: str
     step_status: StepStatus
     started_at: str
     elapsed_seconds: float | None = None
@@ -49,7 +49,7 @@ class ArtifactRecord:
 @dataclass(frozen=True, slots=True)
 class WorkItemRecord:
     work_item_id: str
-    name: str
+    work_item_name: str
     work_item_status: StepStatus
     started_at: str
     elapsed_seconds: float | None = None
@@ -61,8 +61,6 @@ class WorkItemRecord:
 @final
 @dataclass(frozen=True, slots=True)
 class RunRecord:
-    """The whole manifest document: one typed owner for the manifest's schema."""
-
     pipeline_name: str
     run_id: str
     run_status: StepStatus
@@ -131,40 +129,42 @@ def build_work_item_records(run_events: Sequence[RunEvent]) -> tuple[WorkItemRec
     earlier failure still counts. Later events for that id belong to its latest attempt, so one work
     item id must not run concurrently with itself.
     """
-    attempt_records: list[WorkItemRecord] = []
-    step_records_by_instance_id: list[dict[str, StepRecord]] = []
+    attempt_work_item_records: list[WorkItemRecord] = []
+    step_records_by_step_instance_id_by_attempt: list[dict[str, StepRecord]] = []
     artifact_records: list[list[ArtifactRecord]] = []
     latest_attempt_index_by_work_item_id: dict[str, int] = {}
     for run_event in run_events:
         match run_event:
             case WorkItemOpened():
-                latest_attempt_index_by_work_item_id[run_event.work_item_id] = len(attempt_records)
-                attempt_records.append(
+                latest_attempt_index_by_work_item_id[run_event.work_item_id] = len(attempt_work_item_records)
+                attempt_work_item_records.append(
                     WorkItemRecord(
                         work_item_id=run_event.work_item_id,
-                        name=run_event.work_item_name,
+                        work_item_name=run_event.work_item_name,
                         work_item_status=StepStatus.STARTED,
                         started_at=run_event.started_at,
                     )
                 )
-                step_records_by_instance_id.append({})
+                step_records_by_step_instance_id_by_attempt.append({})
                 artifact_records.append([])
             case WorkItemClosed():
                 attempt_index: int = latest_attempt_index_by_work_item_id[run_event.work_item_id]
-                attempt_records[attempt_index] = replace(
-                    attempt_records[attempt_index],
+                attempt_work_item_records[attempt_index] = replace(
+                    attempt_work_item_records[attempt_index],
                     work_item_status=run_event.work_item_status,
                     elapsed_seconds=round(run_event.elapsed_seconds, _ELAPSED_SECONDS_DECIMALS),
                     failure=run_event.failure,
                 )
             case StepRecorded():
-                step_records_by_instance_id[latest_attempt_index_by_work_item_id[run_event.work_item_id]][run_event.step_instance_id] = (
-                    run_event.step_record
-                )
+                step_records_by_step_instance_id_by_attempt[latest_attempt_index_by_work_item_id[run_event.work_item_id]][
+                    run_event.step_instance_id
+                ] = run_event.step_record
             case StepClosed():
-                open_step_records: dict[str, StepRecord] = step_records_by_instance_id[latest_attempt_index_by_work_item_id[run_event.work_item_id]]
-                open_step_records[run_event.step_instance_id] = replace(
-                    open_step_records[run_event.step_instance_id],
+                open_step_records_by_step_instance_id: dict[str, StepRecord] = step_records_by_step_instance_id_by_attempt[
+                    latest_attempt_index_by_work_item_id[run_event.work_item_id]
+                ]
+                open_step_records_by_step_instance_id[run_event.step_instance_id] = replace(
+                    open_step_records_by_step_instance_id[run_event.step_instance_id],
                     step_status=run_event.step_status,
                     elapsed_seconds=round(run_event.elapsed_seconds, _ELAPSED_SECONDS_DECIMALS),
                     outcome=run_event.outcome,
@@ -172,10 +172,21 @@ def build_work_item_records(run_events: Sequence[RunEvent]) -> tuple[WorkItemRec
                 )
             case ArtifactRecorded():
                 artifact_records[latest_attempt_index_by_work_item_id[run_event.work_item_id]].append(run_event.artifact_record)
-    return tuple(
-        replace(attempt_record, step_records=tuple(step_records.values()), artifact_records=tuple(attempt_artifact_records))
-        for attempt_record, step_records, attempt_artifact_records in zip(attempt_records, step_records_by_instance_id, artifact_records, strict=True)
-    )
+    completed_work_item_records: list[WorkItemRecord] = []
+    attempt_work_item_record: WorkItemRecord
+    step_records_by_step_instance_id: dict[str, StepRecord]
+    attempt_artifact_records: list[ArtifactRecord]
+    for attempt_work_item_record, step_records_by_step_instance_id, attempt_artifact_records in zip(
+        attempt_work_item_records, step_records_by_step_instance_id_by_attempt, artifact_records, strict=True
+    ):
+        completed_work_item_records.append(
+            replace(
+                attempt_work_item_record,
+                step_records=tuple(step_records_by_step_instance_id.values()),
+                artifact_records=tuple(attempt_artifact_records),
+            )
+        )
+    return tuple(completed_work_item_records)
 
 
 @final
@@ -187,7 +198,7 @@ class RunRecorder:
         self._run_id: str = run_id
         self._run_events: list[RunEvent] = []
 
-    def record(self, run_event: RunEvent) -> None:
+    def record_run_event(self, run_event: RunEvent) -> None:
         self._run_events.append(run_event)
 
     def work_item_count(self) -> int:
@@ -196,7 +207,7 @@ class RunRecorder:
     def failed_work_item_count(self) -> int:
         return sum(1 for work_item_record in build_work_item_records(self._run_events) if work_item_record.work_item_status is StepStatus.FAILED)
 
-    def serialize(self, *, started_at: datetime, finished_at: datetime, elapsed_seconds: float, run_status: StepStatus) -> bytes:
+    def serialize_manifest(self, *, started_at: datetime, finished_at: datetime, elapsed_seconds: float, run_status: StepStatus) -> bytes:
         run_record: RunRecord = RunRecord(
             pipeline_name=self._pipeline_name,
             run_id=self._run_id,

@@ -26,7 +26,7 @@ async def _sink_that_cannot_store(artifact: Artifact) -> None:
 
 
 async def _run_a_step_that_fails_after(clock_testing: ClockTesting, pipeline_run: PipelineRun, work_item: WorkItem, elapsed_seconds: float) -> None:
-    async with pipeline_run, pipeline_run.work_item(work_item) as work_item_scope, work_item_scope.step(METADATA_AUDIT):
+    async with pipeline_run, pipeline_run.open_work_item(work_item) as work_item_scope, work_item_scope.step(METADATA_AUDIT):
         clock_testing.advance(elapsed_seconds)
         raise ValueError("bad json")
 
@@ -39,7 +39,7 @@ class TestFailingStep:
         # Arrange
         work_item: WorkItem = create_random_work_item()
         expected_elapsed_seconds: float = 1.25
-        pipeline_run: PipelineRun = PipelineRun(name="demo", sink=artifact_recorder, logger=run_logger, clock=clock_testing.clock)
+        pipeline_run: PipelineRun = PipelineRun(pipeline_name="demo", sink=artifact_recorder, logger=run_logger, clock=clock_testing.clock)
 
         # Act
         with pytest.raises(ValueError, match="bad json"):
@@ -62,23 +62,23 @@ class TestFailingStep:
     ) -> None:
         # Arrange
         work_item: WorkItem = create_random_work_item()
-        diagnostic_exception: DiagnosticTestingError = DiagnosticTestingError("response was not json")
-        pipeline_run: PipelineRun = PipelineRun(name="demo", sink=artifact_recorder, logger=run_logger)
+        diagnostic_testing_error: DiagnosticTestingError = DiagnosticTestingError("response was not json")
+        pipeline_run: PipelineRun = PipelineRun(pipeline_name="demo", sink=artifact_recorder, logger=run_logger)
 
         # Act
         with pytest.raises(DiagnosticTestingError):
             async with (
                 pipeline_run,
-                pipeline_run.work_item(work_item) as work_item_scope,
+                pipeline_run.open_work_item(work_item) as work_item_scope,
                 work_item_scope.step(CLASSIFICATION) as parent_step_scope,
                 parent_step_scope.step(SCORE_SECTIONS),
             ):
-                raise diagnostic_exception
+                raise diagnostic_testing_error
 
         # Assert - the child step stamps first; the parent finds the stamp and leaves it alone
         AsserterContextualData.assert_exactly_these_entries(
             {"FailedAtStepNumber": "3.2", "FailedAtStepName": "Score Sections", "FailedAtStepKey": "score_sections"},
-            diagnostic_exception,
+            diagnostic_testing_error,
         )
 
     async def test_PipelineRun_WhenTheExceptionCarriesNoDiagnosticData_ThenItPassesThroughUntouched(
@@ -86,11 +86,11 @@ class TestFailingStep:
     ) -> None:
         # Arrange
         work_item: WorkItem = create_random_work_item()
-        pipeline_run: PipelineRun = PipelineRun(name="demo", sink=artifact_recorder, logger=run_logger)
+        pipeline_run: PipelineRun = PipelineRun(pipeline_name="demo", sink=artifact_recorder, logger=run_logger)
 
         # Act / Assert
         with pytest.raises(KeyError):
-            async with pipeline_run, pipeline_run.work_item(work_item) as work_item_scope, work_item_scope.step(METADATA_AUDIT):
+            async with pipeline_run, pipeline_run.open_work_item(work_item) as work_item_scope, work_item_scope.step(METADATA_AUDIT):
                 raise KeyError("missing")
 
 
@@ -101,11 +101,12 @@ class TestFailingSink:
     ) -> None:
         # Arrange
         work_item: WorkItem = create_random_work_item()
-        pipeline_run: PipelineRun = PipelineRun(name="demo", sink=_sink_that_cannot_store, logger=run_logger)
+        expected_artifact_kind_key: str = PAGE_EVIDENCE.key
+        pipeline_run: PipelineRun = PipelineRun(pipeline_name="demo", sink=_sink_that_cannot_store, logger=run_logger)
 
         # Act
         with pytest.raises(ArtifactSinkError) as actual_raised:
-            async with pipeline_run, pipeline_run.work_item(work_item) as work_item_scope, work_item_scope.step(METADATA_AUDIT) as step_scope:
+            async with pipeline_run, pipeline_run.open_work_item(work_item) as work_item_scope, work_item_scope.step(METADATA_AUDIT) as step_scope:
                 await step_scope.emit(PAGE_EVIDENCE, b"{}")
 
         # Assert
@@ -113,8 +114,8 @@ class TestFailingSink:
         AsserterContextualData.assert_exactly_these_entries(
             {
                 "ExceptionType": "ArtifactSinkError",
-                "ArtifactKind": "page_evidence",
-                "ArtifactFilename": f"{work_item.stem}_step_02_page_evidence.json",
+                "ArtifactKind": expected_artifact_kind_key,
+                "ArtifactFilename": f"{work_item.stem}_step_02_{expected_artifact_kind_key}.json",
                 "ArtifactBytes": 2,
                 "FailedAtStepNumber": "2",
                 "FailedAtStepName": "Metadata Audit",
@@ -127,16 +128,17 @@ class TestFailingSink:
         self, run_logger: logging.Logger
     ) -> None:
         # Arrange
-        pipeline_run: PipelineRun = PipelineRun(name="demo", sink=_sink_that_cannot_store, logger=run_logger)
+        real_problem_message: str = "the real problem"
+        pipeline_run: PipelineRun = PipelineRun(pipeline_name="demo", sink=_sink_that_cannot_store, logger=run_logger)
 
         # Act / Assert - the run's own failure, not the storage outage, reaches the caller
-        with pytest.raises(ValueError, match="the real problem"):
+        with pytest.raises(ValueError, match=real_problem_message):
             async with pipeline_run:
-                raise ValueError("the real problem")
+                raise ValueError(real_problem_message)
 
     async def test_PipelineRun_WhenTheManifestCannotBeWrittenAndNothingElseFailed_ThenTheOutageIsReported(self, run_logger: logging.Logger) -> None:
         # Arrange
-        pipeline_run: PipelineRun = PipelineRun(name="demo", sink=_sink_that_cannot_store, logger=run_logger)
+        pipeline_run: PipelineRun = PipelineRun(pipeline_name="demo", sink=_sink_that_cannot_store, logger=run_logger)
 
         # Act / Assert
         with pytest.raises(ArtifactSinkError):
@@ -152,14 +154,14 @@ class TestRunSummary:
         # Arrange
         healthy_work_item: WorkItem = create_random_work_item()
         failing_work_item: WorkItem = create_random_work_item()
-        pipeline_run: PipelineRun = PipelineRun(name="demo", sink=artifact_recorder, logger=run_logger)
+        pipeline_run: PipelineRun = PipelineRun(pipeline_name="demo", sink=artifact_recorder, logger=run_logger)
 
         # Act
         async with pipeline_run:
-            async with pipeline_run.work_item(healthy_work_item) as work_item_scope, work_item_scope.step(METADATA_AUDIT):
+            async with pipeline_run.open_work_item(healthy_work_item) as work_item_scope, work_item_scope.step(METADATA_AUDIT):
                 pass
             with pytest.raises(RuntimeError):
-                async with pipeline_run.work_item(failing_work_item):
+                async with pipeline_run.open_work_item(failing_work_item):
                     raise RuntimeError("boom")
 
         # Assert

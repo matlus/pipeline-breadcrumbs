@@ -86,16 +86,19 @@ class TestAnalyzeDocumentExpectedPaths:
         work_item: WorkItem = create_random_work_item()
         section_titles: list[str] = create_random_section_titles(3)
         doubtful_title: str = section_titles[1]
+        confident_category: str = "Legal"
         model_gateway_testing: ModelGatewayTesting = ModelGatewayTesting(
             detection_reply_by_page_number={page_number: create_title_reply(title) for page_number, title in enumerate(section_titles)},
-            score_reply_by_title={title: create_score_reply("Legal", DOUBTFUL if title == doubtful_title else CONFIDENT) for title in section_titles},
+            score_reply_by_title={
+                title: create_score_reply(confident_category, DOUBTFUL if title == doubtful_title else CONFIDENT) for title in section_titles
+            },
             reconcile_reply_by_title={doubtful_title: create_score_reply("Commercial", RECONCILED)},
         )
         document_analysis_manager: DocumentAnalysisManager = create_document_analysis_manager(model_gateway_testing)
         expected_scored_sections: list[ScoredSection] = [
-            ScoredSection(0, section_titles[0], "Legal", CONFIDENT),
+            ScoredSection(0, section_titles[0], confident_category, CONFIDENT),
             ScoredSection(1, doubtful_title, "Commercial", RECONCILED),
-            ScoredSection(2, section_titles[2], "Legal", CONFIDENT),
+            ScoredSection(2, section_titles[2], confident_category, CONFIDENT),
         ]
 
         # Act
@@ -121,6 +124,7 @@ class TestAnalyzeDocumentExpectedPaths:
         section_titles: list[str] = create_random_section_titles(2)
         document_analysis_manager: DocumentAnalysisManager = create_document_analysis_manager(_create_confident_gateway(section_titles))
         stem: str = work_item.stem
+        expected_analysis_report_filename: str = f"{stem}_step_04_analysis_report.md"
         expected_filenames: list[str] = [
             f"{stem}_step_01_page_text_page_0000.txt",
             f"{stem}_step_01_page_text_page_0001.txt",
@@ -131,7 +135,7 @@ class TestAnalyzeDocumentExpectedPaths:
             f"{stem}_step_03.02_raw_score_response_page_0000.txt",
             f"{stem}_step_03.02_raw_score_response_page_0001.txt",
             f"{stem}_step_03.02_section_scores.json",
-            f"{stem}_step_04_analysis_report.md",
+            expected_analysis_report_filename,
             "manifest.json",
         ]
 
@@ -145,7 +149,7 @@ class TestAnalyzeDocumentExpectedPaths:
             for actual_artifact in artifact_recorder.artifacts
             if isinstance(actual_artifact, StepArtifact) and actual_artifact.artifact_kind.role is ArtifactRole.OUTPUT
         ]
-        assert actual_output_filenames == [f"{stem}_step_04_analysis_report.md"]
+        assert actual_output_filenames == [expected_analysis_report_filename]
         assert artifact_recorder.of_kind(ANALYSIS_REPORT)[0].content.decode("utf-8").startswith("# Section analysis")
 
     async def test_analyze_document_WhenManyPagesAreDetected_ThenTheModelIsNeverAskedAboutMoreThanTheConcurrencyLimitAtOnce(
