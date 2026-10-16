@@ -10,7 +10,7 @@ from breadcrumbs_acceptance_support.asserters.asserter_artifacts import Asserter
 from breadcrumbs_acceptance_support.data_generators import create_random_work_item
 
 from pipeline_breadcrumbs import ArtifactKind, ArtifactRole, AttributeKey, PipelineRun, Step, StepArtifact, WorkItem
-from pipeline_breadcrumbs.testing import ArtifactSinkRecorder, RecordCapture
+from pipeline_breadcrumbs.testing import ArtifactSinkTesting, RecordCapture
 
 METADATA_AUDIT: Final[Step] = Step(2, "Metadata Audit")
 PAGE_EVIDENCE: Final[ArtifactKind] = ArtifactKind("page_evidence", "json", "application/json")
@@ -19,12 +19,12 @@ PAGE_EVIDENCE: Final[ArtifactKind] = ArtifactKind("page_evidence", "json", "appl
 @pytest.mark.acceptance
 class TestEmit:
     async def test_StepScope_WhenAnArtifactIsEmitted_ThenTheSinkReceivesItAndTheEmitIsLogged(
-        self, artifact_sink_recorder: ArtifactSinkRecorder, run_logger: logging.Logger, record_capture: RecordCapture
+        self, artifact_sink_testing: ArtifactSinkTesting, run_logger: logging.Logger, record_capture: RecordCapture
     ) -> None:
         # Arrange
         work_item: WorkItem = create_random_work_item()
         expected_content: bytes = b'{"ok": true}'
-        pipeline_run: PipelineRun = PipelineRun(pipeline_name="demo", sink=artifact_sink_recorder, logger=run_logger)
+        pipeline_run: PipelineRun = PipelineRun(pipeline_name="demo", sink=artifact_sink_testing, logger=run_logger)
 
         # Act
         async with pipeline_run, pipeline_run.open_work_item(work_item) as work_item_scope, work_item_scope.step(METADATA_AUDIT) as step_scope:
@@ -33,7 +33,7 @@ class TestEmit:
         # Assert
         expected_filename: str = f"{work_item.stem}_step_02_page_evidence_page_0003.json"
         assert actual_emitted_artifact.filename == expected_filename
-        assert artifact_sink_recorder.of_kind(PAGE_EVIDENCE)[0].content == expected_content
+        assert artifact_sink_testing.of_kind(PAGE_EVIDENCE)[0].content == expected_content
         actual_emit_record: logging.LogRecord = next(
             actual_log_record for actual_log_record in record_capture.records if AttributeKey.ARTIFACT_FILENAME in actual_log_record.__dict__
         )
@@ -41,11 +41,11 @@ class TestEmit:
         assert RecordCapture.attribute(actual_emit_record, AttributeKey.ARTIFACT_BYTES) == 12
 
     async def test_StepScope_WhenAnArtifactIsEmitted_ThenItDescribesItselfToTheSink(
-        self, artifact_sink_recorder: ArtifactSinkRecorder, run_logger: logging.Logger
+        self, artifact_sink_testing: ArtifactSinkTesting, run_logger: logging.Logger
     ) -> None:
         # Arrange
         work_item: WorkItem = create_random_work_item()
-        pipeline_run: PipelineRun = PipelineRun(pipeline_name="demo", sink=artifact_sink_recorder, logger=run_logger)
+        pipeline_run: PipelineRun = PipelineRun(pipeline_name="demo", sink=artifact_sink_testing, logger=run_logger)
 
         # Act
         async with pipeline_run, pipeline_run.open_work_item(work_item) as work_item_scope, work_item_scope.step(METADATA_AUDIT) as step_scope:
@@ -53,7 +53,7 @@ class TestEmit:
 
         # Assert - the sink can persist it blindly: what it holds, its media type and its bytes travel with it
         actual_step_artifact: StepArtifact = next(
-            actual_recorded for actual_recorded in artifact_sink_recorder.artifacts if isinstance(actual_recorded, StepArtifact)
+            actual_recorded for actual_recorded in artifact_sink_testing.artifacts if isinstance(actual_recorded, StepArtifact)
         )
         assert (actual_step_artifact.artifact_type, actual_step_artifact.content_type, actual_step_artifact.content) == (
             "page_evidence",
@@ -62,11 +62,11 @@ class TestEmit:
         )
 
     async def test_StepScope_WhenStepsEmitPastStepNine_ThenADirectoryListingSortsInPipelineOrder(
-        self, artifact_sink_recorder: ArtifactSinkRecorder, run_logger: logging.Logger
+        self, artifact_sink_testing: ArtifactSinkTesting, run_logger: logging.Logger
     ) -> None:
         # Arrange
         work_item: WorkItem = create_random_work_item()
-        pipeline_run: PipelineRun = PipelineRun(pipeline_name="demo", sink=artifact_sink_recorder, logger=run_logger)
+        pipeline_run: PipelineRun = PipelineRun(pipeline_name="demo", sink=artifact_sink_testing, logger=run_logger)
 
         # Act - steps are declared out of order on purpose
         async with pipeline_run, pipeline_run.open_work_item(work_item) as work_item_scope:
@@ -76,7 +76,7 @@ class TestEmit:
 
         # Assert
         actual_filenames_sorted_as_a_listing: list[str] = sorted(
-            actual_artifact.filename for actual_artifact in artifact_sink_recorder.artifacts if isinstance(actual_artifact, StepArtifact)
+            actual_artifact.filename for actual_artifact in artifact_sink_testing.artifacts if isinstance(actual_artifact, StepArtifact)
         )
         expected_filenames_in_pipeline_order: list[str] = [
             f"{work_item.stem}_step_{step_number:02d}_page_evidence.json" for step_number in (1, 2, 9, 10, 11)
@@ -85,11 +85,11 @@ class TestEmit:
 
     @pytest.mark.parametrize("unsafe_discriminator", ["a/b", "page 3", "..\\x", ""])
     async def test_StepScope_WhenTheDiscriminatorIsUnsafeForAFilename_ThenTheEmitIsRefused(
-        self, unsafe_discriminator: str, artifact_sink_recorder: ArtifactSinkRecorder, run_logger: logging.Logger
+        self, unsafe_discriminator: str, artifact_sink_testing: ArtifactSinkTesting, run_logger: logging.Logger
     ) -> None:
         # Arrange
         work_item: WorkItem = create_random_work_item()
-        pipeline_run: PipelineRun = PipelineRun(pipeline_name="demo", sink=artifact_sink_recorder, logger=run_logger)
+        pipeline_run: PipelineRun = PipelineRun(pipeline_name="demo", sink=artifact_sink_testing, logger=run_logger)
 
         # Act / Assert
         with pytest.raises(ValueError, match="discriminator"):
@@ -148,14 +148,14 @@ class TestWorkItemIdentity:
 @pytest.mark.acceptance
 class TestRunLevelArtifact:
     async def test_PipelineRun_WhenTheRunCloses_ThenTheManifestHasNoWorkItemPrefix(
-        self, artifact_sink_recorder: ArtifactSinkRecorder, run_logger: logging.Logger
+        self, artifact_sink_testing: ArtifactSinkTesting, run_logger: logging.Logger
     ) -> None:
         # Arrange
-        pipeline_run: PipelineRun = PipelineRun(pipeline_name="demo", sink=artifact_sink_recorder, logger=run_logger)
+        pipeline_run: PipelineRun = PipelineRun(pipeline_name="demo", sink=artifact_sink_testing, logger=run_logger)
 
         # Act
         async with pipeline_run:
             pass
 
         # Assert
-        AsserterArtifacts.assert_exactly_these_filenames_in_order(["manifest.json"], artifact_sink_recorder.artifacts)
+        AsserterArtifacts.assert_exactly_these_filenames_in_order(["manifest.json"], artifact_sink_testing.artifacts)

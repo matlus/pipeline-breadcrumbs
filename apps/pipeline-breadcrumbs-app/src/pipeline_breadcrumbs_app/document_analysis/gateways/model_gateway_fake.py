@@ -30,7 +30,7 @@ _HIGH_CONFIDENCE: Final[float] = 0.92
 _RECONCILED_CONFIDENCE: Final[float] = 0.81
 
 
-class FakeModelGateway:
+class ModelGatewayFake:
     def __init__(self, latency_seconds: float = 0.0) -> None:
         self._latency_seconds: float = latency_seconds
 

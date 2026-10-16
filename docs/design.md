@@ -595,7 +595,7 @@ replaced. They follow the PWI guidance for functional acceptance testing at the 
 Meridian tests as the reference: behavior-style names, Arrange, Act and Assert sections, `expected_` and
 `actual_` prefixes, and asserters that report every difference at once.
 
-`pipeline_breadcrumbs.testing` provides `ArtifactSinkRecorder` (use it as the sink, then assert which steps
+`pipeline_breadcrumbs.testing` provides `ArtifactSinkTesting` (use it as the sink, then assert which steps
 ran and which artifacts exist) and `RecordCapture` (a logging handler that keeps records for attribute
 assertions). Artifact presence is itself a signal: a remediation step that emits only when triggered is
 diagnosed by whether its file exists.

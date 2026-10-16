@@ -4,7 +4,7 @@ import logging
 
 from analysis_acceptance_support.model_gateway_testing import ModelGatewayTesting
 from pipeline_breadcrumbs import PipelineRun, WorkItem
-from pipeline_breadcrumbs.testing import ArtifactSinkRecorder
+from pipeline_breadcrumbs.testing import ArtifactSinkTesting
 from pipeline_breadcrumbs_app.document_analysis.document_analysis_manager import DocumentAnalysisManager
 from pipeline_breadcrumbs_app.document_analysis.models import DocumentAnalysis
 from pipeline_breadcrumbs_app.document_analysis.simulated_work import SimulatedWork
@@ -18,11 +18,11 @@ async def analyze_in_a_run(
     document_analysis_manager: DocumentAnalysisManager,
     pages: list[str],
     work_item: WorkItem,
-    artifact_sink_recorder: ArtifactSinkRecorder,
+    artifact_sink_testing: ArtifactSinkTesting,
     run_logger: logging.Logger,
 ) -> DocumentAnalysis:
     async with (
-        PipelineRun(pipeline_name="document-analysis-test", sink=artifact_sink_recorder, logger=run_logger) as pipeline_run,
+        PipelineRun(pipeline_name="document-analysis-test", sink=artifact_sink_testing, logger=run_logger) as pipeline_run,
         pipeline_run.open_work_item(work_item) as work_item_scope,
     ):
         return await document_analysis_manager.analyze_document(work_item_scope, pages)
