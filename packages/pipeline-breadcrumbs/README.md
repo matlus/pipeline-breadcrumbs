@@ -16,14 +16,14 @@ for the reasoning.
 | `AttributeKey` | The names of the attributes every record carries. |
 | `ArtifactSinkError`, `ContextualException` | Sink failures, and the shape an exception takes to receive step diagnostics. |
 
-`pipeline_breadcrumbs.hosting` holds local file system helpers (`FileSystemArtifactSink`,
+`pipeline_breadcrumbs.hosting` holds local file system helpers (`ArtifactSinkFileSystem`,
 `create_run_folder`, `attached_run_log`). `pipeline_breadcrumbs.testing` holds
-`ArtifactRecorder` and `RecordCapture` for acceptance tests.
+`ArtifactSinkRecorder` and `RecordCapture` for acceptance tests.
 
 Create a run with `PipelineRun(pipeline_name=..., sink=...)` and open each item
 with `pipeline_run.open_work_item(work_item)`. For deterministic run folders,
 pass `supplied_clock` to `create_run_folder`; `Clock.create_system_clock()` supplies
-the normal wall and monotonic clocks. `ArtifactRecorder.step_paths()` returns
+the normal wall and monotonic clocks. `ArtifactSinkRecorder.step_paths()` returns
 the distinct emitting step paths in first-emitted order.
 
 Manifest work-item records use `work_item_name`. Step records use `step_path`,

@@ -1,6 +1,6 @@
 """Helpers for acceptance tests of a pipeline built on the library.
 
-Use `ArtifactRecorder` as the sink and `RecordCapture` as a logging handler, run the
+Use `ArtifactSinkRecorder` as the sink and `RecordCapture` as a logging handler, run the
 pipeline, then assert which steps ran and which artifacts and attributes they produced.
 Artifact presence is itself a signal: a remediation step that emits only when triggered is
 diagnosed by whether its file exists.
@@ -14,7 +14,7 @@ from pipeline_breadcrumbs.attributes import AttributeKey
 
 
 @final
-class ArtifactRecorder:
+class ArtifactSinkRecorder:
     """An in-memory artifact sink. Pass the instance wherever a sink is expected."""
 
     def __init__(self) -> None:

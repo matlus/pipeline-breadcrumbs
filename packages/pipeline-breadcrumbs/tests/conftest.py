@@ -4,7 +4,7 @@ from collections.abc import Iterator
 import pytest
 from breadcrumbs_acceptance_support.clock_testing import ClockTesting
 
-from pipeline_breadcrumbs.testing import ArtifactRecorder, RecordCapture
+from pipeline_breadcrumbs.testing import ArtifactSinkRecorder, RecordCapture
 
 _TEST_LOGGER_NAME: str = "pipeline_breadcrumbs.acceptance_tests"
 
@@ -15,8 +15,8 @@ def clock_testing() -> ClockTesting:
 
 
 @pytest.fixture
-def artifact_recorder() -> ArtifactRecorder:
-    return ArtifactRecorder()
+def artifact_sink_recorder() -> ArtifactSinkRecorder:
+    return ArtifactSinkRecorder()
 
 
 @pytest.fixture

@@ -10,7 +10,7 @@ from pipeline_breadcrumbs.work_items import WorkItem
 
 
 @final
-class FileSystemArtifactSink:
+class ArtifactSinkFileSystem:
     """Writes each artifact under the run directory, in a folder per work item.
 
     ```

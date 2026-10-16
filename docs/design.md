@@ -546,7 +546,7 @@ The manifest is emitted through the same sink as a run-level artifact. It record
 status, each step's number, name, status, elapsed time and outcome, the artifacts produced and their
 sizes, and any failure.
 
-Host-side helpers (`FileSystemArtifactSink`, run folder creation, run log attachment) live in
+Host-side helpers (`ArtifactSinkFileSystem`, run folder creation, run log attachment) live in
 `pipeline_breadcrumbs.hosting`. The core knows no paths.
 
 ### Where the run happens: local and hosted
@@ -595,7 +595,7 @@ replaced. They follow the PWI guidance for functional acceptance testing at the 
 Meridian tests as the reference: behavior-style names, Arrange, Act and Assert sections, `expected_` and
 `actual_` prefixes, and asserters that report every difference at once.
 
-`pipeline_breadcrumbs.testing` provides `ArtifactRecorder` (use it as the sink, then assert which steps
+`pipeline_breadcrumbs.testing` provides `ArtifactSinkRecorder` (use it as the sink, then assert which steps
 ran and which artifacts exist) and `RecordCapture` (a logging handler that keeps records for attribute
 assertions). Artifact presence is itself a signal: a remediation step that emits only when triggered is
 diagnosed by whether its file exists.
@@ -668,7 +668,7 @@ The first full PWI review of this workspace produced 168 findings, which drove t
 
 Findings left open on purpose, because removing them would cost clarity more than it gains:
 
-- Scopes, `PipelineRun`, `RunRecorder` and `FileSystemArtifactSink` still hold lifecycle state: a start
+- Scopes, `PipelineRun`, `RunRecorder` and `ArtifactSinkFileSystem` still hold lifecycle state: a start
   time, a step's outcome, an append-only event list, the folder registry. A context manager cannot be
   stateless.
 - `ArtifactSinkError` and `DocumentAnalysisError` accumulate contextual data as they propagate, the way
