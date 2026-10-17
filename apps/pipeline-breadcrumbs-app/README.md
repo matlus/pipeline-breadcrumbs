@@ -1,8 +1,9 @@
 # pipeline-breadcrumbs-app
 
 A runnable demo of [pipeline-breadcrumbs](../../packages/pipeline-breadcrumbs/README.md).
-It runs an offline document-analysis pipeline over two sample documents with a fake
-model, so its output is the same every time.
+It runs an offline document-analysis pipeline over two sample documents. The system's
+model service gateway is real; the demo's service locator hands it an in-process simulation
+of the model service, so its output is the same every time.
 
 It exercises per-page artifacts from concurrent work, a sub-orchestrator whose processors
 report as steps 3.1 to 3.3, a conditional step that is skipped, raw model replies emitted
@@ -16,5 +17,5 @@ uv run pipeline_breadcrumbs_app --time all           # a time on every line (non
 ```
 
 `main.py` is the application that calls the system, not part of it. It implements the artifact
-callback and builds the logger and its handlers. `document_analysis/` is the system, and its entry point is
-`DocumentAnalysisManager`. See the [workspace README](../../README.md) for the layout.
+callback, builds the logger and its handlers, and builds the system from `ServiceLocatorDemo`.
+`document_analysis/` is the system, and its entry point is `DocumentAnalysisManager`. See the [workspace README](../../README.md) for the layout.

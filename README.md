@@ -107,9 +107,13 @@ and every record carries them.
 The demo separates the application from the system it calls, the way a production codebase does.
 
 ```
-main.py                           the application: chooses the callback and the logger, calls the system
+main.py                           the application: chooses the callback, the logger and the service locator, calls the system
+service_locator_demo.py           the demo's service locator: the real system, wired to the simulated model service
+model_service_simulator.py        answers the model service's HTTP API in-process, so the demo runs offline
 document_analysis/                the system
   document_analysis_manager.py    its entry point: one public method that validates, then sequences four processors
+  service_locators/               creates what a host or a test swaps: the configuration source and the HTTP transport
+  configuration_providers/        reads and validates the settings once, when the system is built
   analysis_steps.py               the table of contents: every Step, declared in one place
   model_reply.py                  turns an untrusted model reply into checked values
   validators/                     front-door validation of the document the manager is handed
@@ -122,19 +126,22 @@ document_analysis/                the system
         section_scorer.py             3.2, a model processor
         score_reconciler.py           3.3, a conditional model processor
     report_assembler.py           step 4, non-model work that produces the real output
-  gateways/                       the model gateway protocol, and a fake that sleeps instead of calling out
+  gateways/                       the model service gateway: builds each request, checks each response, translates failures
 ```
 
-`main.py` is not the system. It builds the artifact callback and the logger, opens a
-`PipelineRun`, opens one work item per document, and hands that scope to the manager. The
+`main.py` is not the system. It builds the artifact callback and the logger, builds the manager
+from a service locator, opens a `PipelineRun`, opens one work item per document, and hands that
+scope to the manager. The
 manager and the processors never see a path or a handler. Each processor opens its own step on
 the host it is given, so it owns its work, and the classifier passes its own step down, which
 is why its three processors report as 3.1 to 3.3 without any numbering code.
 
-Nothing here calls a real model. The fake gateway and `SimulatedWork` sleep for a moment,
-where a real system would call a service or render a page, so the log appears at a believable
-pace and the demo needs no keys or configuration. Every spot where real work would go is
-marked with a comment.
+Nothing here calls a real model, but the system's gateway is real. It talks HTTP to a model
+service through the transport its service locator supplies. `ServiceLocatorProduction` supplies
+the network; the demo's `ServiceLocatorDemo` supplies an in-process simulation of the service, so
+the demo needs no keys or setup and reads the same every time. The simulation and `SimulatedWork`
+take a moment, where a real system would wait for a model or render a page, so the log appears
+at a believable pace. A production host sets `DOCUMENT_ANALYSIS_MODEL_SERVICE_BASE_URL`.
 
 ## Try it
 
@@ -161,7 +168,9 @@ runs identically in both.
 The tests are acceptance tests: each one runs through a system's public entry point
 (`PipelineRun` for the library, `DocumentAnalysisManager` and `run_demo` for the demo) and
 asserts on what the system returned, the artifacts it handed to the callback and the
-breadcrumbs it logged. Only the model is replaced.
+breadcrumbs it logged. The demo's tests build the system through `ServiceLocatorTesting`, which
+swaps only the HTTP transport for a Test Mediator, so the gateway, the configuration provider and
+every processor run for real.
 
 ```bash
 uv run --all-packages --all-groups ruff check packages apps
