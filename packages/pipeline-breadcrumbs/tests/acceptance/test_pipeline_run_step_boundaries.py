@@ -8,10 +8,10 @@ from collections.abc import Iterable
 from typing import Final
 
 import pytest
-from breadcrumbs_acceptance_support.asserters.asserter_artifacts import AsserterArtifacts
-from breadcrumbs_acceptance_support.asserters.asserter_exception import AsserterException, ExpectedException
-from breadcrumbs_acceptance_support.asserters.asserter_log_record import AsserterLogRecord, ExpectedLogRecord
-from breadcrumbs_acceptance_support.asserters.asserter_step_boundaries import AsserterStepBoundaries, ExpectedStepBoundary
+from breadcrumbs_acceptance_support.asserters.asserter_artifacts import ArtifactFilenamesAsserter
+from breadcrumbs_acceptance_support.asserters.asserter_exception import ExceptionAsserter, ExpectedException
+from breadcrumbs_acceptance_support.asserters.asserter_log_record import EveryLogRecordAsserter, ExpectedLogRecord, LogRecordAsserter
+from breadcrumbs_acceptance_support.asserters.asserter_step_boundaries import ExpectedStepBoundary, StepBoundariesAsserter
 from breadcrumbs_acceptance_support.clock_testing import ClockTesting
 from breadcrumbs_acceptance_support.data_generators import (
     create_random_attribute_name,
@@ -66,8 +66,8 @@ class TestStepBoundaries:
             clock_testing.advance(expected_elapsed_seconds)
 
         # Assert
-        AsserterStepBoundaries.assert_exactly_these_step_boundaries(expected_step_boundaries, record_capture.records)
-        AsserterLogRecord.assert_record(expected_completion_log_record, record_capture.boundaries(EventKind.STEP)[-1])
+        StepBoundariesAsserter.assert_expected_and_actual_are_equal(expected_step_boundaries, record_capture.records)
+        LogRecordAsserter.assert_expected_and_actual_are_equal(expected_completion_log_record, record_capture.boundaries(EventKind.STEP)[-1])
 
     async def test_PipelineRun_WhenAStepSetsItsOutcome_ThenTheOutcomeIsPartOfTheCompletionRecord(
         self, artifact_sink_testing: ArtifactSinkTesting, run_logger: logging.Logger, record_capture: RecordCapture
@@ -88,7 +88,7 @@ class TestStepBoundaries:
             step_scope.outcome(expected_outcome, starts=expected_start_count)
 
         # Assert
-        AsserterLogRecord.assert_record(expected_completion_log_record, record_capture.boundaries(EventKind.STEP)[-1])
+        LogRecordAsserter.assert_expected_and_actual_are_equal(expected_completion_log_record, record_capture.boundaries(EventKind.STEP)[-1])
 
     async def test_PipelineRun_WhenAStepOpensAChildStep_ThenTheChildsNumberComposesUnderTheParents(
         self, artifact_sink_testing: ArtifactSinkTesting, run_logger: logging.Logger, record_capture: RecordCapture
@@ -117,8 +117,8 @@ class TestStepBoundaries:
             await child_step_scope.emit(PAGE_EVIDENCE, b"{}")
 
         # Assert
-        AsserterStepBoundaries.assert_exactly_these_step_boundaries(expected_step_boundaries, record_capture.records)
-        AsserterArtifacts.assert_exactly_these_filenames_in_order(expected_filenames, artifact_sink_testing.artifacts)
+        StepBoundariesAsserter.assert_expected_and_actual_are_equal(expected_step_boundaries, record_capture.records)
+        ArtifactFilenamesAsserter.assert_expected_and_actual_are_equal(expected_filenames, artifact_sink_testing.artifacts)
 
     async def test_PipelineRun_WhenAChildStepIsSkipped_ThenTheSkipIsRecordedWithItsReason(
         self, artifact_sink_testing: ArtifactSinkTesting, run_logger: logging.Logger, record_capture: RecordCapture
@@ -139,7 +139,7 @@ class TestStepBoundaries:
             parent_step_scope.skipped(RECONCILE_SCORES, skip_reason)
 
         # Assert
-        AsserterLogRecord.assert_record(expected_skipped_log_record, record_capture.boundaries(EventKind.STEP)[1])
+        LogRecordAsserter.assert_expected_and_actual_are_equal(expected_skipped_log_record, record_capture.boundaries(EventKind.STEP)[1])
 
 
 @pytest.mark.acceptance
@@ -168,7 +168,9 @@ class TestProgressLinesAndAttributes:
             step_scope.info(expected_progress_message, pages=expected_page_count, concurrency=expected_concurrency)
 
         # Assert
-        AsserterLogRecord.assert_record(expected_progress_log_record, _retrieve_record(record_capture.records, expected_progress_message))
+        LogRecordAsserter.assert_expected_and_actual_are_equal(
+            expected_progress_log_record, _retrieve_record(record_capture.records, expected_progress_message)
+        )
 
     async def test_PipelineRun_WhenAFieldIsNamedLikeALogRecordAttribute_ThenLoggingStillWorks(
         self, artifact_sink_testing: ArtifactSinkTesting, run_logger: logging.Logger, record_capture: RecordCapture
@@ -188,7 +190,9 @@ class TestProgressLinesAndAttributes:
             step_scope.info(expected_progress_message, name=expected_name_detail, message="x", filename="a.pdf")
 
         # Assert
-        AsserterLogRecord.assert_record(expected_progress_log_record, _retrieve_record(record_capture.records, expected_progress_message))
+        LogRecordAsserter.assert_expected_and_actual_are_equal(
+            expected_progress_log_record, _retrieve_record(record_capture.records, expected_progress_message)
+        )
 
     async def test_PipelineRun_WhenCallerAttributesAreGiven_ThenEveryRecordCarriesThem(
         self, artifact_sink_testing: ArtifactSinkTesting, run_logger: logging.Logger, record_capture: RecordCapture
@@ -216,7 +220,7 @@ class TestProgressLinesAndAttributes:
             await step_scope.emit(PAGE_EVIDENCE, b"{}")
 
         # Assert
-        AsserterLogRecord.assert_every_record_carries(expected_attribute_value_by_key, record_capture.records)
+        EveryLogRecordAsserter.assert_expected_and_actual_are_equal(expected_attribute_value_by_key, record_capture.records)
 
     async def test_PipelineRun_WhenAStepRecordIsWritten_ThenItCarriesTheWorkItemsIdentity(
         self, artifact_sink_testing: ArtifactSinkTesting, run_logger: logging.Logger, record_capture: RecordCapture
@@ -234,7 +238,7 @@ class TestProgressLinesAndAttributes:
             pass
 
         # Assert
-        AsserterLogRecord.assert_record(expected_step_log_record, record_capture.boundaries(EventKind.STEP)[0])
+        LogRecordAsserter.assert_expected_and_actual_are_equal(expected_step_log_record, record_capture.boundaries(EventKind.STEP)[0])
 
     def test_PipelineRun_WhenCallerAttributesShadowALogRecordAttribute_ThenTheRunIsRefused(self, artifact_sink_testing: ArtifactSinkTesting) -> None:
         # Arrange
@@ -249,7 +253,7 @@ class TestProgressLinesAndAttributes:
             PipelineRun(pipeline_name=pipeline_name, artifact_sink=artifact_sink_testing, attributes={shadowing_attribute_name: "x"})
 
         # Assert
-        AsserterException.assert_exception(expected_exception, actual_raised.value)
+        ExceptionAsserter.assert_expected_and_actual_are_equal(expected_exception, actual_raised.value)
 
     def test_PipelineRun_WhenTheNameIsBlank_ThenTheRunIsRefused(self, artifact_sink_testing: ArtifactSinkTesting) -> None:
         # Arrange
@@ -261,4 +265,4 @@ class TestProgressLinesAndAttributes:
             PipelineRun(pipeline_name=blank_pipeline_name, artifact_sink=artifact_sink_testing)
 
         # Assert
-        AsserterException.assert_exception(expected_exception, actual_raised.value)
+        ExceptionAsserter.assert_expected_and_actual_are_equal(expected_exception, actual_raised.value)

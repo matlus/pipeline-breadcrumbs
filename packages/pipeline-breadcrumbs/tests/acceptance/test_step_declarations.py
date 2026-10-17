@@ -3,7 +3,7 @@
 # refuses a declaration that could not be told apart or sorted later.
 
 import pytest
-from breadcrumbs_acceptance_support.asserters.asserter_exception import AsserterException, ExpectedException
+from breadcrumbs_acceptance_support.asserters.asserter_exception import ExceptionAsserter, ExpectedException
 
 from pipeline_breadcrumbs import InvalidDeclarationError, Step, StepPath
 
@@ -60,7 +60,7 @@ class TestStepDeclaration:
             Step(step_number, "Load")
 
         # Assert
-        AsserterException.assert_exception(expected_exception, actual_raised.value)
+        ExceptionAsserter.assert_expected_and_actual_are_equal(expected_exception, actual_raised.value)
 
     def test_Step_WhenTheNameIsBlank_ThenItIsRefused(self) -> None:
         # Arrange
@@ -71,7 +71,7 @@ class TestStepDeclaration:
             Step(1, "   ")
 
         # Assert
-        AsserterException.assert_exception(expected_exception, actual_raised.value)
+        ExceptionAsserter.assert_expected_and_actual_are_equal(expected_exception, actual_raised.value)
 
     @pytest.mark.parametrize("requested_key", ["Has Space", "UPPER", "double__underscore", "_leading"])
     def test_Step_WhenTheRequestedKeyIsMalformed_ThenItIsRefused(self, requested_key: str) -> None:
@@ -85,7 +85,7 @@ class TestStepDeclaration:
             Step(1, "Load", requested_key=requested_key)
 
         # Assert
-        AsserterException.assert_exception(expected_exception, actual_raised.value)
+        ExceptionAsserter.assert_expected_and_actual_are_equal(expected_exception, actual_raised.value)
 
 
 @pytest.mark.acceptance

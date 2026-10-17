@@ -8,10 +8,10 @@ from typing import Final
 
 import pytest
 from breadcrumbs_acceptance_support.asserters.asserter_manifest import (
-    AsserterManifest,
     ExpectedManifest,
     ExpectedManifestStep,
     ExpectedManifestWorkItem,
+    ManifestAsserter,
 )
 from breadcrumbs_acceptance_support.clock_testing import ClockTesting
 from breadcrumbs_acceptance_support.data_generators import create_random_discriminator, create_random_pipeline_name, create_random_work_item
@@ -70,7 +70,7 @@ class TestRunManifest:
             clock_testing.advance(0.5)
 
         # Assert - the asserter also checks that the last artifact is the manifest itself
-        AsserterManifest.assert_manifest(expected_manifest, artifact_sink_testing.artifacts[-1])
+        ManifestAsserter.assert_expected_and_actual_are_equal(expected_manifest, artifact_sink_testing.artifacts[-1])
 
     async def test_PipelineRun_WhenAStepEmitsAnOutputArtifact_ThenTheManifestMarksItAsAnOutput(
         self, clock_testing: ClockTesting, artifact_sink_testing: ArtifactSinkTesting, run_logger: logging.Logger
@@ -103,7 +103,7 @@ class TestRunManifest:
             await step_scope.emit(FINAL_REPORT, b"# Report")
 
         # Assert
-        AsserterManifest.assert_manifest(expected_manifest, artifact_sink_testing.artifacts[-1])
+        ManifestAsserter.assert_expected_and_actual_are_equal(expected_manifest, artifact_sink_testing.artifacts[-1])
 
     async def test_PipelineRun_WhenOneWorkItemFails_ThenTheManifestMarksTheRunFailedAndRecordsWhy(
         self, clock_testing: ClockTesting, artifact_sink_testing: ArtifactSinkTesting, run_logger: logging.Logger
@@ -146,7 +146,7 @@ class TestRunManifest:
                 pass
 
         # Assert
-        AsserterManifest.assert_manifest(expected_manifest, artifact_sink_testing.artifacts[-1])
+        ManifestAsserter.assert_expected_and_actual_are_equal(expected_manifest, artifact_sink_testing.artifacts[-1])
 
     async def test_PipelineRun_WhenAChildStepIsSkipped_ThenTheManifestListsItWithItsReason(
         self, clock_testing: ClockTesting, artifact_sink_testing: ArtifactSinkTesting, run_logger: logging.Logger
@@ -180,7 +180,7 @@ class TestRunManifest:
             step_scope.skipped(DETECT_SECTIONS, skip_reason)
 
         # Assert
-        AsserterManifest.assert_manifest(expected_manifest, artifact_sink_testing.artifacts[-1])
+        ManifestAsserter.assert_expected_and_actual_are_equal(expected_manifest, artifact_sink_testing.artifacts[-1])
 
     async def test_PipelineRun_WhenTheSameWorkItemIsOpenedAgainAfterAFailure_ThenBothAttemptsStayInTheManifestAndTheRunIsFailed(
         self, clock_testing: ClockTesting, artifact_sink_testing: ArtifactSinkTesting, run_logger: logging.Logger
@@ -222,7 +222,7 @@ class TestRunManifest:
                 pass
 
         # Assert
-        AsserterManifest.assert_manifest(expected_manifest, artifact_sink_testing.artifacts[-1])
+        ManifestAsserter.assert_expected_and_actual_are_equal(expected_manifest, artifact_sink_testing.artifacts[-1])
 
     async def test_PipelineRun_WhenTheSameStepIsOpenedOncePerPage_ThenTheManifestKeepsEveryOpening(
         self, clock_testing: ClockTesting, artifact_sink_testing: ArtifactSinkTesting, run_logger: logging.Logger
@@ -266,7 +266,7 @@ class TestRunManifest:
                     await open_the_step_once_per_page(work_item_scope)
 
         # Assert
-        AsserterManifest.assert_manifest(expected_manifest, artifact_sink_testing.artifacts[-1])
+        ManifestAsserter.assert_expected_and_actual_are_equal(expected_manifest, artifact_sink_testing.artifacts[-1])
 
     async def test_PipelineRun_WhenTheSameStepRunsOnSeveralPagesAtOnce_ThenEachOpeningClosesItsOwnRecord(
         self, clock_testing: ClockTesting, artifact_sink_testing: ArtifactSinkTesting, run_logger: logging.Logger
@@ -304,4 +304,4 @@ class TestRunManifest:
             await asyncio.gather(*(load_one_page(work_item_scope, page_number) for page_number in range(3)))
 
         # Assert
-        AsserterManifest.assert_manifest(expected_manifest, artifact_sink_testing.artifacts[-1])
+        ManifestAsserter.assert_expected_and_actual_are_equal(expected_manifest, artifact_sink_testing.artifacts[-1])

@@ -15,17 +15,17 @@ class ExpectedStepBoundary:
     elapsed_seconds: float | None = None
 
 
-class AsserterStepBoundaries:
+class StepBoundariesAsserter:
     """Checks the step boundary records a run logged, in order, and reports every discrepancy at once."""
 
     STEP_BOUNDARIES_ASSERTION_FAILED_HEADER: Final[str] = "STEP BOUNDARY ASSERTION FAILED"
 
     @staticmethod
-    def assert_exactly_these_step_boundaries(
+    def assert_expected_and_actual_are_equal(
         expected_step_boundaries: Sequence[ExpectedStepBoundary],
         actual_log_records: Sequence[logging.LogRecord],
     ) -> None:
-        actual_step_boundaries: list[ExpectedStepBoundary] = AsserterStepBoundaries._to_step_boundaries(actual_log_records)
+        actual_step_boundaries: list[ExpectedStepBoundary] = StepBoundariesAsserter._to_step_boundaries(actual_log_records)
         mismatches: list[str] = []
         position: int
         expected_step_boundary: ExpectedStepBoundary
@@ -33,7 +33,7 @@ class AsserterStepBoundaries:
         for position, (expected_step_boundary, actual_step_boundary) in enumerate(
             zip(expected_step_boundaries, actual_step_boundaries, strict=False)
         ):
-            mismatches.extend(AsserterStepBoundaries._compare_boundary(position, expected_step_boundary, actual_step_boundary))
+            mismatches.extend(StepBoundariesAsserter._compare_boundary(position, expected_step_boundary, actual_step_boundary))
         mismatches.extend(
             f"missing boundary {position}: step {missing_expected_step_boundary.step_number} {missing_expected_step_boundary.step_status}"
             for position, missing_expected_step_boundary in enumerate(
@@ -47,7 +47,7 @@ class AsserterStepBoundaries:
             )
         )
         assert not mismatches, format_assertion_report(
-            AsserterStepBoundaries.STEP_BOUNDARIES_ASSERTION_FAILED_HEADER,
+            StepBoundariesAsserter.STEP_BOUNDARIES_ASSERTION_FAILED_HEADER,
             "Every step announces itself and reports how it ended, in the order the steps ran.",
             f"{len(expected_step_boundaries)} expected boundary record(s), {len(actual_step_boundaries)} logged",
             mismatches,

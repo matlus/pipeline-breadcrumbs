@@ -12,9 +12,9 @@ from collections.abc import Sequence
 from typing import Final
 
 import pytest
-from analysis_acceptance_support.asserters.asserter_analysis_artifacts import AsserterAnalysisArtifacts
-from analysis_acceptance_support.asserters.asserter_analyzed_sections import AsserterAnalyzedSections
-from analysis_acceptance_support.asserters.asserter_model_service_requests import AsserterModelServiceRequests
+from analysis_acceptance_support.asserters.asserter_analysis_artifacts import AnalysisArtifactsAsserter
+from analysis_acceptance_support.asserters.asserter_analyzed_sections import AnalyzedSectionsAsserter
+from analysis_acceptance_support.asserters.asserter_model_service_requests import DetectionConcurrencyAsserter, ModelServiceRequestsAsserter
 from analysis_acceptance_support.data_generators import (
     create_page_texts,
     create_random_category,
@@ -32,9 +32,9 @@ from analysis_acceptance_support.mediator_model_service import (
     TestMediatorModelService,
 )
 from analysis_acceptance_support.service_locator_testing import ServiceLocatorTesting, create_document_analysis_manager
-from breadcrumbs_acceptance_support.asserters.asserter_artifacts import AsserterArtifacts
-from breadcrumbs_acceptance_support.asserters.asserter_exception import AsserterException, ExpectedException
-from breadcrumbs_acceptance_support.asserters.asserter_step_boundaries import AsserterStepBoundaries, ExpectedStepBoundary
+from breadcrumbs_acceptance_support.asserters.asserter_artifacts import ArtifactFilenamesAsserter
+from breadcrumbs_acceptance_support.asserters.asserter_exception import ExceptionAsserter, ExpectedException
+from breadcrumbs_acceptance_support.asserters.asserter_step_boundaries import ExpectedStepBoundary, StepBoundariesAsserter
 from breadcrumbs_acceptance_support.data_generators import create_random_pipeline_name, create_random_work_item
 
 from pipeline_breadcrumbs import PipelineRun, WorkItem
@@ -134,8 +134,8 @@ class TestAnalyzeDocumentExpectedPaths:
             )
 
         # Assert
-        AsserterAnalyzedSections.assert_exactly_these_sections(expected_scored_sections, actual_document_analysis.scored_sections)
-        AsserterStepBoundaries.assert_exactly_these_step_boundaries(CONFIDENT_RUN_STEP_BOUNDARIES, record_capture.records)
+        AnalyzedSectionsAsserter.assert_expected_and_actual_are_equal(expected_scored_sections, actual_document_analysis.scored_sections)
+        StepBoundariesAsserter.assert_expected_and_actual_are_equal(CONFIDENT_RUN_STEP_BOUNDARIES, record_capture.records)
         assert len(test_mediator_model_service.captured_reconcile_section_question_requests) == expected_reconcile_request_count
 
     async def test_analyze_document_WhenOneScoreIsDoubtful_ThenTheModelIsAskedAgainAndTheReconciledScoreIsReturned(
@@ -175,8 +175,8 @@ class TestAnalyzeDocumentExpectedPaths:
             )
 
         # Assert
-        AsserterAnalyzedSections.assert_exactly_these_sections(expected_scored_sections, actual_document_analysis.scored_sections)
-        AsserterStepBoundaries.assert_exactly_these_step_boundaries(expected_step_boundaries, record_capture.records)
+        AnalyzedSectionsAsserter.assert_expected_and_actual_are_equal(expected_scored_sections, actual_document_analysis.scored_sections)
+        StepBoundariesAsserter.assert_expected_and_actual_are_equal(expected_step_boundaries, record_capture.records)
 
     async def test_analyze_document_WhenSectionsAreAnalyzed_ThenTheGatewayPutsEachQuestionOnTheWireWithItsSection(
         self, artifact_sink_testing: ArtifactSinkTesting, run_logger: logging.Logger
@@ -212,7 +212,7 @@ class TestAnalyzeDocumentExpectedPaths:
             await document_analysis_manager.analyze_document(work_item_scope, page_texts)
 
         # Assert
-        AsserterModelServiceRequests.assert_requests(
+        ModelServiceRequestsAsserter.assert_expected_and_actual_are_equal(
             expected_section_detection_requests,
             expected_score_section_question_requests,
             expected_reconcile_section_question_requests,
@@ -252,7 +252,7 @@ class TestAnalyzeDocumentExpectedPaths:
             await document_analysis_manager.analyze_document(work_item_scope, create_page_texts(section_titles))
 
         # Assert
-        AsserterAnalysisArtifacts.assert_trail(
+        AnalysisArtifactsAsserter.assert_expected_and_actual_are_equal(
             expected_filenames, expected_output_filenames, ANALYSIS_REPORT, REPORT_HEADING, artifact_sink_testing.artifacts
         )
 
@@ -272,7 +272,7 @@ class TestAnalyzeDocumentExpectedPaths:
             await document_analysis_manager.analyze_document(work_item_scope, create_page_texts(section_titles))
 
         # Assert - every page was asked about, and never more than the limit at the same moment
-        AsserterModelServiceRequests.assert_detection_concurrency(
+        DetectionConcurrencyAsserter.assert_expected_and_actual_are_equal(
             expected_page_numbers,
             MAX_CONCURRENCY,
             test_mediator_model_service.captured_section_detection_requests,
@@ -308,10 +308,10 @@ class TestAnalyzeDocumentValidation:
                 await document_analysis_manager.analyze_document(work_item_scope, [])
 
         # Assert - nothing ran: no step, no model question, only the run's own manifest
-        AsserterException.assert_exception(expected_exception, actual_raised.value)
-        AsserterStepBoundaries.assert_exactly_these_step_boundaries(expected_step_boundaries, record_capture.records)
+        ExceptionAsserter.assert_expected_and_actual_are_equal(expected_exception, actual_raised.value)
+        StepBoundariesAsserter.assert_expected_and_actual_are_equal(expected_step_boundaries, record_capture.records)
         assert test_mediator_model_service.captured_model_service_request_count == expected_model_service_request_count
-        AsserterArtifacts.assert_exactly_these_filenames_in_order(expected_filenames, artifact_sink_testing.artifacts)
+        ArtifactFilenamesAsserter.assert_expected_and_actual_are_equal(expected_filenames, artifact_sink_testing.artifacts)
 
     async def test_analyze_document_WhenSeveralPagesAreBlank_ThenOneErrorNamesAllOfThem(
         self, artifact_sink_testing: ArtifactSinkTesting, run_logger: logging.Logger
@@ -334,7 +334,7 @@ class TestAnalyzeDocumentValidation:
                 await document_analysis_manager.analyze_document(work_item_scope, pages_with_blanks)
 
         # Assert
-        AsserterException.assert_exception(expected_exception, actual_raised.value)
+        ExceptionAsserter.assert_expected_and_actual_are_equal(expected_exception, actual_raised.value)
 
 
 # ==================== MODEL REPLY FAILURES ====================
@@ -381,9 +381,9 @@ class TestAnalyzeDocumentModelReplyFailures:
                 await document_analysis_manager.analyze_document(work_item_scope, create_page_texts(section_titles))
 
         # Assert - the failing step is named on the exception, and the evidence precedes the failure
-        AsserterException.assert_exception(expected_exception, actual_raised.value)
-        AsserterArtifacts.assert_exactly_these_filenames_in_order(expected_filenames, artifact_sink_testing.artifacts)
-        AsserterStepBoundaries.assert_exactly_these_step_boundaries(DETECTION_FAILED_STEP_BOUNDARIES, record_capture.records)
+        ExceptionAsserter.assert_expected_and_actual_are_equal(expected_exception, actual_raised.value)
+        ArtifactFilenamesAsserter.assert_expected_and_actual_are_equal(expected_filenames, artifact_sink_testing.artifacts)
+        StepBoundariesAsserter.assert_expected_and_actual_are_equal(DETECTION_FAILED_STEP_BOUNDARIES, record_capture.records)
 
     async def test_analyze_document_WhenSeveralPagesGetMalformedReplies_ThenTheFirstFailureInPageOrderEndsTheStep(
         self, artifact_sink_testing: ArtifactSinkTesting, run_logger: logging.Logger
@@ -418,7 +418,7 @@ class TestAnalyzeDocumentModelReplyFailures:
                 await document_analysis_manager.analyze_document(work_item_scope, create_page_texts(section_titles))
 
         # Assert
-        AsserterException.assert_exception(expected_exception, actual_raised.value)
+        ExceptionAsserter.assert_expected_and_actual_are_equal(expected_exception, actual_raised.value)
 
     @pytest.mark.parametrize(
         ("hostile_reply", "expected_reason_phrase"),
@@ -450,7 +450,7 @@ class TestAnalyzeDocumentModelReplyFailures:
                 await document_analysis_manager.analyze_document(work_item_scope, create_page_texts(section_titles))
 
         # Assert - the reply ended as the one exception the system promises, naming the page
-        AsserterException.assert_exception(expected_exception, actual_raised.value)
+        ExceptionAsserter.assert_expected_and_actual_are_equal(expected_exception, actual_raised.value)
 
     @pytest.mark.parametrize(
         ("score_reply", "expected_reason_phrase"),
@@ -505,7 +505,7 @@ class TestAnalyzeDocumentModelReplyFailures:
                 await document_analysis_manager.analyze_document(work_item_scope, create_page_texts(section_titles))
 
         # Assert
-        AsserterException.assert_exception(expected_exception, actual_raised.value)
+        ExceptionAsserter.assert_expected_and_actual_are_equal(expected_exception, actual_raised.value)
 
 
 # ==================== MODEL SERVICE FAILURES ====================
@@ -540,8 +540,8 @@ class TestAnalyzeDocumentModelServiceFailures:
                 await document_analysis_manager.analyze_document(work_item_scope, create_page_texts(section_titles))
 
         # Assert
-        AsserterException.assert_exception(expected_exception, actual_raised.value)
-        AsserterStepBoundaries.assert_exactly_these_step_boundaries(DETECTION_FAILED_STEP_BOUNDARIES, record_capture.records)
+        ExceptionAsserter.assert_expected_and_actual_are_equal(expected_exception, actual_raised.value)
+        StepBoundariesAsserter.assert_expected_and_actual_are_equal(DETECTION_FAILED_STEP_BOUNDARIES, record_capture.records)
 
     async def test_analyze_document_WhenTheModelServiceIsUnavailable_ThenTheErrorCarriesTheStatusAndWhatTheServiceSaid(
         self, artifact_sink_testing: ArtifactSinkTesting, run_logger: logging.Logger
@@ -573,7 +573,7 @@ class TestAnalyzeDocumentModelServiceFailures:
                 await document_analysis_manager.analyze_document(work_item_scope, create_page_texts(section_titles))
 
         # Assert
-        AsserterException.assert_exception(expected_exception, actual_raised.value)
+        ExceptionAsserter.assert_expected_and_actual_are_equal(expected_exception, actual_raised.value)
 
     async def test_analyze_document_WhenTheModelServiceRejectsTheRequest_ThenAModelServiceRequestRejectedErrorNamesTheStatus(
         self, artifact_sink_testing: ArtifactSinkTesting, run_logger: logging.Logger
@@ -605,7 +605,7 @@ class TestAnalyzeDocumentModelServiceFailures:
                 await document_analysis_manager.analyze_document(work_item_scope, create_page_texts(section_titles))
 
         # Assert
-        AsserterException.assert_exception(expected_exception, actual_raised.value)
+        ExceptionAsserter.assert_expected_and_actual_are_equal(expected_exception, actual_raised.value)
 
     @pytest.mark.parametrize(
         ("response_body", "expected_reason_phrase"),
@@ -644,7 +644,7 @@ class TestAnalyzeDocumentModelServiceFailures:
                 await document_analysis_manager.analyze_document(work_item_scope, create_page_texts(section_titles))
 
         # Assert
-        AsserterException.assert_exception(expected_exception, actual_raised.value)
+        ExceptionAsserter.assert_expected_and_actual_are_equal(expected_exception, actual_raised.value)
 
 
 # ==================== LIFECYCLE ====================
@@ -702,7 +702,7 @@ class TestDocumentAnalysisManagerConfiguration:
             DocumentAnalysisManager(service_locator_testing)
 
         # Assert
-        AsserterException.assert_exception(expected_exception, actual_raised.value)
+        ExceptionAsserter.assert_expected_and_actual_are_equal(expected_exception, actual_raised.value)
 
     @pytest.mark.parametrize(
         "setting_value",
@@ -733,4 +733,4 @@ class TestDocumentAnalysisManagerConfiguration:
             DocumentAnalysisManager(service_locator_testing)
 
         # Assert
-        AsserterException.assert_exception(expected_exception, actual_raised.value)
+        ExceptionAsserter.assert_expected_and_actual_are_equal(expected_exception, actual_raised.value)

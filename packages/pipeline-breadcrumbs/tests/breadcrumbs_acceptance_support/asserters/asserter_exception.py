@@ -20,7 +20,7 @@ class ExpectedException:
     note_phrases: Sequence[str] = ()
 
 
-class AsserterException:
+class ExceptionAsserter:
     """Checks a raised exception's precise type, the phrases its message must contain, its named diagnostic data, its cause and its notes.
 
     Every difference is collected before one failure, so a test learns all of what is wrong at once.
@@ -29,16 +29,16 @@ class AsserterException:
     EXCEPTION_ASSERTION_FAILED_HEADER: Final[str] = "EXCEPTION ASSERTION FAILED"
 
     @staticmethod
-    def assert_exception(expected_exception: ExpectedException, actual_exception: BaseException) -> None:
+    def assert_expected_and_actual_are_equal(expected_exception: ExpectedException, actual_exception: BaseException) -> None:
         mismatches: list[str] = [
-            *AsserterException._compare_type(expected_exception.exception_type, type(actual_exception)),
-            *AsserterException._compare_message_phrases(expected_exception.message_phrases, str(actual_exception)),
-            *AsserterException._compare_contextual_data(expected_exception.contextual_data_by_name, actual_exception),
-            *AsserterException._compare_cause(expected_exception.cause_type, actual_exception.__cause__),
-            *AsserterException._compare_notes(expected_exception.note_phrases, "\n".join(getattr(actual_exception, "__notes__", []))),
+            *ExceptionAsserter._compare_type(expected_exception.exception_type, type(actual_exception)),
+            *ExceptionAsserter._compare_message_phrases(expected_exception.message_phrases, str(actual_exception)),
+            *ExceptionAsserter._compare_contextual_data(expected_exception.contextual_data_by_name, actual_exception),
+            *ExceptionAsserter._compare_cause(expected_exception.cause_type, actual_exception.__cause__),
+            *ExceptionAsserter._compare_notes(expected_exception.note_phrases, "\n".join(getattr(actual_exception, "__notes__", []))),
         ]
         assert not mismatches, format_assertion_report(
-            AsserterException.EXCEPTION_ASSERTION_FAILED_HEADER,
+            ExceptionAsserter.EXCEPTION_ASSERTION_FAILED_HEADER,
             f"The failure surfaces as a {expected_exception.exception_type.__name__} that explains itself and carries its diagnostic facts.",
             f"raised {type(actual_exception).__name__}: {actual_exception}",
             mismatches,
