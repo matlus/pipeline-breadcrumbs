@@ -24,6 +24,10 @@ def create_random_outcome() -> str:
     return f"Outcome {secrets.token_hex(_RANDOM_SUFFIX_BYTES)}"
 
 
+def create_random_failure_message() -> str:
+    return f"Failure {secrets.token_hex(_RANDOM_SUFFIX_BYTES)}"
+
+
 def create_random_skip_reason() -> str:
     return f"Skip reason {secrets.token_hex(_RANDOM_SUFFIX_BYTES)}"
 

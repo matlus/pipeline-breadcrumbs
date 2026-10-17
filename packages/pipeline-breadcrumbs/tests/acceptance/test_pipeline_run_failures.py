@@ -11,7 +11,12 @@ from breadcrumbs_acceptance_support.asserters.asserter_exception import ANY_CONT
 from breadcrumbs_acceptance_support.asserters.asserter_log_record import AsserterLogRecord, ExpectedLogRecord
 from breadcrumbs_acceptance_support.asserters.asserter_step_boundaries import AsserterStepBoundaries, ExpectedStepBoundary
 from breadcrumbs_acceptance_support.clock_testing import ClockTesting
-from breadcrumbs_acceptance_support.data_generators import create_random_pipeline_name, create_random_skip_reason, create_random_work_item
+from breadcrumbs_acceptance_support.data_generators import (
+    create_random_failure_message,
+    create_random_pipeline_name,
+    create_random_skip_reason,
+    create_random_work_item,
+)
 from breadcrumbs_acceptance_support.exceptions_testing import DiagnosticTestingError, PlainTestingError
 
 from pipeline_breadcrumbs import (
@@ -59,7 +64,7 @@ class TestFailingStep:
         pipeline_name: str = create_random_pipeline_name()
         work_item: WorkItem = create_random_work_item()
         expected_elapsed_seconds: float = 1.25
-        expected_failure_message: str = "bad json"
+        expected_failure_message: str = create_random_failure_message()
         pipeline_run: PipelineRun = PipelineRun(
             pipeline_name=pipeline_name, artifact_sink=artifact_sink_testing, logger=run_logger, supplied_clock=clock_testing.clock
         )
@@ -92,7 +97,7 @@ class TestFailingStep:
         # Arrange
         pipeline_name: str = create_random_pipeline_name()
         work_item: WorkItem = create_random_work_item()
-        failure_message: str = "response was not json"
+        failure_message: str = create_random_failure_message()
         pipeline_run: PipelineRun = PipelineRun(pipeline_name=pipeline_name, artifact_sink=artifact_sink_testing, logger=run_logger)
         # The child step stamps first; the parent finds the stamp and leaves it alone.
         expected_exception: ExpectedException = ExpectedException(
@@ -171,7 +176,7 @@ class TestFailingSink:
     ) -> None:
         # Arrange
         pipeline_name: str = create_random_pipeline_name()
-        real_problem_message: str = "the real problem"
+        real_problem_message: str = create_random_failure_message()
         pipeline_run: PipelineRun = PipelineRun(pipeline_name=pipeline_name, artifact_sink=ArtifactSinkUnreachable(), logger=run_logger)
         expected_exception: ExpectedException = ExpectedException(
             PlainTestingError, message_phrases=[real_problem_message], note_phrases=["run manifest could not be persisted", MANIFEST_FILENAME]
