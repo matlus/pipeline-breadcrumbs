@@ -20,9 +20,6 @@ from pipeline_breadcrumbs_app.document_analysis.configuration_providers.settings
 from pipeline_breadcrumbs_app.document_analysis.configuration_providers.settings_models.simulated_work_settings import SimulatedWorkSettings
 from pipeline_breadcrumbs_app.document_analysis.gateways.gateway_model_service import GatewayModelService
 from pipeline_breadcrumbs_app.document_analysis.models import DetectedSection, DocumentAnalysis, ScoredSection
-from pipeline_breadcrumbs_app.document_analysis.processors.classification.prompt_builder import PromptBuilder
-from pipeline_breadcrumbs_app.document_analysis.processors.classification.score_reconciler import ScoreReconciler
-from pipeline_breadcrumbs_app.document_analysis.processors.classification.section_scorer import SectionScorer
 from pipeline_breadcrumbs_app.document_analysis.processors.page_loader import PageLoader
 from pipeline_breadcrumbs_app.document_analysis.processors.report_assembler import ReportAssembler
 from pipeline_breadcrumbs_app.document_analysis.processors.section_classifier import SectionClassifier
@@ -51,11 +48,7 @@ class DocumentAnalysisManager:
         )
         self._page_loader: PageLoader = PageLoader(simulated_work)
         self._section_detector: SectionDetector = SectionDetector(self._gateway_model_service)
-        self._section_classifier: SectionClassifier = SectionClassifier(
-            PromptBuilder(simulated_work),
-            SectionScorer(self._gateway_model_service),
-            ScoreReconciler(self._gateway_model_service),
-        )
+        self._section_classifier: SectionClassifier = SectionClassifier(self._gateway_model_service, simulated_work)
         self._report_assembler: ReportAssembler = ReportAssembler(simulated_work)
 
     async def __aenter__(self) -> Self:
@@ -71,6 +64,6 @@ class DocumentAnalysisManager:
         DocumentAnalysisValidator.validate(pages)
         loaded_pages: list[str] = await self._page_loader.load(step_host, pages)
         detected_sections: list[DetectedSection] = await self._section_detector.detect(step_host, loaded_pages)
-        classified_sections: list[ScoredSection] = await self._section_classifier.classify(step_host, detected_sections)
-        report: str = await self._report_assembler.assemble(step_host, classified_sections)
-        return DocumentAnalysis(sections=classified_sections, report=report)
+        classified_scored_sections: list[ScoredSection] = await self._section_classifier.classify(step_host, detected_sections)
+        report: str = await self._report_assembler.assemble(step_host, classified_scored_sections)
+        return DocumentAnalysis(scored_sections=classified_scored_sections, report=report)

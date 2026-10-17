@@ -62,13 +62,13 @@ class TestMediatorModelService:
         detection_reply_by_page_number: Mapping[int, str] | None = None,
         score_reply_by_title: Mapping[str, str] | None = None,
         reconcile_reply_by_title: Mapping[str, str] | None = None,
-        scripted_response: ScriptedModelServiceResponse | None = None,
+        scripted_model_service_response: ScriptedModelServiceResponse | None = None,
         simulate_unreachable: bool = False,
     ) -> None:
         self._detection_reply_by_page_number: Mapping[int, str] = detection_reply_by_page_number or {}
         self._score_reply_by_title: Mapping[str, str] = score_reply_by_title or {}
         self._reconcile_reply_by_title: Mapping[str, str] = reconcile_reply_by_title or {}
-        self._scripted_response: ScriptedModelServiceResponse | None = scripted_response
+        self._scripted_model_service_response: ScriptedModelServiceResponse | None = scripted_model_service_response
         self._simulate_unreachable: bool = simulate_unreachable
         self._concurrent_detection_count: int = 0
         self.captured_detection_requests: list[CapturedSectionDetectionRequest] = []
@@ -81,9 +81,9 @@ class TestMediatorModelService:
         return len(self.captured_detection_requests) + len(self.captured_score_requests) + len(self.captured_reconcile_requests)
 
     def create_http_transport(self) -> httpx.MockTransport:
-        return httpx.MockTransport(self._handle_model_service_request)
+        return httpx.MockTransport(self._answer_model_service_request)
 
-    async def _handle_model_service_request(self, model_service_request: httpx.Request) -> httpx.Response:
+    async def _answer_model_service_request(self, model_service_request: httpx.Request) -> httpx.Response:
         if self._simulate_unreachable:
             raise httpx.ConnectError("the model service is unreachable (simulated by TestMediatorModelService)")
         resource_path: str = model_service_request.url.path
@@ -98,20 +98,20 @@ class TestMediatorModelService:
             return self._answer(self._reconcile_reply_by_title, captured_section_request["title"])
         raise AssertionError(f"The gateway called a resource the model service does not have: {resource_path}")
 
-    async def _answer_detection(self, captured_detection_request: CapturedSectionDetectionRequest) -> httpx.Response:
-        self.captured_detection_requests.append(captured_detection_request)
+    async def _answer_detection(self, captured_section_detection_request: CapturedSectionDetectionRequest) -> httpx.Response:
+        self.captured_detection_requests.append(captured_section_detection_request)
         self._concurrent_detection_count += 1
         self.maximum_concurrent_detection_count = max(self.maximum_concurrent_detection_count, self._concurrent_detection_count)
         try:
             # Yield to the event loop so concurrent requests overlap here, where the count can see them.
             await asyncio.sleep(0)
-            return self._answer(self._detection_reply_by_page_number, captured_detection_request["page_number"])
+            return self._answer(self._detection_reply_by_page_number, captured_section_detection_request["page_number"])
         finally:
             self._concurrent_detection_count -= 1
 
     def _answer[ReplyKeyT](self, reply_by_key: Mapping[ReplyKeyT, str], reply_key: ReplyKeyT) -> httpx.Response:
-        if self._scripted_response is not None:
-            return httpx.Response(self._scripted_response.status_code, text=self._scripted_response.body_text)
+        if self._scripted_model_service_response is not None:
+            return httpx.Response(self._scripted_model_service_response.status_code, text=self._scripted_model_service_response.body_text)
         if reply_key not in reply_by_key:
             raise AssertionError(f"The scenario arranged no model reply for {reply_key!r}")
         return httpx.Response(HTTP_STATUS_OK, json={"reply": reply_by_key[reply_key]})

@@ -14,12 +14,15 @@ from analysis_acceptance_support.asserters.asserter_run_folder import (
     ExpectedRunOutcome,
     ExpectedWorkItemOutcome,
 )
+from analysis_acceptance_support.asserters.asserter_shared_logger import AsserterSharedLogger
+from analysis_acceptance_support.run_folder_reader import RunFolderReader
 from breadcrumbs_acceptance_support.asserters.asserter_exception import AsserterException, ExpectedException
 
 from pipeline_breadcrumbs import TimeDisplay
 from pipeline_breadcrumbs.testing import RecordCapture
 from pipeline_breadcrumbs_app.main import PIPELINE_NAME, DemoResult, HostProfile, run_demo
 from pipeline_breadcrumbs_app.sample_documents import InvalidFailPageError
+from pipeline_breadcrumbs_app.telemetry import ExceptionTelemetry
 
 NO_DELAY_SECONDS: Final[float] = 0.0
 # The demo's sample documents and the folders the file-system sink gives them: a fixed specification, not incidental data.
@@ -60,7 +63,9 @@ class TestDemoRunExpectedPaths:
         actual_demo_result: DemoResult = await run_demo(tmp_path, time_display=TimeDisplay.NONE, pace_seconds=NO_DELAY_SECONDS)
 
         # Assert
-        AsserterRunFolder.assert_run_outcome(expected_run_outcome, actual_demo_result.failed_work_items, actual_demo_result.run_directory)
+        AsserterRunFolder.assert_run_outcome(
+            expected_run_outcome, actual_demo_result.failed_work_items, RunFolderReader.read_manifest(actual_demo_result.run_directory)
+        )
 
     async def test_run_demo_WhenNoSectionIsDoubtful_ThenTheConditionalStepIsSkippedAndLeavesNoArtifact(self, tmp_path: Path) -> None:
         # Arrange - the lease has no doubtful section; the contract has one
@@ -85,7 +90,9 @@ class TestDemoRunExpectedPaths:
         actual_demo_result: DemoResult = await run_demo(tmp_path, time_display=TimeDisplay.NONE, pace_seconds=NO_DELAY_SECONDS)
 
         # Assert
-        AsserterRunFolder.assert_run_outcome(expected_run_outcome, actual_demo_result.failed_work_items, actual_demo_result.run_directory)
+        AsserterRunFolder.assert_run_outcome(
+            expected_run_outcome, actual_demo_result.failed_work_items, RunFolderReader.read_manifest(actual_demo_result.run_directory)
+        )
 
     async def test_run_demo_WhenTheRunFinishes_ThenTheRunFolderHoldsTheLogTheManifestAndAFolderPerWorkItem(self, tmp_path: Path) -> None:
         # Arrange
@@ -100,8 +107,10 @@ class TestDemoRunExpectedPaths:
         actual_demo_result: DemoResult = await run_demo(tmp_path, time_display=TimeDisplay.NONE, pace_seconds=NO_DELAY_SECONDS)
 
         # Assert
-        AsserterRunFolder.assert_exactly_these_entries(expected_entry_names, actual_demo_result.run_directory)
-        AsserterRunFolder.assert_work_item_files(expected_file_start_by_filename, actual_demo_result.run_directory / CONTRACT_FOLDER_NAME)
+        AsserterRunFolder.assert_exactly_these_entries(expected_entry_names, RunFolderReader.list_entry_names(actual_demo_result.run_directory))
+        AsserterRunFolder.assert_work_item_files(
+            expected_file_start_by_filename, RunFolderReader.read_text_by_filename(actual_demo_result.run_directory / CONTRACT_FOLDER_NAME)
+        )
 
     async def test_run_demo_WhenAWorkItemFolderIsListedAlphabetically_ThenTheFilesAreInStepOrder(self, tmp_path: Path) -> None:
         # Arrange
@@ -111,7 +120,12 @@ class TestDemoRunExpectedPaths:
         actual_demo_result: DemoResult = await run_demo(tmp_path, time_display=TimeDisplay.NONE, pace_seconds=NO_DELAY_SECONDS)
 
         # Assert - the step path in each filename, read in the order an ordinary file listing shows them, never goes backwards
-        AsserterRunFolder.assert_listing_in_step_order(expected_first_step_path, actual_demo_result.run_directory / CONTRACT_FOLDER_NAME)
+        actual_contract_folder: Path = actual_demo_result.run_directory / CONTRACT_FOLDER_NAME
+        AsserterRunFolder.assert_listing_in_step_order(
+            expected_first_step_path,
+            RunFolderReader.list_entry_names(actual_contract_folder),
+            RunFolderReader.list_folder_names(actual_contract_folder),
+        )
 
     async def test_run_demo_WhenTheRunFinishes_ThenTheRunLogReadsAsANumberedStory(self, tmp_path: Path) -> None:
         # Arrange
@@ -136,7 +150,7 @@ class TestDemoRunExpectedPaths:
         actual_demo_result: DemoResult = await run_demo(tmp_path, time_display=TimeDisplay.NONE, pace_seconds=NO_DELAY_SECONDS)
 
         # Assert
-        actual_run_log_lines: list[str] = (actual_demo_result.run_directory / RUN_LOG_FILENAME).read_text(encoding="utf-8").splitlines()
+        actual_run_log_lines: list[str] = RunFolderReader.read_run_log(actual_demo_result.run_directory).splitlines()
         actual_first_document_boundaries: list[str] = [actual_line for actual_line in actual_run_log_lines if actual_line.startswith("STEP ")][
             : len(expected_first_document_boundaries)
         ]
@@ -147,12 +161,19 @@ class TestDemoRunExpectedPaths:
         expected_manifest_filename: str = MANIFEST_FILENAME
 
         # Act
-        actual_first_result: DemoResult = await run_demo(tmp_path, time_display=TimeDisplay.NONE, pace_seconds=NO_DELAY_SECONDS)
-        actual_second_result: DemoResult = await run_demo(tmp_path, time_display=TimeDisplay.NONE, pace_seconds=NO_DELAY_SECONDS)
+        actual_first_demo_result: DemoResult = await run_demo(tmp_path, time_display=TimeDisplay.NONE, pace_seconds=NO_DELAY_SECONDS)
+        actual_second_demo_result: DemoResult = await run_demo(tmp_path, time_display=TimeDisplay.NONE, pace_seconds=NO_DELAY_SECONDS)
 
         # Assert
+        actual_entry_names_by_run_directory: dict[Path, list[str]] = {
+            actual_demo_result.run_directory: RunFolderReader.list_entry_names(actual_demo_result.run_directory)
+            for actual_demo_result in (actual_first_demo_result, actual_second_demo_result)
+        }
         AsserterRunFolder.assert_distinct_run_folders(
-            expected_manifest_filename, actual_first_result.run_directory, actual_second_result.run_directory
+            expected_manifest_filename,
+            actual_first_demo_result.run_directory,
+            actual_second_demo_result.run_directory,
+            actual_entry_names_by_run_directory,
         )
 
 
@@ -171,12 +192,9 @@ class TestDemoRunFailures:
             ],
         )
         # Emit-before-validate: all four raw replies, the malformed one included, are on disk beside the replies that parsed.
-        expected_raw_reply_filenames: list[str] = [
-            f"{CONTRACT_FOLDER_NAME}_step_02_raw_detection_response_page_{page_number:04d}.txt" for page_number in range(CONTRACT_PAGE_COUNT)
-        ]
-        expected_reply_start_by_filename: dict[str, str] = {
-            f"{CONTRACT_FOLDER_NAME}_step_02_raw_detection_response_page_{MALFORMED_PAGE_NUMBER:04d}.txt": "Sure! Here is the JSON"
-        }
+        raw_reply_filename_prefix: str = f"{CONTRACT_FOLDER_NAME}_step_02_raw_detection_response_page_"
+        expected_raw_reply_filenames: list[str] = [f"{raw_reply_filename_prefix}{page_number:04d}.txt" for page_number in range(CONTRACT_PAGE_COUNT)]
+        expected_reply_start_by_filename: dict[str, str] = {f"{raw_reply_filename_prefix}{MALFORMED_PAGE_NUMBER:04d}.txt": "Sure! Here is the JSON"}
 
         # Act
         actual_demo_result: DemoResult = await run_demo(
@@ -184,9 +202,13 @@ class TestDemoRunFailures:
         )
 
         # Assert
-        AsserterRunFolder.assert_run_outcome(expected_run_outcome, actual_demo_result.failed_work_items, actual_demo_result.run_directory)
+        AsserterRunFolder.assert_run_outcome(
+            expected_run_outcome, actual_demo_result.failed_work_items, RunFolderReader.read_manifest(actual_demo_result.run_directory)
+        )
         AsserterRunFolder.assert_raw_replies(
-            expected_raw_reply_filenames, expected_reply_start_by_filename, actual_demo_result.run_directory / CONTRACT_FOLDER_NAME
+            expected_raw_reply_filenames,
+            expected_reply_start_by_filename,
+            RunFolderReader.read_text_by_filename(actual_demo_result.run_directory / CONTRACT_FOLDER_NAME),
         )
 
     async def test_run_demo_WhenADocumentFails_ThenTheApplicationLogsTheExceptionOnceWithEveryNamedFact(self, tmp_path: Path) -> None:
@@ -205,7 +227,9 @@ class TestDemoRunFailures:
         )
 
         # Assert - the step and work item breadcrumbs name the failure but never print a traceback; the first one is the application's
-        AsserterRunFolder.assert_failure_logged_once(expected_host_log_line, expected_facts, actual_demo_result.run_directory)
+        AsserterRunFolder.assert_failure_logged_once(
+            expected_host_log_line, expected_facts, RunFolderReader.read_run_log(actual_demo_result.run_directory)
+        )
 
     async def test_run_demo_WhenTheFailingPageDoesNotExist_ThenItIsRefusedBeforeAnyFolderIsCreated(self, tmp_path: Path) -> None:
         # Arrange
@@ -213,7 +237,7 @@ class TestDemoRunFailures:
         expected_exception: ExpectedException = ExpectedException(
             InvalidFailPageError, message_phrases=[f"Page {missing_page_number} does not exist", CONTRACT_DOCUMENT_NAME]
         )
-        expected_entry_names: list[str] = []
+        expected_entry_names: set[str] = set()
 
         # Act
         with pytest.raises(InvalidFailPageError) as actual_raised:
@@ -221,7 +245,7 @@ class TestDemoRunFailures:
 
         # Assert
         AsserterException.assert_exception(expected_exception, actual_raised.value)
-        assert AsserterRunFolder.list_entry_names(tmp_path) == expected_entry_names
+        AsserterRunFolder.assert_exactly_these_entries(expected_entry_names, RunFolderReader.list_entry_names(tmp_path))
 
 
 @pytest.mark.acceptance
@@ -236,7 +260,7 @@ class TestDemoHosts:
         )
 
         # Assert - the exact entries leave no room for a telemetry file
-        AsserterRunFolder.assert_exactly_these_entries(expected_entry_names, actual_demo_result.run_directory)
+        AsserterRunFolder.assert_exactly_these_entries(expected_entry_names, RunFolderReader.list_entry_names(actual_demo_result.run_directory))
 
     async def test_run_demo_WhenRunHosted_ThenEveryArtifactIsStillPersistedExactlyAsItIsLocally(self, tmp_path: Path) -> None:
         # Arrange - the artifacts are the record of what each step did, so where the application runs never changes them
@@ -244,18 +268,28 @@ class TestDemoHosts:
         expected_hosted_entry_names: set[str] = {MANIFEST_FILENAME, CONTRACT_FOLDER_NAME, LEASE_FOLDER_NAME}
 
         # Act
-        actual_local_result: DemoResult = await run_demo(
+        actual_local_demo_result: DemoResult = await run_demo(
             tmp_path / "local", host_profile=HostProfile.LOCAL, time_display=TimeDisplay.NONE, pace_seconds=NO_DELAY_SECONDS
         )
-        actual_hosted_result: DemoResult = await run_demo(
+        actual_hosted_demo_result: DemoResult = await run_demo(
             tmp_path / "hosted", host_profile=HostProfile.HOSTED, time_display=TimeDisplay.NONE, pace_seconds=NO_DELAY_SECONDS
         )
 
         # Assert
+        actual_local_listing_by_folder_name: dict[str, list[str]] = {
+            folder_name: RunFolderReader.list_entry_names(actual_local_demo_result.run_directory / folder_name)
+            for folder_name in RunFolderReader.list_folder_names(actual_local_demo_result.run_directory)
+        }
+        actual_hosted_listing_by_folder_name: dict[str, list[str]] = {
+            folder_name: RunFolderReader.list_entry_names(actual_hosted_demo_result.run_directory / folder_name)
+            for folder_name in RunFolderReader.list_folder_names(actual_hosted_demo_result.run_directory)
+        }
         AsserterRunFolder.assert_same_work_item_listings(
-            expected_work_item_folder_names, actual_local_result.run_directory, actual_hosted_result.run_directory
+            expected_work_item_folder_names, actual_local_listing_by_folder_name, actual_hosted_listing_by_folder_name
         )
-        AsserterRunFolder.assert_exactly_these_entries(expected_hosted_entry_names, actual_hosted_result.run_directory)
+        AsserterRunFolder.assert_exactly_these_entries(
+            expected_hosted_entry_names, RunFolderReader.list_entry_names(actual_hosted_demo_result.run_directory)
+        )
 
     async def test_run_demo_WhenRunHostedWithoutAFailure_ThenNothingIsSentToTelemetry(self, tmp_path: Path) -> None:
         # Arrange - the step started, step complete and timing lines are informational; they never reach telemetry
@@ -267,7 +301,8 @@ class TestDemoHosts:
         )
 
         # Assert
-        assert len(AsserterRunFolder.read_telemetry(actual_demo_result.run_directory)) == expected_telemetry_count
+        actual_exception_telemetry_records: list[ExceptionTelemetry] = RunFolderReader.read_exception_telemetry(actual_demo_result.run_directory)
+        assert len(actual_exception_telemetry_records) == expected_telemetry_count
 
     async def test_run_demo_WhenRunHostedAndADocumentFails_ThenOnlyTheExceptionReachesTelemetryWithItsFacts(self, tmp_path: Path) -> None:
         # Arrange - one exception, even though the failing step and its work item each logged a warning breadcrumb
@@ -294,7 +329,10 @@ class TestDemoHosts:
         )
 
         # Assert
-        AsserterRunFolder.assert_single_exception_telemetry(expected_exception_telemetry, actual_demo_result.run_directory)
+        actual_manifest_run_id: str = RunFolderReader.read_manifest(actual_demo_result.run_directory)["run_id"]
+        AsserterRunFolder.assert_single_exception_telemetry(
+            expected_exception_telemetry, RunFolderReader.read_exception_telemetry(actual_demo_result.run_directory), actual_manifest_run_id
+        )
 
     async def test_run_demo_WhenTheCallerSuppliesTheLogger_ThenTheSystemSharesThatOneLoggerAndItsHandlersAreRestored(
         self, tmp_path: Path, run_logger: logging.Logger, record_capture: RecordCapture
@@ -307,6 +345,5 @@ class TestDemoHosts:
         await run_demo(tmp_path, logger=run_logger, host_profile=HostProfile.HOSTED, fail_page=MALFORMED_PAGE_NUMBER, pace_seconds=NO_DELAY_SECONDS)
 
         # Assert - the caller's logger carried every record, the informational ones included, and was left as it was found
-        actual_levels: set[int] = {actual_record.levelno for actual_record in record_capture.records}
-        assert expected_levels <= actual_levels
-        assert len(run_logger.handlers) == expected_handler_count
+        actual_levels: set[int] = {actual_log_record.levelno for actual_log_record in record_capture.records}
+        AsserterSharedLogger.assert_logger_shared_and_restored(expected_levels, expected_handler_count, actual_levels, len(run_logger.handlers))

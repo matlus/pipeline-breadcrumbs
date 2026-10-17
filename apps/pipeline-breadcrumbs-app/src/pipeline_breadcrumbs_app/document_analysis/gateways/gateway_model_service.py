@@ -1,9 +1,8 @@
 import asyncio
 import json
 import unicodedata
-from collections.abc import Mapping
 from types import TracebackType
-from typing import Any, Final, Self, cast, final
+from typing import Any, Final, Self, TypedDict, cast, final
 
 import httpx
 
@@ -17,6 +16,21 @@ from pipeline_breadcrumbs_app.document_analysis.models import ClassificationProm
 DETECT_SECTION_OPERATION: Final[str] = "detect_section"
 SCORE_SECTION_OPERATION: Final[str] = "score_section"
 RECONCILE_SECTION_OPERATION: Final[str] = "reconcile_section"
+
+
+class SectionDetectionRequestResource(TypedDict):
+    """The wire shape of a detection question."""
+
+    page_number: int
+    page_text: str
+
+
+class SectionQuestionRequestResource(TypedDict):
+    """The wire shape of a score or reconciliation question about one section."""
+
+    page_number: int
+    title: str
+    text: str
 
 
 @final
@@ -43,6 +57,8 @@ class GatewayModelService:
     SECTION_SCORES_PATH: Final[str] = "/section-scores"
     SECTION_RECONCILIATIONS_PATH: Final[str] = "/section-reconciliations"
     REPLY_FIELD_NAME: Final[str] = "reply"
+    # Bodies are read raw so their size can be bounded, so the service must not compress them.
+    IDENTITY_ENCODING_HEADERS: Final[dict[str, str]] = {"Accept-Encoding": "identity"}
 
     # Model calls are slow; a minute bounds one call, including a body that arrives slowly.
     REQUEST_TIMEOUT_SECONDS: Final[float] = 60.0
@@ -56,13 +72,14 @@ class GatewayModelService:
         self._http_client: httpx.AsyncClient = httpx.AsyncClient(base_url=base_url, transport=http_transport, timeout=self.REQUEST_TIMEOUT_SECONDS)
 
     async def detect_section(self, page_number: int, page_text: str) -> str:
-        return await self._ask(DETECT_SECTION_OPERATION, self.SECTION_DETECTIONS_PATH, {"page_number": page_number, "page_text": page_text})
+        section_detection_request_resource: SectionDetectionRequestResource = {"page_number": page_number, "page_text": page_text}
+        return await self._ask(DETECT_SECTION_OPERATION, self.SECTION_DETECTIONS_PATH, section_detection_request_resource)
 
     async def score_section(self, classification_prompt: ClassificationPrompt) -> str:
-        return await self._ask(SCORE_SECTION_OPERATION, self.SECTION_SCORES_PATH, self._to_section_payload(classification_prompt))
+        return await self._ask(SCORE_SECTION_OPERATION, self.SECTION_SCORES_PATH, self._to_section_question(classification_prompt))
 
     async def reconcile_section(self, classification_prompt: ClassificationPrompt) -> str:
-        return await self._ask(RECONCILE_SECTION_OPERATION, self.SECTION_RECONCILIATIONS_PATH, self._to_section_payload(classification_prompt))
+        return await self._ask(RECONCILE_SECTION_OPERATION, self.SECTION_RECONCILIATIONS_PATH, self._to_section_question(classification_prompt))
 
     async def close(self) -> None:
         # Idempotent without state of its own: the client already knows whether it is closed.
@@ -76,12 +93,16 @@ class GatewayModelService:
     async def __aexit__(self, _exc_type: type[BaseException] | None, _exc: BaseException | None, _traceback: TracebackType | None) -> None:
         await self.close()
 
-    async def _ask(self, operation_name: str, resource_path: str, request_payload: Mapping[str, Any]) -> str:
+    async def _ask(
+        self, operation_name: str, resource_path: str, request_resource: SectionDetectionRequestResource | SectionQuestionRequestResource
+    ) -> str:
         try:
             # HTTPX's read timeout applies per read; bound the whole call too, so a slowly dribbling body cannot stretch it.
             async with (
                 asyncio.timeout(self.REQUEST_TIMEOUT_SECONDS),
-                self._http_client.stream("POST", resource_path, json=request_payload) as model_service_response,
+                self._http_client.stream(
+                    "POST", resource_path, json=request_resource, headers=self.IDENTITY_ENCODING_HEADERS
+                ) as model_service_response,
             ):
                 if not model_service_response.is_success:
                     failure_detail: str = await self._read_failure_detail(model_service_response)
@@ -143,5 +164,5 @@ class GatewayModelService:
         return "".join(" " if unicodedata.category(character).startswith("C") else character for character in raw_detail).strip()
 
     @staticmethod
-    def _to_section_payload(classification_prompt: ClassificationPrompt) -> dict[str, Any]:
+    def _to_section_question(classification_prompt: ClassificationPrompt) -> SectionQuestionRequestResource:
         return {"page_number": classification_prompt.page_number, "title": classification_prompt.title, "text": classification_prompt.text}

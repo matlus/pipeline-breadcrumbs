@@ -51,14 +51,14 @@ class ModelServiceSimulator:
 
     async def _answer(self, model_service_request: httpx.Request) -> httpx.Response:
         await asyncio.sleep(self._latency_seconds)
-        request_payload: dict[str, Any] = json.loads(model_service_request.content)
+        request_value_by_field_name: dict[str, Any] = json.loads(model_service_request.content)
         resource_path: str = model_service_request.url.path
         if resource_path == _SECTION_DETECTIONS_PATH:
-            return self._reply(self._detect_section(request_payload["page_text"]))
+            return self._reply(self._detect_section(request_value_by_field_name["page_text"]))
         if resource_path == _SECTION_SCORES_PATH:
-            return self._reply(self._category_reply(request_payload[_TITLE_FIELD], _LOW_CONFIDENCE))
+            return self._reply(self._category_reply(request_value_by_field_name[_TITLE_FIELD], _LOW_CONFIDENCE))
         if resource_path == _SECTION_RECONCILIATIONS_PATH:
-            return self._reply(self._category_reply(request_payload[_TITLE_FIELD], _RECONCILED_CONFIDENCE))
+            return self._reply(self._category_reply(request_value_by_field_name[_TITLE_FIELD], _RECONCILED_CONFIDENCE))
         return httpx.Response(_HTTP_STATUS_NOT_FOUND, text=f"No such resource: {resource_path}")
 
     @classmethod

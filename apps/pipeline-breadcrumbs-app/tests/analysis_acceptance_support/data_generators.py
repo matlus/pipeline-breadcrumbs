@@ -1,5 +1,6 @@
 import json
 import secrets
+from collections.abc import Iterable
 
 _RANDOM_SUFFIX_BYTES: int = 3
 
@@ -14,7 +15,7 @@ def create_random_category() -> str:
     return f"Category {secrets.token_hex(_RANDOM_SUFFIX_BYTES)}"
 
 
-def create_page_texts(section_titles: list[str]) -> list[str]:
+def create_page_texts(section_titles: Iterable[str]) -> list[str]:
     """One page of text per title, in the shape the system's pages arrive in."""
     return [f"SECTION: {section_title}\nText of the page that starts '{section_title}'." for section_title in section_titles]
 

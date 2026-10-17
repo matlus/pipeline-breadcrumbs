@@ -30,7 +30,7 @@ from analysis_acceptance_support.mediator_model_service import (
     ScriptedModelServiceResponse,
     TestMediatorModelService,
 )
-from analysis_acceptance_support.service_locator_testing import create_document_analysis_manager
+from analysis_acceptance_support.service_locator_testing import ServiceLocatorTesting, create_document_analysis_manager
 from breadcrumbs_acceptance_support.asserters.asserter_artifacts import AsserterArtifacts
 from breadcrumbs_acceptance_support.asserters.asserter_exception import AsserterException, ExpectedException
 from breadcrumbs_acceptance_support.asserters.asserter_step_boundaries import AsserterStepBoundaries, ExpectedStepBoundary
@@ -134,7 +134,7 @@ class TestAnalyzeDocumentExpectedPaths:
             )
 
         # Assert
-        AsserterAnalyzedSections.assert_exactly_these_sections(expected_scored_sections, actual_document_analysis.sections)
+        AsserterAnalyzedSections.assert_exactly_these_sections(expected_scored_sections, actual_document_analysis.scored_sections)
         AsserterStepBoundaries.assert_exactly_these_step_boundaries(CONFIDENT_RUN_STEP_BOUNDARIES, record_capture.records)
         assert len(test_mediator_model_service.captured_reconcile_requests) == expected_reconcile_request_count
 
@@ -175,7 +175,7 @@ class TestAnalyzeDocumentExpectedPaths:
             )
 
         # Assert
-        AsserterAnalyzedSections.assert_exactly_these_sections(expected_scored_sections, actual_document_analysis.sections)
+        AsserterAnalyzedSections.assert_exactly_these_sections(expected_scored_sections, actual_document_analysis.scored_sections)
         AsserterStepBoundaries.assert_exactly_these_step_boundaries(expected_step_boundaries, record_capture.records)
 
     async def test_analyze_document_WhenSectionsAreAnalyzed_ThenTheGatewayPutsEachQuestionOnTheWireWithItsSection(
@@ -213,7 +213,12 @@ class TestAnalyzeDocumentExpectedPaths:
 
         # Assert
         AsserterModelServiceRequests.assert_requests(
-            expected_detection_requests, expected_score_requests, expected_reconcile_requests, test_mediator_model_service
+            expected_detection_requests,
+            expected_score_requests,
+            expected_reconcile_requests,
+            test_mediator_model_service.captured_detection_requests,
+            test_mediator_model_service.captured_score_requests,
+            test_mediator_model_service.captured_reconcile_requests,
         )
 
     async def test_analyze_document_WhenTheDocumentIsAnalyzed_ThenEveryArtifactLandsInPipelineOrderWithTheReportAsTheOnlyOutput(
@@ -267,7 +272,12 @@ class TestAnalyzeDocumentExpectedPaths:
             await document_analysis_manager.analyze_document(work_item_scope, create_page_texts(section_titles))
 
         # Assert - every page was asked about, and never more than the limit at the same moment
-        AsserterModelServiceRequests.assert_detection_concurrency(expected_page_numbers, MAX_CONCURRENCY, test_mediator_model_service)
+        AsserterModelServiceRequests.assert_detection_concurrency(
+            expected_page_numbers,
+            MAX_CONCURRENCY,
+            test_mediator_model_service.captured_detection_requests,
+            test_mediator_model_service.maximum_concurrent_detection_count,
+        )
 
 
 # ==================== DOCUMENT VALIDATION ====================
@@ -541,7 +551,7 @@ class TestAnalyzeDocumentModelServiceFailures:
         section_titles: list[str] = create_random_section_titles(1)
         service_failure_text: str = create_random_category()
         test_mediator_model_service: TestMediatorModelService = TestMediatorModelService(
-            scripted_response=ScriptedModelServiceResponse(HTTP_STATUS_SERVICE_UNAVAILABLE, service_failure_text)
+            scripted_model_service_response=ScriptedModelServiceResponse(HTTP_STATUS_SERVICE_UNAVAILABLE, service_failure_text)
         )
         document_analysis_manager: DocumentAnalysisManager = create_document_analysis_manager(test_mediator_model_service)
         pipeline_run: PipelineRun = create_pipeline_run(artifact_sink_testing, run_logger)
@@ -573,7 +583,7 @@ class TestAnalyzeDocumentModelServiceFailures:
         section_titles: list[str] = create_random_section_titles(1)
         rejection_text: str = create_random_category()
         test_mediator_model_service: TestMediatorModelService = TestMediatorModelService(
-            scripted_response=ScriptedModelServiceResponse(HTTP_STATUS_BAD_REQUEST, rejection_text)
+            scripted_model_service_response=ScriptedModelServiceResponse(HTTP_STATUS_BAD_REQUEST, rejection_text)
         )
         document_analysis_manager: DocumentAnalysisManager = create_document_analysis_manager(test_mediator_model_service)
         pipeline_run: PipelineRun = create_pipeline_run(artifact_sink_testing, run_logger)
@@ -613,7 +623,7 @@ class TestAnalyzeDocumentModelServiceFailures:
         work_item: WorkItem = create_random_work_item()
         section_titles: list[str] = create_random_section_titles(1)
         test_mediator_model_service: TestMediatorModelService = TestMediatorModelService(
-            scripted_response=ScriptedModelServiceResponse(HTTP_STATUS_OK, response_body)
+            scripted_model_service_response=ScriptedModelServiceResponse(HTTP_STATUS_OK, response_body)
         )
         document_analysis_manager: DocumentAnalysisManager = create_document_analysis_manager(test_mediator_model_service)
         pipeline_run: PipelineRun = create_pipeline_run(artifact_sink_testing, run_logger)
@@ -643,36 +653,63 @@ class TestAnalyzeDocumentModelServiceFailures:
 @pytest.mark.acceptance
 class TestDocumentAnalysisManagerConfiguration:
     @pytest.mark.parametrize(
-        ("environment_variable_name", "setting_value", "expected_reason_phrase"),
+        ("setting_value", "expected_reason_phrase"),
         [
-            pytest.param(MODEL_SERVICE_BASE_URL_VARIABLE_NAME, "", "but was empty or whitespace", id="an_empty_model_service_url"),
-            pytest.param(
-                MODEL_SERVICE_BASE_URL_VARIABLE_NAME, "model-service", "not an absolute http or https URL", id="a_relative_model_service_url"
-            ),
-            pytest.param(MODEL_SERVICE_BASE_URL_VARIABLE_NAME, "ftp://models.example.com", "not an absolute http or https URL", id="an_ftp_url"),
-            pytest.param(SIMULATED_WORK_SECONDS_VARIABLE_NAME, "soon", "not a number of seconds of 0 or more", id="simulated_work_that_is_text"),
-            pytest.param(SIMULATED_WORK_SECONDS_VARIABLE_NAME, "-1", "not a number of seconds of 0 or more", id="negative_simulated_work"),
-            pytest.param(SIMULATED_WORK_SECONDS_VARIABLE_NAME, "inf", "not a number of seconds of 0 or more", id="endless_simulated_work"),
+            pytest.param("", "but was empty or whitespace", id="an_empty_url"),
+            pytest.param("model-service", "not an absolute http or https URL", id="a_relative_url"),
+            pytest.param("ftp://models.example.com", "not an absolute http or https URL", id="an_ftp_url"),
         ],
     )
-    def test_DocumentAnalysisManager_WhenASettingIsMalformed_ThenTheSystemRefusesToBuildAndNamesTheSetting(
-        self, environment_variable_name: str, setting_value: str, expected_reason_phrase: str
+    def test_DocumentAnalysisManager_WhenTheModelServiceUrlIsMalformed_ThenTheSystemRefusesToBuildAndNamesTheSetting(
+        self, setting_value: str, expected_reason_phrase: str
     ) -> None:
         # Arrange
-        test_mediator_model_service: TestMediatorModelService = TestMediatorModelService()
-        override_by_environment_variable_name: dict[str, str] = {environment_variable_name: setting_value}
+        service_locator_testing: ServiceLocatorTesting = ServiceLocatorTesting(
+            TestMediatorModelService(), {MODEL_SERVICE_BASE_URL_VARIABLE_NAME: setting_value}
+        )
         expected_exception: ExpectedException = ExpectedException(
             ConfigurationSettingError,
-            message_phrases=[environment_variable_name, expected_reason_phrase],
+            message_phrases=[MODEL_SERVICE_BASE_URL_VARIABLE_NAME, expected_reason_phrase],
             contextual_data_by_name={
                 "ExceptionType": "ConfigurationSettingError",
-                "Configuration.EnvironmentVariableName": environment_variable_name,
+                "Configuration.EnvironmentVariableName": MODEL_SERVICE_BASE_URL_VARIABLE_NAME,
             },
         )
 
         # Act
         with pytest.raises(ConfigurationSettingError) as actual_raised:
-            create_document_analysis_manager(test_mediator_model_service, override_by_environment_variable_name)
+            DocumentAnalysisManager(service_locator_testing)
+
+        # Assert
+        AsserterException.assert_exception(expected_exception, actual_raised.value)
+
+    @pytest.mark.parametrize(
+        "setting_value",
+        [
+            pytest.param("soon", id="text"),
+            pytest.param("-1", id="negative"),
+            pytest.param("inf", id="endless"),
+        ],
+    )
+    def test_DocumentAnalysisManager_WhenTheSimulatedWorkIsNotAFiniteNumberOfSeconds_ThenTheSystemRefusesToBuildAndNamesTheSetting(
+        self, setting_value: str
+    ) -> None:
+        # Arrange
+        service_locator_testing: ServiceLocatorTesting = ServiceLocatorTesting(
+            TestMediatorModelService(), {SIMULATED_WORK_SECONDS_VARIABLE_NAME: setting_value}
+        )
+        expected_exception: ExpectedException = ExpectedException(
+            ConfigurationSettingError,
+            message_phrases=[SIMULATED_WORK_SECONDS_VARIABLE_NAME, "not a number of seconds of 0 or more"],
+            contextual_data_by_name={
+                "ExceptionType": "ConfigurationSettingError",
+                "Configuration.EnvironmentVariableName": SIMULATED_WORK_SECONDS_VARIABLE_NAME,
+            },
+        )
+
+        # Act
+        with pytest.raises(ConfigurationSettingError) as actual_raised:
+            DocumentAnalysisManager(service_locator_testing)
 
         # Assert
         AsserterException.assert_exception(expected_exception, actual_raised.value)

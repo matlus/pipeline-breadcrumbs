@@ -1,5 +1,7 @@
 """Step 3.3: ask the model again about the sections it was unsure of. A conditional model processor."""
 
+from collections.abc import Iterable
+
 from pipeline_breadcrumbs import StepHostProtocol, StepScope
 from pipeline_breadcrumbs_app.document_analysis.analysis_steps import RECONCILE_SCORES
 from pipeline_breadcrumbs_app.document_analysis.artifact_kinds import RAW_RECONCILIATION_RESPONSE, RECONCILED_SCORES, page_discriminator
@@ -15,21 +17,21 @@ class ScoreReconciler:
 
     async def reconcile(self, step_host: StepHostProtocol, scored_sections: list[ScoredSection]) -> list[ScoredSection]:
         async with step_host.step(RECONCILE_SCORES) as step_scope:
-            doubtful_count: int = sum(1 for scored_section in scored_sections if scored_section.needs_reconciliation)
+            doubtful_count: int = self._count_doubtful(scored_sections)
             step_scope.info("Reconciling low-confidence sections", sections=doubtful_count)
-            reconciled_sections: list[ScoredSection] = await self._reconcile_each(step_scope, scored_sections)
-            await step_scope.emit(RECONCILED_SCORES, to_json_document(reconciled_sections))
+            reconciled_scored_sections: list[ScoredSection] = await self._reconcile_each(step_scope, scored_sections)
+            await step_scope.emit(RECONCILED_SCORES, to_json_document(reconciled_scored_sections))
             step_scope.outcome(f"Reconciled {doubtful_count} section(s)", reconciled=doubtful_count)
-        return reconciled_sections
+        return reconciled_scored_sections
 
-    async def _reconcile_each(self, step_scope: StepScope, scored_sections: list[ScoredSection]) -> list[ScoredSection]:
-        reconciled_sections: list[ScoredSection] = []
+    async def _reconcile_each(self, step_scope: StepScope, scored_sections: Iterable[ScoredSection]) -> list[ScoredSection]:
+        reconciled_scored_sections: list[ScoredSection] = []
         for initial_scored_section in scored_sections:
             if initial_scored_section.needs_reconciliation:
-                reconciled_sections.append(await self._reconcile_section(step_scope, initial_scored_section))
+                reconciled_scored_sections.append(await self._reconcile_section(step_scope, initial_scored_section))
             else:
-                reconciled_sections.append(initial_scored_section)
-        return reconciled_sections
+                reconciled_scored_sections.append(initial_scored_section)
+        return reconciled_scored_sections
 
     async def _reconcile_section(self, step_scope: StepScope, initial_scored_section: ScoredSection) -> ScoredSection:
         step_scope.info(
@@ -54,6 +56,10 @@ class ScoreReconciler:
             now=reconciled_scored_section.confidence,
         )
         return reconciled_scored_section
+
+    @staticmethod
+    def _count_doubtful(scored_sections: Iterable[ScoredSection]) -> int:
+        return sum(1 for scored_section in scored_sections if scored_section.needs_reconciliation)
 
     @staticmethod
     def _parse(scored_section: ScoredSection, raw_reply: str) -> ScoredSection:

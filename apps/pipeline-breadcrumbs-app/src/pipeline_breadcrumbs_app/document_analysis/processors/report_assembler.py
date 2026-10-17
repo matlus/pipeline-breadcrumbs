@@ -1,5 +1,7 @@
 """Step 4: assemble the report. A non-model processor that produces the run's real output."""
 
+from collections.abc import Iterable
+
 from pipeline_breadcrumbs import StepHostProtocol
 from pipeline_breadcrumbs_app.document_analysis.analysis_steps import ASSEMBLE_REPORT
 from pipeline_breadcrumbs_app.document_analysis.artifact_kinds import ANALYSIS_REPORT
@@ -22,7 +24,7 @@ class ReportAssembler:
         return report
 
     @staticmethod
-    def _render_analysis_report(scored_sections: list[ScoredSection]) -> str:
+    def _render_analysis_report(scored_sections: Iterable[ScoredSection]) -> str:
         report_lines: list[str] = ["# Section analysis", ""]
         report_lines.extend(
             f"- Page {scored_section.page_number}: {scored_section.title} ({scored_section.category}, confidence {scored_section.confidence:.2f})"
