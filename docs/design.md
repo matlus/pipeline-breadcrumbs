@@ -58,7 +58,7 @@ step-numbered story.
 ## A run, as the trail shows it
 
 Everything in this section is real output from the demo, abridged only where marked. The demo
-analyzes two documents with a fake model, so the output is the same every time. The timings in the
+analyzes two documents against an in-process simulation of the model service, so the output is the same every time. The timings in the
 samples come from one run with the demo's built-in pace.
 
 ### The run folder
@@ -585,13 +585,16 @@ exception that has `contextual_data_by_name` and `add_contextual_data` takes par
 
 The policy is the one the Meridian reference uses. Steps leave breadcrumbs and do not log tracebacks.
 The exception is logged once, at the application's outer boundary, with its traceback and every named
-fact it carries.
+fact it carries. The demo's boundary tells the two branches apart: a technical failure (the model service,
+the sink) is an error with its traceback, and a document the system refuses is a warning that lists every
+problem, with no traceback, because nothing in the system failed.
 
 ### Testing
 
 The tests are acceptance tests. Each one runs through a public entry point and checks what the system
-returned, the artifacts it handed to the callback and the breadcrumbs it logged. Only the model is
-replaced. They follow the PWI guidance for functional acceptance testing at the boundary, using the
+returned, the artifacts it handed to the callback and the breadcrumbs it logged. Only the wire to the
+model service is replaced: `ServiceLocatorTesting` hands the real gateway a Test Mediator's transport, so the
+gateway, the configuration provider and every processor run for real. They follow the PWI guidance for functional acceptance testing at the boundary, using the
 Meridian tests as the reference: behavior-style names, Arrange, Act and Assert sections, `expected_` and
 `actual_` prefixes, and asserters that report every difference at once.
 
@@ -744,18 +747,21 @@ document_analysis/                the system
   processors/
     page_loader.py                step 1, non-model work that takes time
     section_detector.py           step 2, a model processor fanning out across pages
-    section_classifier.py         step 3, a sub-orchestrator over three more processors:
-      classification/
-        prompt_builder.py             3.1, non-model work
-        section_scorer.py             3.2, a model processor
-        score_reconciler.py           3.3, a conditional model processor
     report_assembler.py           step 4, non-model work that produces the real output
-  gateways/                       the model gateway protocol, and a fake that sleeps instead of calling out
+  engines/
+    section_classifier.py         step 3, a sub-orchestrator over three more processors:
+    classification/
+      prompt_builder.py             3.1, non-model work
+      section_scorer.py             3.2, a model processor
+      score_reconciler.py           3.3, a conditional model processor
+  gateways/                       the model service gateway: builds each request, checks each response, translates failures
+  service_locators/               creates what a host or a test swaps: the configuration source and the HTTP transport
+  configuration_providers/        reads and validates the settings once, when the system is built
 ```
 
-- **The application is not the system.** `main.py` builds the artifact callback and the logger, opens the
-  run and one work item per document, calls the system and logs a failure once at its outer boundary.
-  It contains no steps.
+- **The application is not the system.** `main.py` builds the artifact callback and the logger, builds the
+  system from a service locator, opens the run and one work item per document, calls the system and logs a
+  failure once at its outer boundary. It contains no steps.
 - **The manager has one public method that only sequences.** It passes each processor's result to the next
   and does no work itself.
 - **Each processor owns its step.** It opens its step on the host it is given. The `Step` declarations
@@ -763,9 +769,11 @@ document_analysis/                the system
   list and cannot be duplicated by accident.
 - **A sub-orchestrator passes its own step down as the host.** `SectionClassifier` opens step 3 and hands
   that scope to three processors. That is the whole mechanism behind 3.1, 3.2 and 3.3.
-- **Realistic processors, no outbound calls.** Model processors call a `ModelGatewayProtocol`. The fake
-  sleeps instead of calling out. Non-model processors call `SimulatedWork`. Both mark where real work
-  would go. Model processors log the way real ones do: a start line, progress lines with counts and
+- **A real gateway, no outbound calls in the demo.** Model processors call `GatewayModelService`, which
+  talks HTTP to the model service through the transport its service locator supplies, as the Meridian
+  gateways do. `ServiceLocatorDemo` supplies an in-process simulation of the service, so the demo runs
+  offline with the production gateway. Non-model processors call `SimulatedWork`, which marks where real
+  non-model work would go. Model processors log the way real ones do: a start line, progress lines with counts and
   identifiers, the raw reply emitted before it is validated, and a closing outcome.
 - **Two hosts.** `--host local` is the default and writes a run log. `--host hosted` sends only exceptions
   to telemetry. Both persist every artifact.

@@ -5,15 +5,15 @@ from collections.abc import Iterable
 from pipeline_breadcrumbs import StepHostProtocol, StepScope
 from pipeline_breadcrumbs_app.document_analysis.analysis_steps import SCORE_SECTIONS
 from pipeline_breadcrumbs_app.document_analysis.artifact_kinds import RAW_SCORE_RESPONSE, SECTION_SCORES, page_discriminator
-from pipeline_breadcrumbs_app.document_analysis.gateways.model_gateway import ModelGatewayProtocol
+from pipeline_breadcrumbs_app.document_analysis.gateways.gateway_model_service import GatewayModelService
 from pipeline_breadcrumbs_app.document_analysis.json_documents import to_json_document
 from pipeline_breadcrumbs_app.document_analysis.model_reply import ModelReply
 from pipeline_breadcrumbs_app.document_analysis.models import ClassificationPrompt, ScoredSection
 
 
 class SectionScorer:
-    def __init__(self, model_gateway: ModelGatewayProtocol) -> None:
-        self._model_gateway: ModelGatewayProtocol = model_gateway
+    def __init__(self, gateway_model_service: GatewayModelService) -> None:
+        self._gateway_model_service: GatewayModelService = gateway_model_service
 
     async def score(self, step_host: StepHostProtocol, classification_prompts: list[ClassificationPrompt]) -> list[ScoredSection]:
         async with step_host.step(SCORE_SECTIONS) as step_scope:
@@ -28,7 +28,7 @@ class SectionScorer:
         for classification_prompt in classification_prompts:
             step_scope.info("Calling the model", page=classification_prompt.page_number, title=classification_prompt.title)
             # A real gateway merges the prompt into a prompt template before it sends it to the model.
-            raw_reply: str = await self._model_gateway.score_section(classification_prompt)
+            raw_reply: str = await self._gateway_model_service.score_section(classification_prompt)
             await step_scope.emit(RAW_SCORE_RESPONSE, raw_reply.encode("utf-8"), discriminator=page_discriminator(classification_prompt.page_number))
             scored_sections.append(self._parse(classification_prompt, raw_reply))
         return scored_sections

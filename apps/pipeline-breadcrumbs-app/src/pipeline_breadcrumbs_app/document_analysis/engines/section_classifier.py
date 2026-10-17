@@ -1,0 +1,37 @@
+"""Step 3: classify the detected sections. A sub-orchestrator.
+
+It owns no model calls and no prompt text. It opens step 3, hands that step's scope to three
+processors as their host, and decides whether the last one runs. Because it passes the step
+scope down, their steps report as 3.1, 3.2 and 3.3 with no numbering code here.
+"""
+
+from pipeline_breadcrumbs import StepHostProtocol
+from pipeline_breadcrumbs_app.document_analysis.analysis_steps import CLASSIFY_SECTIONS, RECONCILE_SCORES
+from pipeline_breadcrumbs_app.document_analysis.engines.classification.prompt_builder import PromptBuilder
+from pipeline_breadcrumbs_app.document_analysis.engines.classification.score_reconciler import ScoreReconciler
+from pipeline_breadcrumbs_app.document_analysis.engines.classification.section_scorer import SectionScorer
+from pipeline_breadcrumbs_app.document_analysis.gateways.gateway_model_service import GatewayModelService
+from pipeline_breadcrumbs_app.document_analysis.models import ClassificationPrompt, DetectedSection, ScoredSection
+from pipeline_breadcrumbs_app.document_analysis.simulated_work import SimulatedWork
+
+
+class SectionClassifier:
+    def __init__(self, gateway_model_service: GatewayModelService, simulated_work: SimulatedWork) -> None:
+        self._prompt_builder: PromptBuilder = PromptBuilder(simulated_work)
+        self._section_scorer: SectionScorer = SectionScorer(gateway_model_service)
+        self._score_reconciler: ScoreReconciler = ScoreReconciler(gateway_model_service)
+
+    async def classify(self, step_host: StepHostProtocol, detected_sections: list[DetectedSection]) -> list[ScoredSection]:
+        async with step_host.step(CLASSIFY_SECTIONS) as step_scope:
+            classification_prompts: list[ClassificationPrompt] = await self._prompt_builder.build(step_scope, detected_sections)
+            scored_sections: list[ScoredSection] = await self._section_scorer.score(step_scope, classification_prompts)
+            classified_scored_sections: list[ScoredSection] = await self._reconcile_when_needed(step_scope, scored_sections)
+            step_scope.outcome(f"Classified {len(classified_scored_sections)} section(s)", sections=len(classified_scored_sections))
+        return classified_scored_sections
+
+    async def _reconcile_when_needed(self, step_host: StepHostProtocol, scored_sections: list[ScoredSection]) -> list[ScoredSection]:
+        if any(scored_section.needs_reconciliation for scored_section in scored_sections):
+            return await self._score_reconciler.reconcile(step_host, scored_sections)
+        # A conditional step. Its absence from the artifact folder says the same thing as this line.
+        step_host.skipped(RECONCILE_SCORES, "no sections below the confidence threshold")
+        return scored_sections

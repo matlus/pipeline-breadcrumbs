@@ -14,15 +14,17 @@ for the reasoning.
 | `ArtifactKind`, `Artifact`, `ArtifactSink` | A declared kind of file, the complete frozen artifact, and the host's persistence callback. |
 | `BreadcrumbFormatter`, `TimeDisplay` | The human rendering of boundary records, and the single switch for time. |
 | `AttributeKey` | The names of the attributes every record carries. |
-| `ArtifactSinkError`, `ContextualException` | Sink failures, and the shape an exception takes to receive step diagnostics. |
+| `ArtifactSinkError`, `ContextualExceptionProtocol` | Sink failures, and the shape an exception takes to receive step diagnostics. |
+| `InvalidDeclarationError` | A step, artifact kind, work item or run declared with a value the library refuses (a `ValueError`). |
 
 `pipeline_breadcrumbs.hosting` holds local file system helpers (`ArtifactSinkFileSystem`,
-`create_run_folder`, `attached_run_log`). `pipeline_breadcrumbs.testing` holds
+`create_run_folder`, `attached_run_log`). `ArtifactSinkFileSystem` raises
+`WorkItemFolderCollisionError` (a `ValueError`) when two work items in one run map to the same folder. `pipeline_breadcrumbs.testing` holds
 `ArtifactSinkTesting` and `RecordCapture` for acceptance tests.
 
 Create a run with `PipelineRun(pipeline_name=..., sink=...)` and open each item
 with `pipeline_run.open_work_item(work_item)`. For deterministic run folders,
-pass `supplied_clock` to `create_run_folder`; `Clock.create_system_clock()` supplies
+pass `supplied_clock` to `create_run_folder` and `PipelineRun`; `Clock.create_system_clock()` supplies
 the normal wall and monotonic clocks. `ArtifactSinkTesting.step_paths()` returns
 the distinct emitting step paths in first-emitted order.
 

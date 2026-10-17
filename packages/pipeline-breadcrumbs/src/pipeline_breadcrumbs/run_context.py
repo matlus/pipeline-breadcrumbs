@@ -17,14 +17,14 @@ from pipeline_breadcrumbs.manifest import RunRecorder
 
 @final
 class RunContext:
-    """The sink, the logger, the clock, the run recorder and the attributes every record carries."""
+    """One instance is shared by every scope in a run, so all of them write to the same sink, logger and record."""
 
     def __init__(
         self,
         *,
         sink: ArtifactSink,
         logger: logging.Logger,
-        base_attributes: AttributeBag,
+        base_attributes: Mapping[str, AttributeValue],
         clock: Clock,
         run_recorder: RunRecorder,
     ) -> None:
@@ -32,14 +32,13 @@ class RunContext:
         self.clock: Clock = clock
         self.run_recorder: RunRecorder = run_recorder
         self._sink: ArtifactSink = sink
-        self._base_attributes: AttributeBag = base_attributes
+        self._base_attributes: Mapping[str, AttributeValue] = base_attributes
 
     def log(self, level: int, message: str, attributes: Mapping[str, AttributeValue]) -> None:
         merged_attributes: AttributeBag = {**self._base_attributes, **attributes}
         self.logger.log(level, message, extra=merged_attributes)
 
     async def persist(self, artifact: Artifact) -> None:
-        """Hand an artifact to the host's sink, translating any failure into `ArtifactSinkError`."""
         try:
             await self._sink(artifact)
         except Exception as error:

@@ -16,6 +16,7 @@ from dataclasses import dataclass
 from enum import StrEnum
 from typing import Final, final
 
+from pipeline_breadcrumbs.declaration_errors import InvalidDeclarationError
 from pipeline_breadcrumbs.steps import StepPath
 from pipeline_breadcrumbs.work_items import WorkItem
 
@@ -51,13 +52,15 @@ class ArtifactKind:
 
     def __post_init__(self) -> None:
         if not _KIND_KEY_PATTERN.fullmatch(self.key):
-            raise ValueError(f"Artifact kind key '{self.key}' must be lowercase words separated by single underscores")
+            raise InvalidDeclarationError(f"Artifact kind key '{self.key}' must be lowercase words separated by single underscores")
         if self.key in VAGUE_KIND_KEYS:
-            raise ValueError(f"Artifact kind key '{self.key}' is too vague; name the kind for what the file holds, such as 'page_evidence'")
+            raise InvalidDeclarationError(
+                f"Artifact kind key '{self.key}' is too vague; name the kind for what the file holds, such as 'page_evidence'"
+            )
         if not _EXTENSION_PATTERN.fullmatch(self.extension):
-            raise ValueError(f"Artifact extension '{self.extension}' must be lowercase letters and digits, without a dot")
+            raise InvalidDeclarationError(f"Artifact extension '{self.extension}' must be lowercase letters and digits, without a dot")
         if not self.content_type.strip():
-            raise ValueError("Artifact content type must not be blank")
+            raise InvalidDeclarationError("Artifact content type must not be blank")
 
 
 @final
@@ -73,9 +76,11 @@ class StepArtifact:
 
     def __post_init__(self) -> None:
         if self.step_path.depth == 0:
-            raise ValueError("A step artifact needs a non-empty step path")
+            raise InvalidDeclarationError("A step artifact needs a non-empty step path")
         if self.discriminator is not None and not _DISCRIMINATOR_PATTERN.fullmatch(self.discriminator):
-            raise ValueError(f"Artifact discriminator '{self.discriminator}' may contain only letters, digits, dot, underscore and hyphen")
+            raise InvalidDeclarationError(
+                f"Artifact discriminator '{self.discriminator}' may contain only letters, digits, dot, underscore and hyphen"
+            )
 
     @property
     def artifact_type(self) -> str:
@@ -85,6 +90,11 @@ class StepArtifact:
     @property
     def content_type(self) -> str:
         return self.artifact_kind.content_type
+
+    @property
+    def filename_suffix(self) -> str:
+        """The extension with its dot, such as `.json`, for a sink that stores by type."""
+        return f".{self.artifact_kind.extension}"
 
     @property
     def filename(self) -> str:
@@ -113,6 +123,11 @@ class RunArtifact:
     @property
     def content_type(self) -> str:
         return self.artifact_kind.content_type
+
+    @property
+    def filename_suffix(self) -> str:
+        """The extension with its dot, such as `.json`, for a sink that stores by type."""
+        return f".{self.artifact_kind.extension}"
 
     @property
     def filename(self) -> str:

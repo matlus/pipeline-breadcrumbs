@@ -41,7 +41,7 @@ class ScoredSection:
 class DocumentAnalysis:
     """What the system returns to its caller."""
 
-    sections: list[ScoredSection]
+    scored_sections: list[ScoredSection]
     report: str
 
 
