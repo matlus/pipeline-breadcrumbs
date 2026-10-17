@@ -1,9 +1,9 @@
 import json
-from collections.abc import Sequence
+from collections.abc import Mapping, Sequence
 from dataclasses import dataclass, field
 from typing import Any
 
-from pipeline_breadcrumbs import Artifact
+from pipeline_breadcrumbs import MANIFEST_KIND, Artifact
 
 
 @dataclass(frozen=True)
@@ -22,6 +22,7 @@ class ExpectedManifestWorkItem:
     failure: str | None = None
     step_records: Sequence[ExpectedManifestStep] = ()
     artifact_filenames: Sequence[str] = field(default_factory=tuple)
+    artifact_role_by_filename: Mapping[str, str] | None = None
 
 
 @dataclass(frozen=True)
@@ -40,6 +41,7 @@ class AsserterManifest:
     def assert_manifest(expected_manifest: ExpectedManifest, actual_manifest_artifact: Artifact) -> None:
         actual_manifest: dict[str, Any] = json.loads(actual_manifest_artifact.content)
         assertion_failures: list[str] = []
+        AsserterManifest._compare("artifact kind", MANIFEST_KIND, actual_manifest_artifact.artifact_kind, assertion_failures)
         AsserterManifest._compare("pipeline_name", expected_manifest.pipeline_name, actual_manifest["pipeline_name"], assertion_failures)
         AsserterManifest._compare("run_id", expected_manifest.run_id, actual_manifest["run_id"], assertion_failures)
         AsserterManifest._compare("run_status", expected_manifest.run_status, actual_manifest["run_status"], assertion_failures)
@@ -66,6 +68,13 @@ class AsserterManifest:
             [actual_artifact["filename"] for actual_artifact in actual_work_item["artifact_records"]],
             assertion_failures,
         )
+        if expected_work_item.artifact_role_by_filename is not None:
+            AsserterManifest._compare(
+                f"{label} artifact roles",
+                dict(expected_work_item.artifact_role_by_filename),
+                {actual_artifact["filename"]: actual_artifact["role"] for actual_artifact in actual_work_item["artifact_records"]},
+                assertion_failures,
+            )
         actual_step_records: list[dict[str, Any]] = actual_work_item["step_records"]
         AsserterManifest._compare(
             f"{label} step paths",

@@ -4,6 +4,8 @@ from dataclasses import dataclass
 from pathlib import PurePath
 from typing import final
 
+from pipeline_breadcrumbs.declaration_errors import InvalidDeclarationError
+
 
 @final
 @dataclass(frozen=True, slots=True)
@@ -23,9 +25,9 @@ class WorkItem:
 
     def __post_init__(self) -> None:
         if not self.id.strip():
-            raise ValueError("WorkItem id must not be blank")
+            raise InvalidDeclarationError("WorkItem id must not be blank")
         if not self.name.strip():
-            raise ValueError("WorkItem name must not be blank")
+            raise InvalidDeclarationError("WorkItem name must not be blank")
 
     @property
     def stem(self) -> str:

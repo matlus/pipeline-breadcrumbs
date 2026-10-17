@@ -10,6 +10,11 @@ from pipeline_breadcrumbs.work_items import WorkItem
 
 
 @final
+class WorkItemFolderCollisionError(ValueError):
+    """Two work items in one run map to the same folder, so the second would overwrite the first's artifacts."""
+
+
+@final
 class ArtifactSinkFileSystem:
     """Writes each artifact under the run directory, in a folder per work item.
 
@@ -49,7 +54,7 @@ class ArtifactSinkFileSystem:
         folder_name: str = safe_path_component(work_item.stem)
         owner_id: str = self._work_item_id_by_folder.setdefault(folder_name.casefold(), work_item.id)
         if owner_id != work_item.id:
-            raise ValueError(
+            raise WorkItemFolderCollisionError(
                 f"Work items '{owner_id}' and '{work_item.id}' both map to the folder '{folder_name}'; work item names must be unique within a run"
             )
         return folder_name

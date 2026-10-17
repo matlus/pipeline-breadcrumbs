@@ -5,6 +5,8 @@ from pipeline_breadcrumbs import ContextualExceptionProtocol
 
 # The message is verified by its meaningful phrases, so its exact copy in the contextual data is not compared again.
 _MESSAGE_ENTRY_NAME: str = "Message"
+# An expected value that only requires the entry to be present, for a fact whose exact value a test cannot fix (a byte count of generated content).
+ANY_CONTEXTUAL_VALUE: object = object()
 
 
 @dataclass(frozen=True)
@@ -59,7 +61,7 @@ class AsserterException:
         for expected_name, expected_value in expected_exception.contextual_data_by_name.items():
             if expected_name not in actual_contextual_data_by_name:
                 assertion_failures.append(f"contextual data '{expected_name}' is missing; expected {expected_value!r}")
-            elif actual_contextual_data_by_name[expected_name] != expected_value:
+            elif expected_value is not ANY_CONTEXTUAL_VALUE and actual_contextual_data_by_name[expected_name] != expected_value:
                 assertion_failures.append(
                     f"contextual data '{expected_name}': expected {expected_value!r} but found {actual_contextual_data_by_name[expected_name]!r}"
                 )

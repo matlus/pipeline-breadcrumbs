@@ -14,3 +14,7 @@ class DiagnosticTestingError(Exception):
 
     def add_contextual_data(self, contextual_data_by_name: ContextualDataDict) -> None:
         self._contextual_data_by_name.update(contextual_data_by_name)
+
+
+class PlainTestingError(Exception):
+    """An exception with no diagnostic data, the way a third-party library's exception arrives: the library must pass it through untouched."""

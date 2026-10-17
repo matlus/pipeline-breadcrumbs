@@ -3,32 +3,35 @@
 # storage outage is its own exception, and a lost manifest never hides the failure that ended the run.
 
 import logging
-from typing import Final
+from typing import Final, NoReturn
 
 import pytest
-from breadcrumbs_acceptance_support.asserters.asserter_contextual_data import AsserterContextualData
+from breadcrumbs_acceptance_support.asserters.asserter_exception import ANY_CONTEXTUAL_VALUE, AsserterException, ExpectedException
+from breadcrumbs_acceptance_support.asserters.asserter_log_record import AsserterLogRecord, ExpectedLogRecord
 from breadcrumbs_acceptance_support.asserters.asserter_step_boundaries import AsserterStepBoundaries, ExpectedStepBoundary
 from breadcrumbs_acceptance_support.clock_testing import ClockTesting
 from breadcrumbs_acceptance_support.data_generators import create_random_work_item
-from breadcrumbs_acceptance_support.exceptions_testing import DiagnosticTestingError
+from breadcrumbs_acceptance_support.exceptions_testing import DiagnosticTestingError, PlainTestingError
 
 from pipeline_breadcrumbs import Artifact, ArtifactKind, ArtifactSinkError, AttributeKey, EventKind, PipelineRun, Step, WorkItem
 from pipeline_breadcrumbs.testing import ArtifactSinkTesting, RecordCapture
 
+PIPELINE_NAME: Final[str] = "demo"
 METADATA_AUDIT: Final[Step] = Step(2, "Metadata Audit")
 CLASSIFICATION: Final[Step] = Step(3, "Classification")
 SCORE_SECTIONS: Final[Step] = Step(2, "Score Sections")
 PAGE_EVIDENCE: Final[ArtifactKind] = ArtifactKind("page_evidence", "json", "application/json")
+STORAGE_OUTAGE_MESSAGE: Final[str] = "blob storage unreachable"
 
 
 async def _sink_that_cannot_store(artifact: Artifact) -> None:
-    raise ConnectionError("blob storage unreachable")
+    raise ConnectionError(STORAGE_OUTAGE_MESSAGE)
 
 
-async def _run_a_step_that_fails_after(clock_testing: ClockTesting, pipeline_run: PipelineRun, work_item: WorkItem, elapsed_seconds: float) -> None:
-    async with pipeline_run, pipeline_run.open_work_item(work_item) as work_item_scope, work_item_scope.step(METADATA_AUDIT):
-        clock_testing.advance(elapsed_seconds)
-        raise ValueError("bad json")
+def _advance_then_fail(clock_testing: ClockTesting, elapsed_seconds: float, failure_message: str) -> NoReturn:
+    """The body of a step that works for a while and then fails."""
+    clock_testing.advance(elapsed_seconds)
+    raise PlainTestingError(failure_message)
 
 
 @pytest.mark.acceptance
@@ -39,59 +42,72 @@ class TestFailingStep:
         # Arrange
         work_item: WorkItem = create_random_work_item()
         expected_elapsed_seconds: float = 1.25
-        pipeline_run: PipelineRun = PipelineRun(pipeline_name="demo", sink=artifact_sink_testing, logger=run_logger, clock=clock_testing.clock)
+        expected_failure_message: str = "bad json"
+        pipeline_run: PipelineRun = PipelineRun(pipeline_name=PIPELINE_NAME, sink=artifact_sink_testing, logger=run_logger, clock=clock_testing.clock)
+        expected_exception: ExpectedException = ExpectedException(PlainTestingError, message_phrases=[expected_failure_message])
+        expected_step_boundaries: list[ExpectedStepBoundary] = [
+            ExpectedStepBoundary("2", "STARTED"),
+            ExpectedStepBoundary("2", "FAILED", elapsed_seconds=expected_elapsed_seconds),
+        ]
+        # The traceback is logged once, by the host's outer boundary; a step never repeats it.
+        expected_failed_record: ExpectedLogRecord = ExpectedLogRecord(
+            level=logging.WARNING,
+            attribute_value_by_key={AttributeKey.FAILURE_TYPE: "PlainTestingError", AttributeKey.FAILURE_MESSAGE: expected_failure_message},
+            carries_traceback=False,
+        )
 
         # Act
-        with pytest.raises(ValueError, match="bad json"):
-            await _run_a_step_that_fails_after(clock_testing, pipeline_run, work_item, expected_elapsed_seconds)
+        with pytest.raises(PlainTestingError) as actual_raised:
+            async with pipeline_run, pipeline_run.open_work_item(work_item) as work_item_scope, work_item_scope.step(METADATA_AUDIT):
+                _advance_then_fail(clock_testing, expected_elapsed_seconds, expected_failure_message)
 
         # Assert
-        AsserterStepBoundaries.assert_exactly_these_step_boundaries(
-            [ExpectedStepBoundary("2", "STARTED"), ExpectedStepBoundary("2", "FAILED", elapsed_seconds=expected_elapsed_seconds)],
-            record_capture.records,
-        )
-        actual_failed_record: logging.LogRecord = record_capture.boundaries(EventKind.STEP)[-1]
-        assert actual_failed_record.levelno == logging.WARNING
-        assert RecordCapture.attribute(actual_failed_record, AttributeKey.FAILURE_TYPE) == "ValueError"
-        assert RecordCapture.attribute(actual_failed_record, AttributeKey.FAILURE_MESSAGE) == "bad json"
-        # The traceback is logged once, by the host's outer boundary; a step never repeats it.
-        assert actual_failed_record.exc_info is None
+        AsserterException.assert_exception(expected_exception, actual_raised.value)
+        AsserterStepBoundaries.assert_exactly_these_step_boundaries(expected_step_boundaries, record_capture.records)
+        AsserterLogRecord.assert_record(expected_failed_record, record_capture.boundaries(EventKind.STEP)[-1])
 
     async def test_PipelineRun_WhenADiagnosticExceptionEscapesANestedStep_ThenTheInnermostStepIsStampedOntoItOnce(
         self, artifact_sink_testing: ArtifactSinkTesting, run_logger: logging.Logger
     ) -> None:
         # Arrange
         work_item: WorkItem = create_random_work_item()
-        diagnostic_testing_error: DiagnosticTestingError = DiagnosticTestingError("response was not json")
-        pipeline_run: PipelineRun = PipelineRun(pipeline_name="demo", sink=artifact_sink_testing, logger=run_logger)
+        failure_message: str = "response was not json"
+        pipeline_run: PipelineRun = PipelineRun(pipeline_name=PIPELINE_NAME, sink=artifact_sink_testing, logger=run_logger)
+        # The child step stamps first; the parent finds the stamp and leaves it alone.
+        expected_exception: ExpectedException = ExpectedException(
+            DiagnosticTestingError,
+            message_phrases=[failure_message],
+            contextual_data_by_name={"FailedAtStepNumber": "3.2", "FailedAtStepName": "Score Sections", "FailedAtStepKey": "score_sections"},
+        )
 
         # Act
-        with pytest.raises(DiagnosticTestingError):
+        with pytest.raises(DiagnosticTestingError) as actual_raised:
             async with (
                 pipeline_run,
                 pipeline_run.open_work_item(work_item) as work_item_scope,
                 work_item_scope.step(CLASSIFICATION) as parent_step_scope,
                 parent_step_scope.step(SCORE_SECTIONS),
             ):
-                raise diagnostic_testing_error
+                raise DiagnosticTestingError(failure_message)
 
-        # Assert - the child step stamps first; the parent finds the stamp and leaves it alone
-        AsserterContextualData.assert_exactly_these_entries(
-            {"FailedAtStepNumber": "3.2", "FailedAtStepName": "Score Sections", "FailedAtStepKey": "score_sections"},
-            diagnostic_testing_error,
-        )
+        # Assert
+        AsserterException.assert_exception(expected_exception, actual_raised.value)
 
     async def test_PipelineRun_WhenTheExceptionCarriesNoDiagnosticData_ThenItPassesThroughUntouched(
         self, artifact_sink_testing: ArtifactSinkTesting, run_logger: logging.Logger
     ) -> None:
         # Arrange
         work_item: WorkItem = create_random_work_item()
-        pipeline_run: PipelineRun = PipelineRun(pipeline_name="demo", sink=artifact_sink_testing, logger=run_logger)
+        plain_testing_error: PlainTestingError = PlainTestingError("missing")
+        pipeline_run: PipelineRun = PipelineRun(pipeline_name=PIPELINE_NAME, sink=artifact_sink_testing, logger=run_logger)
 
-        # Act / Assert
-        with pytest.raises(KeyError):
+        # Act
+        with pytest.raises(PlainTestingError) as actual_raised:
             async with pipeline_run, pipeline_run.open_work_item(work_item) as work_item_scope, work_item_scope.step(METADATA_AUDIT):
-                raise KeyError("missing")
+                raise plain_testing_error
+
+        # Assert - the very instance the step raised reaches the caller
+        assert actual_raised.value is plain_testing_error
 
 
 @pytest.mark.acceptance
@@ -102,7 +118,22 @@ class TestFailingSink:
         # Arrange
         work_item: WorkItem = create_random_work_item()
         expected_artifact_kind_key: str = PAGE_EVIDENCE.key
-        pipeline_run: PipelineRun = PipelineRun(pipeline_name="demo", sink=_sink_that_cannot_store, logger=run_logger)
+        expected_artifact_filename: str = f"{work_item.stem}_step_02_{expected_artifact_kind_key}.json"
+        pipeline_run: PipelineRun = PipelineRun(pipeline_name=PIPELINE_NAME, sink=_sink_that_cannot_store, logger=run_logger)
+        expected_exception: ExpectedException = ExpectedException(
+            ArtifactSinkError,
+            message_phrases=[expected_artifact_filename],
+            contextual_data_by_name={
+                "ExceptionType": "ArtifactSinkError",
+                "ArtifactKind": expected_artifact_kind_key,
+                "ArtifactFilename": expected_artifact_filename,
+                "ArtifactBytes": 2,
+                "FailedAtStepNumber": "2",
+                "FailedAtStepName": "Metadata Audit",
+                "FailedAtStepKey": "metadata_audit",
+            },
+            cause_type=ConnectionError,
+        )
 
         # Act
         with pytest.raises(ArtifactSinkError) as actual_raised:
@@ -110,40 +141,46 @@ class TestFailingSink:
                 await step_scope.emit(PAGE_EVIDENCE, b"{}")
 
         # Assert
-        assert isinstance(actual_raised.value.__cause__, ConnectionError)
-        AsserterContextualData.assert_exactly_these_entries(
-            {
-                "ExceptionType": "ArtifactSinkError",
-                "ArtifactKind": expected_artifact_kind_key,
-                "ArtifactFilename": f"{work_item.stem}_step_02_{expected_artifact_kind_key}.json",
-                "ArtifactBytes": 2,
-                "FailedAtStepNumber": "2",
-                "FailedAtStepName": "Metadata Audit",
-                "FailedAtStepKey": "metadata_audit",
-            },
-            actual_raised.value,
-        )
+        AsserterException.assert_exception(expected_exception, actual_raised.value)
 
     async def test_PipelineRun_WhenTheManifestCannotBeWrittenWhileTheRunIsFailing_ThenTheOriginalFailureIsNotHidden(
         self, run_logger: logging.Logger
     ) -> None:
         # Arrange
         real_problem_message: str = "the real problem"
-        pipeline_run: PipelineRun = PipelineRun(pipeline_name="demo", sink=_sink_that_cannot_store, logger=run_logger)
+        pipeline_run: PipelineRun = PipelineRun(pipeline_name=PIPELINE_NAME, sink=_sink_that_cannot_store, logger=run_logger)
+        expected_exception: ExpectedException = ExpectedException(PlainTestingError, message_phrases=[real_problem_message])
 
-        # Act / Assert - the run's own failure, not the storage outage, reaches the caller
-        with pytest.raises(ValueError, match=real_problem_message):
+        # Act
+        with pytest.raises(PlainTestingError) as actual_raised:
             async with pipeline_run:
-                raise ValueError(real_problem_message)
+                raise PlainTestingError(real_problem_message)
+
+        # Assert - the run's own failure, not the storage outage, reaches the caller
+        AsserterException.assert_exception(expected_exception, actual_raised.value)
 
     async def test_PipelineRun_WhenTheManifestCannotBeWrittenAndNothingElseFailed_ThenTheOutageIsReported(self, run_logger: logging.Logger) -> None:
         # Arrange
-        pipeline_run: PipelineRun = PipelineRun(pipeline_name="demo", sink=_sink_that_cannot_store, logger=run_logger)
+        pipeline_run: PipelineRun = PipelineRun(pipeline_name=PIPELINE_NAME, sink=_sink_that_cannot_store, logger=run_logger)
+        expected_exception: ExpectedException = ExpectedException(
+            ArtifactSinkError,
+            message_phrases=["manifest.json"],
+            contextual_data_by_name={
+                "ExceptionType": "ArtifactSinkError",
+                "ArtifactKind": "manifest",
+                "ArtifactFilename": "manifest.json",
+                "ArtifactBytes": ANY_CONTEXTUAL_VALUE,
+            },
+            cause_type=ConnectionError,
+        )
 
-        # Act / Assert
-        with pytest.raises(ArtifactSinkError):
+        # Act
+        with pytest.raises(ArtifactSinkError) as actual_raised:
             async with pipeline_run:
                 pass
+
+        # Assert
+        AsserterException.assert_exception(expected_exception, actual_raised.value)
 
 
 @pytest.mark.acceptance
@@ -154,19 +191,19 @@ class TestRunSummary:
         # Arrange
         healthy_work_item: WorkItem = create_random_work_item()
         failing_work_item: WorkItem = create_random_work_item()
-        pipeline_run: PipelineRun = PipelineRun(pipeline_name="demo", sink=artifact_sink_testing, logger=run_logger)
+        pipeline_run: PipelineRun = PipelineRun(pipeline_name=PIPELINE_NAME, sink=artifact_sink_testing, logger=run_logger)
+        expected_run_summary_record: ExpectedLogRecord = ExpectedLogRecord(
+            level=logging.WARNING,
+            attribute_value_by_key={AttributeKey.OUTCOME: "2 work item(s): 1 complete, 1 failed", AttributeKey.STATUS: "FAILED"},
+        )
 
         # Act
         async with pipeline_run:
             async with pipeline_run.open_work_item(healthy_work_item) as work_item_scope, work_item_scope.step(METADATA_AUDIT):
                 pass
-            with pytest.raises(RuntimeError):
+            with pytest.raises(PlainTestingError):
                 async with pipeline_run.open_work_item(failing_work_item):
-                    raise RuntimeError("boom")
+                    raise PlainTestingError("boom")
 
         # Assert
-        actual_run_summary_record: logging.LogRecord = record_capture.boundaries(EventKind.RUN)[-1]
-        expected_outcome: str = "2 work item(s): 1 complete, 1 failed"
-        assert RecordCapture.attribute(actual_run_summary_record, AttributeKey.OUTCOME) == expected_outcome
-        assert RecordCapture.attribute(actual_run_summary_record, AttributeKey.STATUS) == "FAILED"
-        assert actual_run_summary_record.levelno == logging.WARNING
+        AsserterLogRecord.assert_record(expected_run_summary_record, record_capture.boundaries(EventKind.RUN)[-1])

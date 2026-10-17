@@ -15,8 +15,9 @@ from breadcrumbs_acceptance_support.asserters.asserter_manifest import (
 )
 from breadcrumbs_acceptance_support.clock_testing import ClockTesting
 from breadcrumbs_acceptance_support.data_generators import create_random_work_item
+from breadcrumbs_acceptance_support.exceptions_testing import PlainTestingError
 
-from pipeline_breadcrumbs import MANIFEST_KIND, Artifact, ArtifactKind, ArtifactRole, PipelineRun, Step, WorkItem, WorkItemScope
+from pipeline_breadcrumbs import ArtifactKind, ArtifactRole, PipelineRun, Step, WorkItem, WorkItemScope
 from pipeline_breadcrumbs.testing import ArtifactSinkTesting
 
 LOAD_PAGES: Final[Step] = Step(1, "Load Pages")
@@ -64,28 +65,39 @@ class TestRunManifest:
                     clock_testing.advance(2.0)
             clock_testing.advance(0.5)
 
-        # Assert
-        actual_last_artifact: Artifact = artifact_sink_testing.artifacts[-1]
-        assert actual_last_artifact.artifact_kind == MANIFEST_KIND
-        AsserterManifest.assert_manifest(expected_manifest, actual_last_artifact)
+        # Assert - the asserter also checks that the last artifact is the manifest itself
+        AsserterManifest.assert_manifest(expected_manifest, artifact_sink_testing.artifacts[-1])
 
     async def test_PipelineRun_WhenAStepEmitsAnOutputArtifact_ThenTheManifestMarksItAsAnOutput(
-        self, artifact_sink_testing: ArtifactSinkTesting, run_logger: logging.Logger
+        self, clock_testing: ClockTesting, artifact_sink_testing: ArtifactSinkTesting, run_logger: logging.Logger
     ) -> None:
         # Arrange
         work_item: WorkItem = create_random_work_item()
-        pipeline_run: PipelineRun = PipelineRun(pipeline_name="demo", sink=artifact_sink_testing, logger=run_logger)
+        pipeline_name: str = "demo"
+        pipeline_run: PipelineRun = PipelineRun(pipeline_name=pipeline_name, sink=artifact_sink_testing, logger=run_logger, clock=clock_testing.clock)
+        expected_report_filename: str = f"{work_item.stem}_step_01_final_report.md"
+        expected_manifest: ExpectedManifest = ExpectedManifest(
+            pipeline_name=pipeline_name,
+            run_id=pipeline_run.run_id,
+            run_status="COMPLETE",
+            elapsed_seconds=0.0,
+            work_item_records=[
+                ExpectedManifestWorkItem(
+                    name=work_item.name,
+                    work_item_status="COMPLETE",
+                    step_records=[ExpectedManifestStep("1", "COMPLETE")],
+                    artifact_filenames=[expected_report_filename],
+                    artifact_role_by_filename={expected_report_filename: ArtifactRole.OUTPUT.value},
+                )
+            ],
+        )
 
         # Act
         async with pipeline_run, pipeline_run.open_work_item(work_item) as work_item_scope, work_item_scope.step(LOAD_PAGES) as step_scope:
             await step_scope.emit(FINAL_REPORT, b"# Report")
 
         # Assert
-        actual_output_roles: list[ArtifactRole] = [
-            actual_artifact.artifact_kind.role for actual_artifact in artifact_sink_testing.artifacts if actual_artifact.artifact_kind == FINAL_REPORT
-        ]
-        assert actual_output_roles == [ArtifactRole.OUTPUT]
-        assert b'"role": "output"' in artifact_sink_testing.artifacts[-1].content
+        AsserterManifest.assert_manifest(expected_manifest, artifact_sink_testing.artifacts[-1])
 
     async def test_PipelineRun_WhenOneWorkItemFails_ThenTheManifestMarksTheRunFailedAndRecordsWhy(
         self, clock_testing: ClockTesting, artifact_sink_testing: ArtifactSinkTesting, run_logger: logging.Logger
@@ -105,8 +117,8 @@ class TestRunManifest:
                 ExpectedManifestWorkItem(
                     name=failing_work_item.name,
                     work_item_status="FAILED",
-                    failure="ValueError: unreadable",
-                    step_records=[ExpectedManifestStep("1", "FAILED", failure="ValueError: unreadable")],
+                    failure="PlainTestingError: unreadable",
+                    step_records=[ExpectedManifestStep("1", "FAILED", failure="PlainTestingError: unreadable")],
                 ),
                 ExpectedManifestWorkItem(
                     name=healthy_work_item.name,
@@ -118,9 +130,9 @@ class TestRunManifest:
 
         # Act
         async with pipeline_run:
-            with pytest.raises(ValueError, match=failure_message):
+            with pytest.raises(PlainTestingError, match=failure_message):
                 async with pipeline_run.open_work_item(failing_work_item) as work_item_scope, work_item_scope.step(LOAD_PAGES):
-                    raise ValueError(failure_message)
+                    raise PlainTestingError(failure_message)
             async with pipeline_run.open_work_item(healthy_work_item) as work_item_scope, work_item_scope.step(LOAD_PAGES):
                 pass
 
@@ -175,8 +187,8 @@ class TestRunManifest:
                 ExpectedManifestWorkItem(
                     name=work_item.name,
                     work_item_status="FAILED",
-                    failure="ValueError: first attempt",
-                    step_records=[ExpectedManifestStep("1", "FAILED", failure="ValueError: first attempt")],
+                    failure="PlainTestingError: first attempt",
+                    step_records=[ExpectedManifestStep("1", "FAILED", failure="PlainTestingError: first attempt")],
                 ),
                 ExpectedManifestWorkItem(
                     name=work_item.name,
@@ -188,9 +200,9 @@ class TestRunManifest:
 
         # Act
         async with pipeline_run:
-            with pytest.raises(ValueError, match=first_attempt_failure_message):
+            with pytest.raises(PlainTestingError, match=first_attempt_failure_message):
                 async with pipeline_run.open_work_item(work_item) as work_item_scope, work_item_scope.step(LOAD_PAGES):
-                    raise ValueError(first_attempt_failure_message)
+                    raise PlainTestingError(first_attempt_failure_message)
             async with pipeline_run.open_work_item(work_item) as work_item_scope, work_item_scope.step(LOAD_PAGES):
                 pass
 
@@ -213,10 +225,10 @@ class TestRunManifest:
                 ExpectedManifestWorkItem(
                     name=work_item.name,
                     work_item_status="FAILED",
-                    failure="ValueError: page 1 is unreadable",
+                    failure="PlainTestingError: page 1 is unreadable",
                     step_records=[
                         ExpectedManifestStep("1", "COMPLETE"),
-                        ExpectedManifestStep("1", "FAILED", failure="ValueError: page 1 is unreadable"),
+                        ExpectedManifestStep("1", "FAILED", failure="PlainTestingError: page 1 is unreadable"),
                     ],
                 )
             ],
@@ -226,11 +238,11 @@ class TestRunManifest:
             for page_number in range(3):
                 async with work_item_scope.step(LOAD_PAGES):
                     if page_number == 1:
-                        raise ValueError("page 1 is unreadable")
+                        raise PlainTestingError("page 1 is unreadable")
 
         # Act - the second page fails, so the work item ends before a third opening
         async with pipeline_run:
-            with pytest.raises(ValueError, match="page 1 is unreadable"):
+            with pytest.raises(PlainTestingError, match="page 1 is unreadable"):
                 async with pipeline_run.open_work_item(work_item) as work_item_scope:
                     await open_the_step_once_per_page(work_item_scope)
 

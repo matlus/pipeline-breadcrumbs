@@ -10,6 +10,7 @@ from uuid import uuid4
 from pipeline_breadcrumbs.artifacts import ArtifactSink, RunArtifact
 from pipeline_breadcrumbs.attributes import AttributeBag, AttributeKey, AttributeValue, EventKind
 from pipeline_breadcrumbs.clock import Clock
+from pipeline_breadcrumbs.declaration_errors import InvalidDeclarationError
 from pipeline_breadcrumbs.errors import ArtifactSinkError
 from pipeline_breadcrumbs.formatting import format_byte_size, format_elapsed
 from pipeline_breadcrumbs.manifest import MANIFEST_KIND, RunRecorder
@@ -51,12 +52,12 @@ class PipelineRun:
         clock: Clock | None = None,
     ) -> None:
         if not pipeline_name.strip():
-            raise ValueError("A pipeline run needs a name, such as 'invoice-field-extraction'")
+            raise InvalidDeclarationError("A pipeline run needs a name, such as 'invoice-field-extraction'")
         resolved_clock: Clock = clock or Clock.create_system_clock()
         caller_attributes: AttributeBag = dict(attributes or {})
         reserved_names: frozenset[str] = _RESERVED_RECORD_ATTRIBUTES.intersection(caller_attributes)
         if reserved_names:
-            raise ValueError(f"Run attributes may not use reserved logging attribute names: {sorted(reserved_names)}")
+            raise InvalidDeclarationError(f"Run attributes may not use reserved logging attribute names: {sorted(reserved_names)}")
         self._run_id: str = f"{resolved_clock.now():%Y%m%d_%H%M%S}_{uuid4().hex[:8]}"
         self._pipeline_name: str = pipeline_name
         self._run_context: RunContext = RunContext(
