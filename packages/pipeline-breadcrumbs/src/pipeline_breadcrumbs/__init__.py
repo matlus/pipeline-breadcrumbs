@@ -10,6 +10,7 @@ from pipeline_breadcrumbs.artifacts import Artifact, ArtifactKind, ArtifactRole,
 from pipeline_breadcrumbs.attributes import AttributeBag, AttributeKey, AttributeValue, EventKind
 from pipeline_breadcrumbs.breadcrumb_formatter import BreadcrumbFormatter, TimeDisplay
 from pipeline_breadcrumbs.clock import Clock
+from pipeline_breadcrumbs.declaration_errors import InvalidDeclarationError
 from pipeline_breadcrumbs.errors import ArtifactSinkError, ContextualDataDict, ContextualExceptionProtocol
 from pipeline_breadcrumbs.formatting import format_byte_size, format_elapsed
 from pipeline_breadcrumbs.manifest import MANIFEST_KIND
@@ -34,6 +35,7 @@ __all__ = [
     "ContextualDataDict",
     "ContextualExceptionProtocol",
     "EventKind",
+    "InvalidDeclarationError",
     "PipelineRun",
     "RunArtifact",
     "Step",

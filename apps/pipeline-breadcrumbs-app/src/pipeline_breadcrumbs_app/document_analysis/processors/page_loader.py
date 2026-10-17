@@ -1,5 +1,7 @@
 """Step 1: load the document's pages. A non-model processor that takes real time."""
 
+from collections.abc import Iterable
+
 from pipeline_breadcrumbs import StepHostProtocol, StepScope
 from pipeline_breadcrumbs_app.document_analysis.analysis_steps import LOAD_PAGES
 from pipeline_breadcrumbs_app.document_analysis.artifact_kinds import PAGE_TEXT, page_discriminator
@@ -17,7 +19,7 @@ class PageLoader:
             step_scope.outcome(f"Loaded {len(loaded_pages)} page(s)", pages=len(loaded_pages))
         return loaded_pages
 
-    async def _load_each_page(self, step_scope: StepScope, pages: list[str]) -> list[str]:
+    async def _load_each_page(self, step_scope: StepScope, pages: Iterable[str]) -> list[str]:
         loaded_pages: list[str] = []
         page_number: int
         page_text: str

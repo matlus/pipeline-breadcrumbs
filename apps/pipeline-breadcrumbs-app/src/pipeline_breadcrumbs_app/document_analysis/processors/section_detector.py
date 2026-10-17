@@ -1,12 +1,13 @@
 """Step 2: detect the section each page starts. A model processor that fans out across pages."""
 
 import asyncio
+from collections.abc import Iterable
 from typing import Final
 
 from pipeline_breadcrumbs import StepHostProtocol, StepScope
 from pipeline_breadcrumbs_app.document_analysis.analysis_steps import DETECT_SECTIONS
 from pipeline_breadcrumbs_app.document_analysis.artifact_kinds import DETECTED_SECTIONS, RAW_DETECTION_RESPONSE, page_discriminator
-from pipeline_breadcrumbs_app.document_analysis.gateways.model_gateway import ModelGatewayProtocol
+from pipeline_breadcrumbs_app.document_analysis.gateways.gateway_model_service import GatewayModelService
 from pipeline_breadcrumbs_app.document_analysis.json_documents import to_json_document
 from pipeline_breadcrumbs_app.document_analysis.model_reply import ModelReply
 from pipeline_breadcrumbs_app.document_analysis.models import DetectedSection
@@ -15,11 +16,11 @@ MAX_CONCURRENCY: Final[int] = 3
 
 
 class SectionDetector:
-    def __init__(self, model_gateway_protocol: ModelGatewayProtocol) -> None:
-        self._model_gateway_protocol: ModelGatewayProtocol = model_gateway_protocol
+    def __init__(self, gateway_model_service: GatewayModelService) -> None:
+        self._gateway_model_service: GatewayModelService = gateway_model_service
 
-    async def detect(self, step_host_protocol: StepHostProtocol, pages: list[str]) -> list[DetectedSection]:
-        async with step_host_protocol.step(DETECT_SECTIONS) as step_scope:
+    async def detect(self, step_host: StepHostProtocol, pages: list[str]) -> list[DetectedSection]:
+        async with step_host.step(DETECT_SECTIONS) as step_scope:
             step_scope.info("Detecting sections", pages=len(pages), concurrency=MAX_CONCURRENCY)
             page_outcomes: list[DetectedSection | BaseException] = await self._detect_all_pages(step_scope, pages)
             detected_sections: list[DetectedSection] = self._sections_or_first_failure(page_outcomes)
@@ -37,8 +38,7 @@ class SectionDetector:
     async def _detect_page(self, step_scope: StepScope, page_semaphore: asyncio.Semaphore, page_number: int, page_text: str) -> DetectedSection:
         async with page_semaphore:
             step_scope.info("Calling the model", page=page_number)
-            # A real processor sends the page and its prompt to the model here.
-            raw_reply: str = await self._model_gateway_protocol.detect_section(page_number, page_text)
+            raw_reply: str = await self._gateway_model_service.detect_section(page_number, page_text)
             # Emit before validating: if parsing fails, the raw reply is already on disk.
             await step_scope.emit(RAW_DETECTION_RESPONSE, raw_reply.encode("utf-8"), discriminator=page_discriminator(page_number))
             detected_section: DetectedSection = self._parse(page_number, raw_reply)
@@ -46,7 +46,7 @@ class SectionDetector:
             return detected_section
 
     @staticmethod
-    def _sections_or_first_failure(page_outcomes: list[DetectedSection | BaseException]) -> list[DetectedSection]:
+    def _sections_or_first_failure(page_outcomes: Iterable[DetectedSection | BaseException]) -> list[DetectedSection]:
         detected_sections: list[DetectedSection] = []
         for page_outcome in page_outcomes:
             if isinstance(page_outcome, BaseException):

@@ -1,9 +1,9 @@
 """The demo's input: two small documents, one page of text per list entry."""
 
 from collections.abc import Mapping
-from typing import Final
+from typing import Final, final
 
-from pipeline_breadcrumbs_app.document_analysis.gateways.fake_model_gateway import MALFORMED_REPLY_MARKER
+from pipeline_breadcrumbs_app.model_service_simulator import MALFORMED_REPLY_MARKER
 
 SAMPLE_DOCUMENTS: Final[dict[str, list[str]]] = {
     "Contract 12.pdf": [
@@ -20,15 +20,16 @@ SAMPLE_DOCUMENTS: Final[dict[str, list[str]]] = {
 }
 
 
+@final
 class InvalidFailPageError(ValueError):
     """The page asked to fail does not exist in the document."""
 
 
 def with_malformed_reply(pages_by_document_name: Mapping[str, list[str]], document_name: str, page_number: int) -> dict[str, list[str]]:
-    """Mark one page so the fake model answers it with malformed JSON.
+    """Mark one page so the simulated model service answers it with malformed JSON.
 
     The fault travels in the page text, which is visible in the page's own artifact, so the
-    model gateway stays ignorant of which document it is serving.
+    model service stays ignorant of which document it is serving.
     """
     page_count: int = len(pages_by_document_name.get(document_name, []))
     if not 0 <= page_number < page_count:

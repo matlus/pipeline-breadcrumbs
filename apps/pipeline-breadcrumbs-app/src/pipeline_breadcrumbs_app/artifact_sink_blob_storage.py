@@ -16,7 +16,7 @@ from pipeline_breadcrumbs.hosting import safe_path_component
 
 
 @final
-class BlobStorageArtifactSink(ArtifactSinkProtocol):
+class ArtifactSinkBlobStorage(ArtifactSinkProtocol):
     """Uploads each artifact as one blob, named `<run name>/<work item>/<filename>`.
 
     ```

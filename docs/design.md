@@ -58,7 +58,7 @@ step-numbered story.
 ## A run, as the trail shows it
 
 Everything in this section is real output from the demo, abridged only where marked. The demo
-analyzes two documents with a fake model, so the output is the same every time. The timings in the
+analyzes two documents against an in-process simulation of the model service, so the output is the same every time. The timings in the
 samples come from one run with the demo's built-in pace.
 
 ### The run folder
@@ -413,7 +413,7 @@ artifact sink, work item and step number), and it is never kept on a long-lived 
 ### Step identity
 
 ```python
-LOAD_PAGES      = Step(1, "Load Pages")
+LOAD_PAGES = Step(1, "Load Pages")
 DETECT_SECTIONS = Step(2, "Detect Sections")
 ```
 
@@ -513,7 +513,7 @@ entries become custom dimensions (Microsoft Learn, "Add and modify Azure Monitor
 
 ```python
 PAGE_EVIDENCE = ArtifactKind("page_evidence", "json", "application/json")
-FINAL_REPORT  = ArtifactKind("final_report", "md", "text/markdown", role=ArtifactRole.OUTPUT)
+FINAL_REPORT = ArtifactKind("final_report", "md", "text/markdown", role=ArtifactRole.OUTPUT)
 ```
 
 - A pipeline declares its `ArtifactKind` values once, as constants. Vague keys (`result`, `output`,
@@ -527,8 +527,8 @@ FINAL_REPORT  = ArtifactKind("final_report", "md", "text/markdown", role=Artifac
 - An artifact derives its own filename, so no caller composes names.
 - The sink is a class that implements `ArtifactSinkProtocol`, which has one method:
   `async def persist(self, artifact: Artifact) -> None`. The application builds the sink and hands it
-  to `PipelineRun`. The library ships `FileSystemArtifactSink` and, for tests, `ArtifactRecorder`. The
-  demo adds `BlobStorageArtifactSink`, a stand-in for a storage container. The choice of a class over
+  to `PipelineRun`. The library ships `ArtifactSinkFileSystem` and, for tests, `ArtifactSinkTesting`. The
+  demo adds `ArtifactSinkBlobStorage`, a stand-in for a storage container. The choice of a class over
   a callback is explained in [the next section](#decision-how-the-host-receives-artifacts).
 - A sink that raises is translated to `ArtifactSinkError`, which carries the artifact's identity, so a
   storage outage does not read as a failure in the pipeline's logic. An implementation raises whatever
@@ -547,18 +547,18 @@ It is the smallest possible contract, and a lambda or a local function is enough
 
 **Option 2: a class that implements a protocol.** The host passes an object with one method,
 `persist(artifact)`, declared by `ArtifactSinkProtocol`. The file-system sink, the blob-storage sink and
-the in-memory test recorder are three classes with the same method.
+the in-memory test sink are three classes with the same method.
 
 | | Callback | Class implementing a protocol |
 |---|---|---|
 | Lifetime and state | None of its own. A claimed-folder registry, a container client or a connection has to be captured in a closure or kept somewhere else. | The class owns that state and has a clear lifetime. |
 | Readability | A delegate type with no name for what it does. Finding the implementations means searching for a signature. | A named type with a named method. Implementations are found by name. |
 | Swapping | Possible, but the application swaps a function where it swaps every other service as an object. | The application replaces one implementation with another the way it replaces any service it composes. |
-| Testing | A lambda that appends to a list. | An in-memory implementation, `ArtifactRecorder`, with helper methods for assertions. |
+| Testing | A lambda that appends to a list. | An in-memory implementation, `ArtifactSinkTesting`, with helper methods for assertions. |
 
 **Decision: the class.** Lifetime and state decided it. Every real sink keeps something between calls, so
 a callback would end up as a closure standing in for a class. The remaining rows point the same way, and
-the library already uses protocols for its other seams (`StepHostProtocol`, `ModelGatewayProtocol` and
+the library already uses protocols for its other seams (`StepHostProtocol` and
 `ContextualExceptionProtocol`), so a sink follows the same convention.
 
 Consequences:
@@ -584,7 +584,7 @@ The manifest is emitted through the same sink as a run-level artifact. It record
 status, each step's number, name, status, elapsed time and outcome, the artifacts produced and their
 sizes, and any failure.
 
-Host-side helpers (`FileSystemArtifactSink`, run folder creation, run log attachment) live in
+Host-side helpers (`ArtifactSinkFileSystem`, run folder creation, run log attachment) live in
 `pipeline_breadcrumbs.hosting`. The core knows no paths.
 
 A hosted run does not keep its artifacts in a run folder. The demo's blob stand-in names each artifact
@@ -627,17 +627,20 @@ exception that has `contextual_data_by_name` and `add_contextual_data` takes par
 
 The policy is the one the Meridian reference uses. Steps leave breadcrumbs and do not log tracebacks.
 The exception is logged once, at the application's outer boundary, with its traceback and every named
-fact it carries.
+fact it carries. The demo's boundary tells the two branches apart: a technical failure (the model service,
+the sink) is an error with its traceback, and a document the system refuses is a warning that lists every
+problem, with no traceback, because nothing in the system failed.
 
 ### Testing
 
 The tests are acceptance tests. Each one runs through a public entry point and checks what the system
-returned, the artifacts it handed to the sink and the breadcrumbs it logged. Only the model is
-replaced. They follow the PWI guidance for functional acceptance testing at the boundary, using the
+returned, the artifacts it handed to the sink and the breadcrumbs it logged. Only the wire to the
+model service is replaced: `ServiceLocatorTesting` hands the real gateway a Test Mediator's transport, so the
+gateway, the configuration provider and every processor run for real. They follow the PWI guidance for functional acceptance testing at the boundary, using the
 Meridian tests as the reference: behavior-style names, Arrange, Act and Assert sections, `expected_` and
 `actual_` prefixes, and asserters that report every difference at once.
 
-`pipeline_breadcrumbs.testing` provides `ArtifactRecorder` (use it as the sink, then assert which steps
+`pipeline_breadcrumbs.testing` provides `ArtifactSinkTesting` (use it as the sink, then assert which steps
 ran and which artifacts exist) and `RecordCapture` (a logging handler that keeps records for attribute
 assertions). Artifact presence is itself a signal: a remediation step that emits only when triggered is
 diagnosed by whether its file exists.
@@ -710,7 +713,7 @@ The first full PWI review of this workspace produced 168 findings, which drove t
 
 Findings left open on purpose, because removing them would cost clarity more than it gains:
 
-- Scopes, `PipelineRun`, `RunRecorder` and `FileSystemArtifactSink` still hold lifecycle state: a start
+- Scopes, `PipelineRun`, `RunRecorder` and `ArtifactSinkFileSystem` still hold lifecycle state: a start
   time, a step's outcome, an append-only event list, the folder registry. A context manager cannot be
   stateless.
 - `ArtifactSinkError` and `DocumentAnalysisError` accumulate contextual data as they propagate, the way
@@ -741,8 +744,7 @@ failure instead of paying for the steps that already succeeded. The change neede
 async def analyze_document(self, step_host: StepHostProtocol, pages: list[str], *, start_at_step: int = 1) -> DocumentAnalysis:
     loaded_pages = pages if start_at_step > 1 else await self._page_loader.load(step_host, pages)
     detected_sections = (
-        await self._artifact_reader.read_detected_sections(...) if start_at_step > 2
-        else await self._section_detector.detect(step_host, loaded_pages)
+        await self._artifact_reader.read_detected_sections(...) if start_at_step > 2 else await self._section_detector.detect(step_host, loaded_pages)
     )
     ...
 ```
@@ -764,7 +766,7 @@ complete enough to resume from. It is not a rewrite.
 - **Ordered work item folders**, if the processing order should show at the top of a run.
 - **Trace and span ids**, through the existing attribute seam on `PipelineRun`.
 - **A production blob storage sink**, as another class that implements `ArtifactSinkProtocol`, built on the
-  storage SDK's container client. The demo's `BlobStorageArtifactSink` already shows the shape. Nothing
+  storage SDK's container client. The demo's `ArtifactSinkBlobStorage` already shows the shape. Nothing
   else changes.
 - **Filtering the per-artifact log line** at an Application Insights handler.
 - **A C# twin.** Nothing here depends on Python: a frozen `Step`, `ArtifactKind` and artifact types, an
@@ -779,7 +781,7 @@ levels of abstraction a real system has.
 
 ```
 main.py                           the application: chooses the sink and the log handlers, calls the system
-blob_storage_artifact_sink.py     a stand-in for blob storage: an ArtifactSinkProtocol implementation
+artifact_sink_blob_storage.py     a stand-in for blob storage: an ArtifactSinkProtocol implementation
 telemetry.py                      a stand-in for Application Insights that records exceptions only
 document_analysis/                the system
   document_analysis_manager.py    its entry point: validates, then sequences four processors
@@ -789,18 +791,21 @@ document_analysis/                the system
   processors/
     page_loader.py                step 1, non-model work that takes time
     section_detector.py           step 2, a model processor fanning out across pages
-    section_classifier.py         step 3, a sub-orchestrator over three more processors:
-      classification/
-        prompt_builder.py             3.1, non-model work
-        section_scorer.py             3.2, a model processor
-        score_reconciler.py           3.3, a conditional model processor
     report_assembler.py           step 4, non-model work that produces the real output
-  gateways/                       the model gateway protocol, and a fake that sleeps instead of calling out
+  engines/
+    section_classifier.py         step 3, a sub-orchestrator over three more processors:
+    classification/
+      prompt_builder.py             3.1, non-model work
+      section_scorer.py             3.2, a model processor
+      score_reconciler.py           3.3, a conditional model processor
+  gateways/                       the model service gateway: builds each request, checks each response, translates failures
+  service_locators/               creates what a host or a test swaps: the configuration source and the HTTP transport
+  configuration_providers/        reads and validates the settings once, when the system is built
 ```
 
-- **The application is not the system.** `main.py` chooses the artifact sink and builds the logger, opens the
-  run and one work item per document, calls the system and logs a failure once at its outer boundary.
-  It contains no steps.
+- **The application is not the system.** `main.py` builds the artifact sink and the logger, builds the
+  system from a service locator, opens the run and one work item per document, calls the system and logs a
+  failure once at its outer boundary. It contains no steps.
 - **The manager has one public method that only sequences.** It passes each processor's result to the next
   and does no work itself.
 - **Each processor owns its step.** It opens its step on the host it is given. The `Step` declarations
@@ -808,9 +813,11 @@ document_analysis/                the system
   list and cannot be duplicated by accident.
 - **A sub-orchestrator passes its own step down as the host.** `SectionClassifier` opens step 3 and hands
   that scope to three processors. That is the whole mechanism behind 3.1, 3.2 and 3.3.
-- **Realistic processors, no outbound calls.** Model processors call a `ModelGatewayProtocol`. The fake
-  sleeps instead of calling out. Non-model processors call `SimulatedWork`. Both mark where real work
-  would go. Model processors log the way real ones do: a start line, progress lines with counts and
+- **A real gateway, no outbound calls in the demo.** Model processors call `GatewayModelService`, which
+  talks HTTP to the model service through the transport its service locator supplies, as the Meridian
+  gateways do. `ServiceLocatorDemo` supplies an in-process simulation of the service, so the demo runs
+  offline with the production gateway. Non-model processors call `SimulatedWork`, which marks where real
+  non-model work would go. Model processors log the way real ones do: a start line, progress lines with counts and
   identifiers, the raw reply emitted before it is validated, and a closing outcome.
 - **Two hosts.** `--host local` is the default. It writes a run log and hands the system the file-system
   sink. `--host hosted` hands it the blob-storage stand-in and sends only exceptions to telemetry. Both

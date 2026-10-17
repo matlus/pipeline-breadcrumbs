@@ -1,5 +1,7 @@
 """Step 3.1: build the classification prompts. A non-model processor."""
 
+from collections.abc import Iterable
+
 from pipeline_breadcrumbs import StepHostProtocol
 from pipeline_breadcrumbs_app.document_analysis.analysis_steps import PREPARE_PROMPTS
 from pipeline_breadcrumbs_app.document_analysis.artifact_kinds import CLASSIFICATION_PROMPTS
@@ -20,7 +22,7 @@ class PromptBuilder:
             step_scope.outcome(f"Prepared {len(classification_prompts)} prompt(s)", prompts=len(classification_prompts))
         return classification_prompts
 
-    async def _compose_prompts(self, detected_sections: list[DetectedSection]) -> list[ClassificationPrompt]:
+    async def _compose_prompts(self, detected_sections: Iterable[DetectedSection]) -> list[ClassificationPrompt]:
         classification_prompts: list[ClassificationPrompt] = []
         for detected_section in detected_sections:
             # A real processor merges the section's text into a prompt template loaded from a prompt file.

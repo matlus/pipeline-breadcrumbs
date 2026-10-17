@@ -3,14 +3,14 @@ from collections.abc import Iterator
 
 import pytest
 
-from pipeline_breadcrumbs.testing import ArtifactRecorder, RecordCapture
+from pipeline_breadcrumbs.testing import ArtifactSinkTesting, RecordCapture
 
 _TEST_LOGGER_NAME: str = "pipeline_breadcrumbs_app.acceptance_tests"
 
 
 @pytest.fixture
-def artifact_recorder() -> ArtifactRecorder:
-    return ArtifactRecorder()
+def artifact_sink_testing() -> ArtifactSinkTesting:
+    return ArtifactSinkTesting()
 
 
 @pytest.fixture

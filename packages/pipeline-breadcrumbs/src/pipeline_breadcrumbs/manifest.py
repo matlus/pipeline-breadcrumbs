@@ -122,6 +122,15 @@ class ArtifactRecorded:
 type RunEvent = WorkItemOpened | WorkItemClosed | StepRecorded | StepClosed | ArtifactRecorded
 
 
+@dataclass(frozen=True, slots=True)
+class _WorkItemAttempt:
+    """One opening of a work item while the fold is under way."""
+
+    work_item_record: WorkItemRecord
+    step_record_by_step_instance_id: dict[str, StepRecord]
+    artifact_records: list[ArtifactRecord]
+
+
 def build_work_item_records(run_events: Sequence[RunEvent]) -> tuple[WorkItemRecord, ...]:
     """Fold the run's events into one immutable record per opening of a work item, in the order they were opened.
 
@@ -129,64 +138,72 @@ def build_work_item_records(run_events: Sequence[RunEvent]) -> tuple[WorkItemRec
     earlier failure still counts. Later events for that id belong to its latest attempt, so one work
     item id must not run concurrently with itself.
     """
-    attempt_work_item_records: list[WorkItemRecord] = []
-    step_records_by_step_instance_id_by_attempt: list[dict[str, StepRecord]] = []
-    artifact_records: list[list[ArtifactRecord]] = []
+    work_item_attempts: list[_WorkItemAttempt] = []
     latest_attempt_index_by_work_item_id: dict[str, int] = {}
     for run_event in run_events:
-        match run_event:
-            case WorkItemOpened():
-                latest_attempt_index_by_work_item_id[run_event.work_item_id] = len(attempt_work_item_records)
-                attempt_work_item_records.append(
-                    WorkItemRecord(
-                        work_item_id=run_event.work_item_id,
-                        work_item_name=run_event.work_item_name,
-                        work_item_status=StepStatus.STARTED,
-                        started_at=run_event.started_at,
-                    )
-                )
-                step_records_by_step_instance_id_by_attempt.append({})
-                artifact_records.append([])
-            case WorkItemClosed():
-                attempt_index: int = latest_attempt_index_by_work_item_id[run_event.work_item_id]
-                attempt_work_item_records[attempt_index] = replace(
-                    attempt_work_item_records[attempt_index],
-                    work_item_status=run_event.work_item_status,
-                    elapsed_seconds=round(run_event.elapsed_seconds, _ELAPSED_SECONDS_DECIMALS),
-                    failure=run_event.failure,
-                )
-            case StepRecorded():
-                step_records_by_step_instance_id_by_attempt[latest_attempt_index_by_work_item_id[run_event.work_item_id]][
-                    run_event.step_instance_id
-                ] = run_event.step_record
-            case StepClosed():
-                open_step_records_by_step_instance_id: dict[str, StepRecord] = step_records_by_step_instance_id_by_attempt[
-                    latest_attempt_index_by_work_item_id[run_event.work_item_id]
-                ]
-                open_step_records_by_step_instance_id[run_event.step_instance_id] = replace(
-                    open_step_records_by_step_instance_id[run_event.step_instance_id],
-                    step_status=run_event.step_status,
-                    elapsed_seconds=round(run_event.elapsed_seconds, _ELAPSED_SECONDS_DECIMALS),
-                    outcome=run_event.outcome,
-                    failure=run_event.failure,
-                )
-            case ArtifactRecorded():
-                artifact_records[latest_attempt_index_by_work_item_id[run_event.work_item_id]].append(run_event.artifact_record)
-    completed_work_item_records: list[WorkItemRecord] = []
-    attempt_work_item_record: WorkItemRecord
-    step_records_by_step_instance_id: dict[str, StepRecord]
-    attempt_artifact_records: list[ArtifactRecord]
-    for attempt_work_item_record, step_records_by_step_instance_id, attempt_artifact_records in zip(
-        attempt_work_item_records, step_records_by_step_instance_id_by_attempt, artifact_records, strict=True
-    ):
-        completed_work_item_records.append(
-            replace(
-                attempt_work_item_record,
-                step_records=tuple(step_records_by_step_instance_id.values()),
-                artifact_records=tuple(attempt_artifact_records),
-            )
-        )
-    return tuple(completed_work_item_records)
+        _apply_run_event(run_event, work_item_attempts, latest_attempt_index_by_work_item_id)
+    return tuple(_complete_attempt(work_item_attempt) for work_item_attempt in work_item_attempts)
+
+
+def _apply_run_event(run_event: RunEvent, work_item_attempts: list[_WorkItemAttempt], latest_attempt_index_by_work_item_id: dict[str, int]) -> None:
+    match run_event:
+        case WorkItemOpened():
+            latest_attempt_index_by_work_item_id[run_event.work_item_id] = len(work_item_attempts)
+            work_item_attempts.append(_open_attempt(run_event))
+        case WorkItemClosed():
+            attempt_index: int = latest_attempt_index_by_work_item_id[run_event.work_item_id]
+            work_item_attempts[attempt_index] = _close_attempt(work_item_attempts[attempt_index], run_event)
+        case StepRecorded():
+            work_item_attempt: _WorkItemAttempt = work_item_attempts[latest_attempt_index_by_work_item_id[run_event.work_item_id]]
+            work_item_attempt.step_record_by_step_instance_id[run_event.step_instance_id] = run_event.step_record
+        case StepClosed():
+            _close_step(work_item_attempts[latest_attempt_index_by_work_item_id[run_event.work_item_id]], run_event)
+        case ArtifactRecorded():
+            work_item_attempts[latest_attempt_index_by_work_item_id[run_event.work_item_id]].artifact_records.append(run_event.artifact_record)
+
+
+def _open_attempt(work_item_opened: WorkItemOpened) -> _WorkItemAttempt:
+    return _WorkItemAttempt(
+        work_item_record=WorkItemRecord(
+            work_item_id=work_item_opened.work_item_id,
+            work_item_name=work_item_opened.work_item_name,
+            work_item_status=StepStatus.STARTED,
+            started_at=work_item_opened.started_at,
+        ),
+        step_record_by_step_instance_id={},
+        artifact_records=[],
+    )
+
+
+def _close_attempt(work_item_attempt: _WorkItemAttempt, work_item_closed: WorkItemClosed) -> _WorkItemAttempt:
+    return replace(
+        work_item_attempt,
+        work_item_record=replace(
+            work_item_attempt.work_item_record,
+            work_item_status=work_item_closed.work_item_status,
+            elapsed_seconds=round(work_item_closed.elapsed_seconds, _ELAPSED_SECONDS_DECIMALS),
+            failure=work_item_closed.failure,
+        ),
+    )
+
+
+def _close_step(work_item_attempt: _WorkItemAttempt, step_closed: StepClosed) -> None:
+    open_step_record: StepRecord = work_item_attempt.step_record_by_step_instance_id[step_closed.step_instance_id]
+    work_item_attempt.step_record_by_step_instance_id[step_closed.step_instance_id] = replace(
+        open_step_record,
+        step_status=step_closed.step_status,
+        elapsed_seconds=round(step_closed.elapsed_seconds, _ELAPSED_SECONDS_DECIMALS),
+        outcome=step_closed.outcome,
+        failure=step_closed.failure,
+    )
+
+
+def _complete_attempt(work_item_attempt: _WorkItemAttempt) -> WorkItemRecord:
+    return replace(
+        work_item_attempt.work_item_record,
+        step_records=tuple(work_item_attempt.step_record_by_step_instance_id.values()),
+        artifact_records=tuple(work_item_attempt.artifact_records),
+    )
 
 
 @final

@@ -24,6 +24,7 @@ included, receives them. It also means the log reads as an ordered, step-numbere
 DETECT_SECTIONS = Step(2, "Detect Sections")
 PAGE_EVIDENCE = ArtifactKind("page_evidence", "json", "application/json")
 
+
 async def analyze(step_host: StepHostProtocol, pages: list[str]) -> None:
     async with step_host.step(DETECT_SECTIONS) as step_scope:
         step_scope.info("Detecting sections", pages=len(pages))
@@ -88,7 +89,7 @@ distro you would use anyway:
 ```python
 from azure.monitor.opentelemetry import configure_azure_monitor
 
-configure_azure_monitor(logger_name="my_pipeline")   # the logger tree the pipeline logs through
+configure_azure_monitor(logger_name="my_pipeline")  # the logger tree the pipeline logs through
 logger = logging.getLogger("my_pipeline")
 ```
 
@@ -107,35 +108,43 @@ and every record carries them.
 The demo separates the application from the system it calls, the way a production codebase does.
 
 ```
-main.py                           the application: chooses the artifact sink and the logger, calls the system
-blob_storage_artifact_sink.py     a stand-in for blob storage, one implementation of the sink protocol
+main.py                           the application: chooses the artifact sink, the logger and the service locator, calls the system
+artifact_sink_blob_storage.py     a stand-in for blob storage: an ArtifactSinkProtocol implementation
+service_locator_demo.py           the demo's service locator: the real system, wired to the simulated model service
+model_service_simulator.py        answers the model service's HTTP API in-process, so the demo runs offline
 document_analysis/                the system
   document_analysis_manager.py    its entry point: one public method that validates, then sequences four processors
+  service_locators/               creates what a host or a test swaps: the configuration source and the HTTP transport
+  configuration_providers/        reads and validates the settings once, when the system is built
   analysis_steps.py               the table of contents: every Step, declared in one place
   model_reply.py                  turns an untrusted model reply into checked values
   validators/                     front-door validation of the document the manager is handed
   processors/
     page_loader.py                step 1, non-model work that takes time
     section_detector.py           step 2, a model processor fanning out across pages
-    section_classifier.py         step 3, a sub-orchestrator over three more processors:
-      classification/
-        prompt_builder.py             3.1, non-model work
-        section_scorer.py             3.2, a model processor
-        score_reconciler.py           3.3, a conditional model processor
     report_assembler.py           step 4, non-model work that produces the real output
-  gateways/                       the model gateway protocol, and a fake that sleeps instead of calling out
+  engines/
+    section_classifier.py         step 3, a sub-orchestrator over three more processors:
+    classification/
+      prompt_builder.py             3.1, non-model work
+      section_scorer.py             3.2, a model processor
+      score_reconciler.py           3.3, a conditional model processor
+  gateways/                       the model service gateway: builds each request, checks each response, translates failures
 ```
 
-`main.py` is not the system. It chooses the artifact sink, builds the logger, opens a
-`PipelineRun`, opens one work item per document, and hands that scope to the manager. The
+`main.py` is not the system. It builds the artifact sink and the logger, builds the manager
+from a service locator, opens a `PipelineRun`, opens one work item per document, and hands that
+scope to the manager. The
 manager and the processors never see a path or a handler. Each processor opens its own step on
 the host it is given, so it owns its work, and the classifier passes its own step down, which
 is why its three processors report as 3.1 to 3.3 without any numbering code.
 
-Nothing here calls a real model. The fake gateway and `SimulatedWork` sleep for a moment,
-where a real system would call a service or render a page, so the log appears at a believable
-pace and the demo needs no keys or configuration. Every spot where real work would go is
-marked with a comment.
+Nothing here calls a real model, but the system's gateway is real. It talks HTTP to a model
+service through the transport its service locator supplies. `ServiceLocatorProduction` supplies
+the network; the demo's `ServiceLocatorDemo` supplies an in-process simulation of the service, so
+the demo needs no keys or setup and reads the same every time. The simulation and `SimulatedWork`
+take a moment, where a real system would wait for a model or render a page, so the log appears
+at a believable pace. A production host sets `DOCUMENT_ANALYSIS_MODEL_SERVICE_BASE_URL`.
 
 ## Try it
 
@@ -150,8 +159,8 @@ The failing run exits with code 1, leaves the malformed reply on disk beside the
 that parsed, and still completes the second document.
 
 Where the application runs is its own choice, made in the artifact sink it hands in and the log
-handlers it attaches. A local run uses `FileSystemArtifactSink`; a hosted run uses
-`BlobStorageArtifactSink`, a stand-in for a storage container. Both implement `ArtifactSinkProtocol`
+handlers it attaches. A local run uses `ArtifactSinkFileSystem`; a hosted run uses
+`ArtifactSinkBlobStorage`, a stand-in for a storage container. Both implement `ArtifactSinkProtocol`
 and persist every artifact: artifacts are the record of what each step did, and what a later run
 could start from. The system shares one logger and passes every informational line
 to it; the application decides who listens. A local run writes a `run.log` beside the artifacts. A
@@ -164,7 +173,9 @@ runs identically in both.
 The tests are acceptance tests: each one runs through a system's public entry point
 (`PipelineRun` for the library, `DocumentAnalysisManager` and `run_demo` for the demo) and
 asserts on what the system returned, the artifacts it handed to the sink and the
-breadcrumbs it logged. Only the model is replaced.
+breadcrumbs it logged. The demo's tests build the system through `ServiceLocatorTesting`, which
+swaps only the HTTP transport for a Test Mediator, so the gateway, the configuration provider and
+every processor run for real.
 
 ```bash
 uv run --all-packages --all-groups ruff check packages apps
@@ -176,3 +187,11 @@ uv run --all-packages --all-groups pytest -q
 
 The Python library and demo are built and tested. A C# equivalent is planned for this
 repository. Articles that explain the practice will be linked here when they are published.
+
+## Teaching article
+
+[Pipeline Breadcrumbs](https://matlus.com/writing/pipeline-breadcrumbs/) explains
+how numbered steps, progress logs, artifacts and a run manifest help people and
+coding assistants investigate failed runs and incorrect results. It includes a
+runnable example and the reasoning behind the sink-class design. The setup
+commands pin the source revision used by the examples.

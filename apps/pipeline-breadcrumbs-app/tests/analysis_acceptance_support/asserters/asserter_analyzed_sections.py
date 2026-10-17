@@ -1,15 +1,45 @@
 from collections.abc import Sequence
+from dataclasses import fields
+from typing import Final
+
+from breadcrumbs_acceptance_support.assertion_reports import format_assertion_report
 
 from pipeline_breadcrumbs_app.document_analysis.models import ScoredSection
 
 
 class AsserterAnalyzedSections:
+    """Checks the sections an analysis returned, field by field and in page order, reporting every difference at once."""
+
+    ANALYZED_SECTIONS_ASSERTION_FAILED_HEADER: Final[str] = "ANALYZED SECTIONS ASSERTION FAILED"
+
     @staticmethod
     def assert_exactly_these_sections(expected_scored_sections: Sequence[ScoredSection], actual_scored_sections: Sequence[ScoredSection]) -> None:
-        assertion_failures: list[str] = []
-        if len(expected_scored_sections) != len(actual_scored_sections):
-            assertion_failures.append(f"expected {len(expected_scored_sections)} sections but found {len(actual_scored_sections)}")
-        for expected_scored_section, actual_scored_section in zip(expected_scored_sections, actual_scored_sections, strict=False):
-            if expected_scored_section != actual_scored_section:
-                assertion_failures.append(f"expected {expected_scored_section} but found {actual_scored_section}")
-        assert not assertion_failures, "ANALYZED SECTIONS ASSERTION FAILED\n" + "\n".join(assertion_failures)
+        mismatches: list[str] = []
+        position: int
+        expected_scored_section: ScoredSection
+        actual_scored_section: ScoredSection
+        for position, (expected_scored_section, actual_scored_section) in enumerate(
+            zip(expected_scored_sections, actual_scored_sections, strict=False)
+        ):
+            mismatches.extend(
+                f"section {position} {section_field.name}: expected {getattr(expected_scored_section, section_field.name)!r} "
+                f"but found {getattr(actual_scored_section, section_field.name)!r}"
+                for section_field in fields(ScoredSection)
+                if getattr(expected_scored_section, section_field.name) != getattr(actual_scored_section, section_field.name)
+            )
+        mismatches.extend(
+            f"section {position}: missing {missing_scored_section}"
+            for position, missing_scored_section in enumerate(expected_scored_sections[len(actual_scored_sections) :], len(actual_scored_sections))
+        )
+        mismatches.extend(
+            f"section {position}: unexpected {unexpected_scored_section}"
+            for position, unexpected_scored_section in enumerate(
+                actual_scored_sections[len(expected_scored_sections) :], len(expected_scored_sections)
+            )
+        )
+        assert not mismatches, format_assertion_report(
+            AsserterAnalyzedSections.ANALYZED_SECTIONS_ASSERTION_FAILED_HEADER,
+            "Each section carries the title, category and confidence the model gave its page, in page order.",
+            f"{len(expected_scored_sections)} section(s) expected, {len(actual_scored_sections)} returned",
+            mismatches,
+        )

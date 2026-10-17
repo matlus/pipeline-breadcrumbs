@@ -59,6 +59,8 @@ class ExceptionTelemetryHandler(logging.Handler):
         exception: BaseException | None = record.exc_info[1] if record.exc_info else None
         traceback_of_exception: TracebackType | None = record.exc_info[2] if record.exc_info else None
         custom_dimensions: ContextualDataDict = {}
+        attribute_name: str
+        attribute_value: object
         for attribute_name, attribute_value in record.__dict__.items():
             if attribute_name.startswith(_PIPELINE_ATTRIBUTE_PREFIX) and isinstance(attribute_value, str | int | float | bool):
                 custom_dimensions[attribute_name] = attribute_value
@@ -78,7 +80,6 @@ class ExceptionTelemetryHandler(logging.Handler):
 
 @contextmanager
 def attached_exception_telemetry(logger: logging.Logger, telemetry_path: Path) -> Generator[ExceptionTelemetryHandler]:
-    """Send the logger's exceptions to `telemetry_path` for the duration of the block, then detach."""
     exception_telemetry_handler: ExceptionTelemetryHandler = ExceptionTelemetryHandler(telemetry_path)
     logger.addHandler(exception_telemetry_handler)
     try:

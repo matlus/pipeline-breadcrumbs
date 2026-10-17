@@ -14,17 +14,18 @@ for the reasoning.
 | `ArtifactKind`, `Artifact`, `ArtifactSinkProtocol` | A declared kind of file, the complete frozen artifact, and the protocol a sink class implements with `persist(artifact)`. |
 | `BreadcrumbFormatter`, `TimeDisplay` | The human rendering of boundary records, and the single switch for time. |
 | `AttributeKey` | The names of the attributes every record carries. |
-| `ArtifactSinkError`, `ContextualException` | Sink failures, and the shape an exception takes to receive step diagnostics. |
+| `ArtifactSinkError`, `ContextualExceptionProtocol` | Sink failures, and the shape an exception takes to receive step diagnostics. |
+| `InvalidDeclarationError` | A step, artifact kind, work item or run declared with a value the library refuses (a `ValueError`). |
 
-`pipeline_breadcrumbs.hosting` holds local file system helpers (`FileSystemArtifactSink`,
-`create_run_folder`, `attached_run_log`). `pipeline_breadcrumbs.testing` holds
-`ArtifactRecorder`, an in-memory sink, and `RecordCapture` for acceptance tests. Each sink is a
-class that implements `ArtifactSinkProtocol`, so the application picks one and hands it in.
+`pipeline_breadcrumbs.hosting` holds local file system helpers (`ArtifactSinkFileSystem`,
+`create_run_folder`, `attached_run_log`). `ArtifactSinkFileSystem` raises
+`WorkItemFolderCollisionError` (a `ValueError`) when two work items in one run map to the same folder. `pipeline_breadcrumbs.testing` holds
+`ArtifactSinkTesting` and `RecordCapture` for acceptance tests.
 
 Create a run with `PipelineRun(pipeline_name=..., artifact_sink=...)` and open each item
 with `pipeline_run.open_work_item(work_item)`. For deterministic run folders,
-pass `supplied_clock` to `create_run_folder`; `Clock.create_system_clock()` supplies
-the normal wall and monotonic clocks. `ArtifactRecorder.step_paths()` returns
+pass `supplied_clock` to `create_run_folder` and `PipelineRun`; `Clock.create_system_clock()` supplies
+the normal wall and monotonic clocks. `ArtifactSinkTesting.step_paths()` returns
 the distinct emitting step paths in first-emitted order.
 
 Manifest work-item records use `work_item_name`. Step records use `step_path`,

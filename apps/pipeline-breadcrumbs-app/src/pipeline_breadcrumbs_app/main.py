@@ -7,7 +7,9 @@ every decision the system must not make:
   local run hands in the file-system sink and a hosted run hands in the blob-storage one. Every artifact
   is persisted either way, because artifacts are the record of what each step did;
 * where log lines go: it builds the one logger the system shares and decides which handlers listen
-  to it. That is the only thing a local run and a hosted run do differently;
+  to it. Those handlers and the artifact sink are the only things a local run and a hosted run do differently;
+* which model service the system talks to: it hands the system `ServiceLocatorDemo`, whose transport
+  answers the model service's API in-process, so the demo runs offline with the system's real gateway;
 * what to run and what to do when it fails: it opens the run, opens one work item per document,
   calls the system, and logs a failure once, at this outer boundary.
 
@@ -32,21 +34,22 @@ from typing import Final
 from uuid import uuid4
 
 from pipeline_breadcrumbs import (
+    ArtifactSinkError,
     ArtifactSinkProtocol,
     AttributeKey,
     BreadcrumbFormatter,
+    ContextualExceptionProtocol,
     PipelineRun,
     TimeDisplay,
     WorkItem,
     WorkItemScope,
 )
-from pipeline_breadcrumbs.hosting import FileSystemArtifactSink, attached_run_log, create_run_folder
-from pipeline_breadcrumbs_app.blob_storage_artifact_sink import BlobStorageArtifactSink
+from pipeline_breadcrumbs.hosting import ArtifactSinkFileSystem, attached_run_log, create_run_folder
+from pipeline_breadcrumbs_app.artifact_sink_blob_storage import ArtifactSinkBlobStorage
 from pipeline_breadcrumbs_app.document_analysis.document_analysis_manager import DocumentAnalysisManager
-from pipeline_breadcrumbs_app.document_analysis.exceptions import DocumentAnalysisError
-from pipeline_breadcrumbs_app.document_analysis.gateways.fake_model_gateway import FakeModelGateway
-from pipeline_breadcrumbs_app.document_analysis.simulated_work import SimulatedWork
+from pipeline_breadcrumbs_app.document_analysis.exceptions import DocumentAnalysisBusinessError, DocumentAnalysisTechnicalError
 from pipeline_breadcrumbs_app.sample_documents import SAMPLE_DOCUMENTS, InvalidFailPageError, with_malformed_reply
+from pipeline_breadcrumbs_app.service_locator_demo import ServiceLocatorDemo
 from pipeline_breadcrumbs_app.telemetry import TELEMETRY_FILENAME, attached_exception_telemetry
 
 PIPELINE_NAME: Final[str] = "document-analysis-demo"
@@ -61,7 +64,7 @@ DEFAULT_PACE_SECONDS: Final[float] = 0.3
 
 
 class HostProfile(StrEnum):
-    """Where the application runs. The system behaves the same in both; only the log handlers differ.
+    """Where the application runs. The system behaves the same in both; only the log handlers and the artifact sink differ.
 
     Local keeps every informational line in a `run.log` beside the artifacts, for a developer who is
     watching the run, and writes the artifacts to the file system. Hosted leaves informational lines to the
@@ -101,9 +104,9 @@ def _create_artifact_destination(host_profile: HostProfile, output_root: Path, r
     later run could start from. Only where they go differs.
     """
     if host_profile is HostProfile.LOCAL:
-        return ArtifactDestination(FileSystemArtifactSink(run_directory), run_directory)
-    blob_storage_artifact_sink: BlobStorageArtifactSink = BlobStorageArtifactSink(output_root / BLOB_CONTAINER_NAME, run_directory.name)
-    return ArtifactDestination(blob_storage_artifact_sink, blob_storage_artifact_sink.run_directory)
+        return ArtifactDestination(ArtifactSinkFileSystem(run_directory), run_directory)
+    artifact_sink_blob_storage: ArtifactSinkBlobStorage = ArtifactSinkBlobStorage(output_root / BLOB_CONTAINER_NAME, run_directory.name)
+    return ArtifactDestination(artifact_sink_blob_storage, artifact_sink_blob_storage.run_directory)
 
 
 @contextmanager
@@ -129,6 +132,19 @@ def _console_logger(formatter: logging.Formatter) -> Generator[logging.Logger]:
         logger.propagate = previous_propagate
 
 
+def _describe_contextual_data(contextual_exception: ContextualExceptionProtocol) -> str:
+    fact_lines: list[str] = []
+    fact_name: str
+    fact_value: object
+    for fact_name, fact_value in contextual_exception.contextual_data_by_name.items():
+        fact_lines.append(f"  {fact_name}: {fact_value}")
+    return "\n".join(fact_lines)
+
+
+def _identify_work_item(pipeline_run: PipelineRun, document_name: str) -> dict[str, str]:
+    return {AttributeKey.PIPELINE_NAME: PIPELINE_NAME, AttributeKey.RUN_ID: pipeline_run.run_id, AttributeKey.WORK_ITEM_NAME: document_name}
+
+
 async def _analyze_documents(
     pages_by_document_name: Mapping[str, list[str]],
     document_analysis_manager: DocumentAnalysisManager,
@@ -144,20 +160,26 @@ async def _analyze_documents(
                 work_item_scope: WorkItemScope
                 async with pipeline_run.open_work_item(WorkItem(id=str(uuid4()), name=document_name)) as work_item_scope:
                     await document_analysis_manager.analyze_document(work_item_scope, pages)
-            except DocumentAnalysisError as document_analysis_error:
-                # The application's single outer boundary: the exception is logged once, with its
-                # traceback and every named fact it carries. Steps only leave breadcrumbs. The run and
-                # work item identity travel as attributes, so telemetry can tell which run this was.
+            except DocumentAnalysisBusinessError as document_analysis_business_error:
+                # The document itself cannot be analyzed; whoever sent it can correct it. A warning names every problem,
+                # and no traceback, because nothing in the system failed.
+                logger.warning(
+                    "Work item '%s' was rejected:\n%s",
+                    document_name,
+                    _describe_contextual_data(document_analysis_business_error),
+                    extra=_identify_work_item(pipeline_run, document_name),
+                )
+                failed_document_names.append(document_name)
+            except (DocumentAnalysisTechnicalError, ArtifactSinkError) as technical_error:
+                # The application's single outer boundary for failures an operator owns: the exception is logged once,
+                # with its traceback and every named fact it carries. Steps only leave breadcrumbs. The run and work
+                # item identity travel as attributes, so telemetry can tell which run this was.
                 logger.error(
                     "Work item '%s' failed:\n%s",
                     document_name,
-                    document_analysis_error.describe(),
-                    exc_info=document_analysis_error,
-                    extra={
-                        AttributeKey.PIPELINE_NAME: PIPELINE_NAME,
-                        AttributeKey.RUN_ID: pipeline_run.run_id,
-                        AttributeKey.WORK_ITEM_NAME: document_name,
-                    },
+                    _describe_contextual_data(technical_error),
+                    exc_info=technical_error,
+                    extra=_identify_work_item(pipeline_run, document_name),
                 )
                 failed_document_names.append(document_name)
     return failed_document_names
@@ -187,7 +209,6 @@ async def run_demo(
     )
     run_directory: Path = create_run_folder(output_root, "batch")
     breadcrumb_formatter: BreadcrumbFormatter = BreadcrumbFormatter(time_display=time_display)
-    document_analysis_manager: DocumentAnalysisManager = DocumentAnalysisManager(FakeModelGateway(pace_seconds), SimulatedWork(pace_seconds / 3))
     with ExitStack() as logging_scope:
         run_logger: logging.Logger = logger if logger is not None else logging_scope.enter_context(_console_logger(breadcrumb_formatter))
         if host_profile is HostProfile.LOCAL:
@@ -195,9 +216,10 @@ async def run_demo(
         else:
             logging_scope.enter_context(attached_exception_telemetry(run_logger, run_directory / TELEMETRY_FILENAME))
         artifact_destination: ArtifactDestination = _create_artifact_destination(host_profile, output_root, run_directory)
-        failed_work_items: list[str] = await _analyze_documents(
-            pages_by_document_name, document_analysis_manager, artifact_destination.artifact_sink, run_logger
-        )
+        async with DocumentAnalysisManager(ServiceLocatorDemo(pace_seconds)) as document_analysis_manager:
+            failed_work_items: list[str] = await _analyze_documents(
+                pages_by_document_name, document_analysis_manager, artifact_destination.artifact_sink, run_logger
+            )
     return DemoResult(run_directory=run_directory, artifact_directory=artifact_destination.directory, failed_work_items=failed_work_items)
 
 

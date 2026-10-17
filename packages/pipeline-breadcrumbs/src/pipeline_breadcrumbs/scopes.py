@@ -84,18 +84,8 @@ class WorkItemScope:
 
     async def __aenter__(self) -> Self:
         self._started = self._run_context.clock.monotonic()
-        self._run_context.run_recorder.record_run_event(
-            WorkItemOpened(
-                work_item_id=self._work_item.id,
-                work_item_name=self._work_item.name,
-                started_at=self._run_context.clock.now().isoformat(),
-            )
-        )
-        self._run_context.log(
-            logging.INFO,
-            f"Work item {self._work_item.name} started",
-            self._boundary_attributes(StepStatus.STARTED),
-        )
+        self._record_opened()
+        self._log_started()
         return self
 
     async def __aexit__(self, _exc_type: type[BaseException] | None, exc: BaseException | None, _traceback: TracebackType | None) -> None:
@@ -107,6 +97,18 @@ class WorkItemScope:
 
     def step(self, step: Step) -> StepScope:
         return StepScope(self._run_context, self, StepPath().child(step.step_number), step)
+
+    def _record_opened(self) -> None:
+        self._run_context.run_recorder.record_run_event(
+            WorkItemOpened(
+                work_item_id=self._work_item.id,
+                work_item_name=self._work_item.name,
+                started_at=self._run_context.clock.now().isoformat(),
+            )
+        )
+
+    def _log_started(self) -> None:
+        self._run_context.log(logging.INFO, f"Work item {self._work_item.name} started", self._boundary_attributes(StepStatus.STARTED))
 
     def skipped(self, step: Step, reason: str) -> None:
         _record_skipped(self._run_context, self, StepPath().child(step.step_number), step, reason)
@@ -206,6 +208,11 @@ class StepScope:
 
     async def __aenter__(self) -> Self:
         self._started = self._run_context.clock.monotonic()
+        self._record_opened()
+        self._log_started()
+        return self
+
+    def _record_opened(self) -> None:
         self._run_context.run_recorder.record_run_event(
             StepRecorded(
                 work_item_id=self._work_item_scope.work_item.id,
@@ -219,12 +226,9 @@ class StepScope:
                 ),
             )
         )
-        self._run_context.log(
-            logging.INFO,
-            f"Step {self._step_path} {self._step.name} started",
-            self._boundary_attributes(StepStatus.STARTED),
-        )
-        return self
+
+    def _log_started(self) -> None:
+        self._run_context.log(logging.INFO, f"Step {self._step_path} {self._step.name} started", self._boundary_attributes(StepStatus.STARTED))
 
     async def __aexit__(self, _exc_type: type[BaseException] | None, exc: BaseException | None, _traceback: TracebackType | None) -> None:
         elapsed_seconds: float = self._run_context.clock.monotonic() - self._started
@@ -294,6 +298,10 @@ class StepScope:
     def _fail(self, elapsed_seconds: float, exc: BaseException) -> None:
         self._stamp_failing_step_onto(exc)
         failure_text: str = _failure_message(exc)
+        self._record_failed(elapsed_seconds, exc, failure_text)
+        self._log_failed(elapsed_seconds, exc, failure_text)
+
+    def _record_failed(self, elapsed_seconds: float, exc: BaseException, failure_text: str) -> None:
         self._run_context.run_recorder.record_run_event(
             StepClosed(
                 work_item_id=self._work_item_scope.work_item.id,
@@ -304,6 +312,8 @@ class StepScope:
                 failure=f"{type(exc).__name__}: {failure_text}",
             )
         )
+
+    def _log_failed(self, elapsed_seconds: float, exc: BaseException, failure_text: str) -> None:
         attributes: AttributeBag = self._boundary_attributes(StepStatus.FAILED)
         attributes[AttributeKey.ELAPSED_SECONDS] = round(elapsed_seconds, _ELAPSED_SECONDS_DECIMALS)
         attributes[AttributeKey.FAILURE_TYPE] = type(exc).__name__
