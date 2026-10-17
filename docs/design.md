@@ -816,8 +816,8 @@ document_analysis/                the system
 - **A real gateway, no outbound calls in the demo.** Model processors call `GatewayModelService`, which
   talks HTTP to the model service through the transport its service locator supplies, as the Meridian
   gateways do. `ServiceLocatorDemo` supplies an in-process simulation of the service, so the demo runs
-  offline with the production gateway. Non-model processors call `SimulatedWork`, which marks where real
-  non-model work would go. Model processors log the way real ones do: a start line, progress lines with counts and
+  offline with the production gateway. Non-model processors wait the configured simulated-work seconds at the point where real
+  non-model work would go; the manager passes that value down from `SimulatedWorkSettings`. Model processors log the way real ones do: a start line, progress lines with counts and
   identifiers, the raw reply emitted before it is validated, and a closing outcome.
 - **Two hosts.** `--host local` is the default. It writes a run log and hands the system the file-system
   sink. `--host hosted` hands it the blob-storage stand-in and sends only exceptions to telemetry. Both

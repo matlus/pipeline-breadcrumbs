@@ -142,8 +142,8 @@ is why its three processors report as 3.1 to 3.3 without any numbering code.
 Nothing here calls a real model, but the system's gateway is real. It talks HTTP to a model
 service through the transport its service locator supplies. `ServiceLocatorProduction` supplies
 the network; the demo's `ServiceLocatorDemo` supplies an in-process simulation of the service, so
-the demo needs no keys or setup and reads the same every time. The simulation and `SimulatedWork`
-take a moment, where a real system would wait for a model or render a page, so the log appears
+the demo needs no keys or setup and reads the same every time. The simulation and the non-model
+processors take a moment, where a real system would wait for a model or render a page, so the log appears
 at a believable pace. A production host sets `DOCUMENT_ANALYSIS_MODEL_SERVICE_BASE_URL`.
 
 ## Try it

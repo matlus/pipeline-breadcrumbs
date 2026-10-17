@@ -1,6 +1,6 @@
 import asyncio
 import json
-from collections.abc import Callable, Mapping
+from collections.abc import Callable, Coroutine, Mapping
 from dataclasses import dataclass
 from typing import ClassVar, Final, TypedDict, cast, override
 
@@ -40,7 +40,7 @@ class ScriptedModelServiceResponse:
 class _MockTransportClosingSpy(httpx.MockTransport):
     """The in-process transport, which also reports each time the gateway closes it."""
 
-    def __init__(self, answer_request: Callable[[httpx.Request], object], record_closed: Callable[[], None]) -> None:
+    def __init__(self, answer_request: Callable[[httpx.Request], Coroutine[None, None, httpx.Response]], record_closed: Callable[[], None]) -> None:
         super().__init__(answer_request)
         self._record_closed: Callable[[], None] = record_closed
 
@@ -130,9 +130,11 @@ class TestMediatorModelService:
         finally:
             self._concurrent_detection_count -= 1
 
-    def _answer[ReplyKeyT](self, reply_by_key: Mapping[ReplyKeyT, str], reply_key: ReplyKeyT) -> httpx.Response:
+    def _answer[QuestionSubjectT](
+        self, reply_by_question_subject: Mapping[QuestionSubjectT, str], question_subject: QuestionSubjectT
+    ) -> httpx.Response:
         if self._scripted_model_service_response is not None:
             return httpx.Response(self._scripted_model_service_response.status_code, text=self._scripted_model_service_response.body_text)
-        if reply_key not in reply_by_key:
-            raise AssertionError(f"The scenario arranged no model reply for {reply_key!r}")
-        return httpx.Response(HTTP_STATUS_OK, json={"reply": reply_by_key[reply_key]})
+        if question_subject not in reply_by_question_subject:
+            raise AssertionError(f"The scenario arranged no model reply for {question_subject!r}")
+        return httpx.Response(HTTP_STATUS_OK, json={"reply": reply_by_question_subject[question_subject]})

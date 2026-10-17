@@ -100,10 +100,11 @@ class WorkItemScope:
         self._fail(elapsed_seconds, exc)
 
     def step(self, step: Step) -> StepScope:
-        self._require_open(step)
+        self.require_open(step)
         return StepScope(self._run_context, self, StepPath().child(step.step_number), step)
 
-    def _require_open(self, step: Step) -> None:
+    def require_open(self, step: Step) -> None:
+        """Refuse `step` when this work item is not open: every step on it, at any depth, runs inside its `async with` block."""
         if not self._is_open:
             raise WorkItemNotOpenError(
                 f"Work item '{self._work_item.name}' is not open; enter it with `async with` before using step {step.step_number} {step.name}"
@@ -122,7 +123,7 @@ class WorkItemScope:
         self._run_context.log(logging.INFO, f"Work item {self._work_item.name} started", self._boundary_attributes(StepStatus.STARTED))
 
     def skipped(self, step: Step, reason: str) -> None:
-        self._require_open(step)
+        self.require_open(step)
         _record_skipped(self._run_context, self, StepPath().child(step.step_number), step, reason)
 
     def _complete(self, elapsed_seconds: float) -> None:
@@ -194,11 +195,7 @@ def _record_skipped(run_context: RunContext, work_item_scope: WorkItemScope, ste
 
 @final
 class StepScope:
-    """One step. Open it with `async with`; it announces itself, times itself and reports how it ended.
-
-    Inside the step, `info` and `warning` write progress lines, `outcome` sets the closing
-    summary, `emit` hands an artifact to the host's sink, and `step` opens a child step.
-    """
+    """One step. Open it with `async with`; it announces itself, times itself and reports how it ended."""
 
     def __init__(self, run_context: RunContext, work_item_scope: WorkItemScope, step_path: StepPath, step: Step) -> None:
         self._run_context: RunContext = run_context
@@ -219,6 +216,7 @@ class StepScope:
         return self._step
 
     async def __aenter__(self) -> Self:
+        self._work_item_scope.require_open(self._step)
         self._started = self._run_context.clock.monotonic()
         self._record_opened()
         self._log_started()
@@ -251,9 +249,11 @@ class StepScope:
 
     def step(self, step: Step) -> StepScope:
         """Open a child step. Its number composes under this step's path."""
+        self._work_item_scope.require_open(step)
         return StepScope(self._run_context, self._work_item_scope, self._step_path.child(step.step_number), step)
 
     def skipped(self, step: Step, reason: str) -> None:
+        self._work_item_scope.require_open(step)
         _record_skipped(self._run_context, self._work_item_scope, self._step_path.child(step.step_number), step, reason)
 
     def info(self, message: str, /, **fields: AttributeValue) -> None:
@@ -275,6 +275,7 @@ class StepScope:
         unit of work. Emit raw model output before validating it, so a validation failure
         leaves its evidence on disk.
         """
+        self._work_item_scope.require_open(self._step)
         step_artifact: StepArtifact = StepArtifact(
             artifact_kind=artifact_kind,
             content=content,

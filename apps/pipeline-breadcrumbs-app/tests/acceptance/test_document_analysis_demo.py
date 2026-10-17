@@ -12,16 +12,18 @@ from analysis_acceptance_support.asserters.asserter_run_folder import (
     AsserterRunFolder,
     ExpectedExceptionTelemetry,
     ExpectedHostedBlobs,
+    ExpectedRunFailure,
     ExpectedRunOutcome,
     ExpectedWorkItemOutcome,
 )
 from analysis_acceptance_support.asserters.asserter_shared_logger import AsserterSharedLogger
 from analysis_acceptance_support.run_folder_reader import RunFolderReader
 from breadcrumbs_acceptance_support.asserters.asserter_exception import AsserterException, ExpectedException
+from breadcrumbs_acceptance_support.clock_testing import ClockTesting
 
 from pipeline_breadcrumbs import StepStatus, TimeDisplay
 from pipeline_breadcrumbs.testing import RecordCapture
-from pipeline_breadcrumbs_app.main import BLOB_CONTAINER_NAME, PIPELINE_NAME, DemoResult, HostProfile, run_demo
+from pipeline_breadcrumbs_app.main import BLOB_CONTAINER_NAME, PIPELINE_NAME, DemoResult, DemoRunRequest, HostProfile, run_demo
 from pipeline_breadcrumbs_app.sample_documents import InvalidFailPageError
 from pipeline_breadcrumbs_app.telemetry import ExceptionTelemetry
 
@@ -32,6 +34,8 @@ CONTRACT_FOLDER_NAME: Final[str] = "Contract 12"
 LEASE_DOCUMENT_NAME: Final[str] = "Lease 4.pdf"
 LEASE_FOLDER_NAME: Final[str] = "Lease 4"
 MANIFEST_FILENAME: Final[str] = "manifest.json"
+# The demo names each run folder `<yyyymmdd_hhmmss>_batch`, from the run's clock.
+RUN_FOLDER_LABEL: Final[str] = "batch"
 # Step 1 writes each page's text, so every document's first page leaves this file.
 FIRST_PAGE_TEXT_FILENAME_SUFFIX: Final[str] = "_step_01_page_text_page_0000.txt"
 RUN_LOG_FILENAME: Final[str] = "run.log"
@@ -63,7 +67,7 @@ class TestDemoRunExpectedPaths:
         )
 
         # Act
-        actual_demo_result: DemoResult = await run_demo(tmp_path, time_display=TimeDisplay.NONE, pace_seconds=NO_DELAY_SECONDS)
+        actual_demo_result: DemoResult = await run_demo(DemoRunRequest(tmp_path, time_display=TimeDisplay.NONE, pace_seconds=NO_DELAY_SECONDS))
 
         # Assert
         AsserterRunFolder.assert_run_outcome(
@@ -90,7 +94,7 @@ class TestDemoRunExpectedPaths:
         )
 
         # Act
-        actual_demo_result: DemoResult = await run_demo(tmp_path, time_display=TimeDisplay.NONE, pace_seconds=NO_DELAY_SECONDS)
+        actual_demo_result: DemoResult = await run_demo(DemoRunRequest(tmp_path, time_display=TimeDisplay.NONE, pace_seconds=NO_DELAY_SECONDS))
 
         # Assert
         AsserterRunFolder.assert_run_outcome(
@@ -107,7 +111,7 @@ class TestDemoRunExpectedPaths:
         }
 
         # Act
-        actual_demo_result: DemoResult = await run_demo(tmp_path, time_display=TimeDisplay.NONE, pace_seconds=NO_DELAY_SECONDS)
+        actual_demo_result: DemoResult = await run_demo(DemoRunRequest(tmp_path, time_display=TimeDisplay.NONE, pace_seconds=NO_DELAY_SECONDS))
 
         # Assert
         AsserterRunFolder.assert_exactly_these_entries(expected_entry_names, RunFolderReader.list_entry_names(actual_demo_result.run_directory))
@@ -120,7 +124,7 @@ class TestDemoRunExpectedPaths:
         expected_first_step_path: tuple[int, ...] = (1,)
 
         # Act
-        actual_demo_result: DemoResult = await run_demo(tmp_path, time_display=TimeDisplay.NONE, pace_seconds=NO_DELAY_SECONDS)
+        actual_demo_result: DemoResult = await run_demo(DemoRunRequest(tmp_path, time_display=TimeDisplay.NONE, pace_seconds=NO_DELAY_SECONDS))
 
         # Assert - the step path in each filename, read in the order an ordinary file listing shows them, never goes backwards
         actual_contract_folder: Path = actual_demo_result.run_directory / CONTRACT_FOLDER_NAME
@@ -150,7 +154,7 @@ class TestDemoRunExpectedPaths:
         ]
 
         # Act
-        actual_demo_result: DemoResult = await run_demo(tmp_path, time_display=TimeDisplay.NONE, pace_seconds=NO_DELAY_SECONDS)
+        actual_demo_result: DemoResult = await run_demo(DemoRunRequest(tmp_path, time_display=TimeDisplay.NONE, pace_seconds=NO_DELAY_SECONDS))
 
         # Assert
         actual_run_log_lines: list[str] = RunFolderReader.read_run_log(actual_demo_result.run_directory).splitlines()
@@ -164,8 +168,8 @@ class TestDemoRunExpectedPaths:
         expected_manifest_filename: str = MANIFEST_FILENAME
 
         # Act
-        actual_first_demo_result: DemoResult = await run_demo(tmp_path, time_display=TimeDisplay.NONE, pace_seconds=NO_DELAY_SECONDS)
-        actual_second_demo_result: DemoResult = await run_demo(tmp_path, time_display=TimeDisplay.NONE, pace_seconds=NO_DELAY_SECONDS)
+        actual_first_demo_result: DemoResult = await run_demo(DemoRunRequest(tmp_path, time_display=TimeDisplay.NONE, pace_seconds=NO_DELAY_SECONDS))
+        actual_second_demo_result: DemoResult = await run_demo(DemoRunRequest(tmp_path, time_display=TimeDisplay.NONE, pace_seconds=NO_DELAY_SECONDS))
 
         # Assert
         actual_entry_names_by_run_directory: dict[Path, list[str]] = {
@@ -201,7 +205,7 @@ class TestDemoRunFailures:
 
         # Act
         actual_demo_result: DemoResult = await run_demo(
-            tmp_path, fail_page=MALFORMED_PAGE_NUMBER, time_display=TimeDisplay.NONE, pace_seconds=NO_DELAY_SECONDS
+            DemoRunRequest(tmp_path, fail_page=MALFORMED_PAGE_NUMBER, time_display=TimeDisplay.NONE, pace_seconds=NO_DELAY_SECONDS)
         )
 
         # Assert
@@ -226,7 +230,7 @@ class TestDemoRunFailures:
 
         # Act
         actual_demo_result: DemoResult = await run_demo(
-            tmp_path, fail_page=MALFORMED_PAGE_NUMBER, time_display=TimeDisplay.NONE, pace_seconds=NO_DELAY_SECONDS
+            DemoRunRequest(tmp_path, fail_page=MALFORMED_PAGE_NUMBER, time_display=TimeDisplay.NONE, pace_seconds=NO_DELAY_SECONDS)
         )
 
         # Assert - the step and work item breadcrumbs name the failure but never print a traceback; the first one is the application's
@@ -234,29 +238,40 @@ class TestDemoRunFailures:
             expected_host_log_line, expected_facts, RunFolderReader.read_run_log(actual_demo_result.run_directory)
         )
 
-    async def test_run_demo_WhenTheManifestCannotBePersistedAsTheRunCloses_ThenTheRunFailsAndTelemetryReceivesTheFailureOnce(
+    async def test_run_demo_WhenOnlyTheManifestCannotBePersistedAsTheRunCloses_ThenTheRunFailsAndTelemetryReceivesTheFailureOnce(
         self, tmp_path: Path
     ) -> None:
-        # Arrange - a file where the blob container belongs makes every upload fail, the manifest's included
-        (tmp_path / BLOB_CONTAINER_NAME).write_bytes(b"")
-        expected_run_status: StepStatus = StepStatus.FAILED
-        expected_exception_telemetry: ExpectedExceptionTelemetry = ExpectedExceptionTelemetry(
-            severity="ERROR",
-            exception_type="ArtifactSinkError",
-            stack_trace_phrase="Traceback",
-            custom_dimensions={"pipeline.name": PIPELINE_NAME, "ArtifactKind": "manifest", "ArtifactFilename": MANIFEST_FILENAME},
+        # Arrange - a folder where the run's manifest blob belongs makes that one upload fail; every document's blobs persist
+        clock_testing: ClockTesting = ClockTesting()
+        run_folder_name: str = f"{clock_testing.clock.now():%Y%m%d_%H%M%S}_{RUN_FOLDER_LABEL}"
+        (tmp_path / BLOB_CONTAINER_NAME / run_folder_name / MANIFEST_FILENAME).mkdir(parents=True)
+        expected_run_failure: ExpectedRunFailure = ExpectedRunFailure(
+            run_status=StepStatus.FAILED,
+            failed_work_item_names=[],
+            exception_telemetry=ExpectedExceptionTelemetry(
+                severity="ERROR",
+                exception_type="ArtifactSinkError",
+                stack_trace_phrase="Traceback",
+                custom_dimensions={"pipeline.name": PIPELINE_NAME, "ArtifactKind": "manifest", "ArtifactFilename": MANIFEST_FILENAME},
+            ),
         )
 
         # Act
         actual_demo_result: DemoResult = await run_demo(
-            tmp_path, host_profile=HostProfile.HOSTED, time_display=TimeDisplay.NONE, pace_seconds=NO_DELAY_SECONDS
+            DemoRunRequest(
+                tmp_path,
+                host_profile=HostProfile.HOSTED,
+                time_display=TimeDisplay.NONE,
+                pace_seconds=NO_DELAY_SECONDS,
+                supplied_clock=clock_testing.clock,
+            )
         )
 
         # Assert
         AsserterRunFolder.assert_run_failure_reported_once(
-            expected_run_status,
-            expected_exception_telemetry,
+            expected_run_failure,
             actual_demo_result.run_status,
+            actual_demo_result.failed_work_items,
             RunFolderReader.read_exception_telemetry(actual_demo_result.run_directory),
         )
 
@@ -270,7 +285,7 @@ class TestDemoRunFailures:
 
         # Act
         with pytest.raises(InvalidFailPageError) as actual_raised:
-            await run_demo(tmp_path, fail_page=missing_page_number, time_display=TimeDisplay.NONE, pace_seconds=NO_DELAY_SECONDS)
+            await run_demo(DemoRunRequest(tmp_path, fail_page=missing_page_number, time_display=TimeDisplay.NONE, pace_seconds=NO_DELAY_SECONDS))
 
         # Assert
         AsserterException.assert_exception(expected_exception, actual_raised.value)
@@ -285,7 +300,13 @@ class TestDemoHosts:
 
         # Act
         actual_demo_result: DemoResult = await run_demo(
-            tmp_path, fail_page=MALFORMED_PAGE_NUMBER, host_profile=HostProfile.LOCAL, time_display=TimeDisplay.NONE, pace_seconds=NO_DELAY_SECONDS
+            DemoRunRequest(
+                tmp_path,
+                fail_page=MALFORMED_PAGE_NUMBER,
+                host_profile=HostProfile.LOCAL,
+                time_display=TimeDisplay.NONE,
+                pace_seconds=NO_DELAY_SECONDS,
+            )
         )
 
         # Assert - the exact entries leave no room for a telemetry file
@@ -298,10 +319,10 @@ class TestDemoHosts:
 
         # Act
         actual_local_demo_result: DemoResult = await run_demo(
-            tmp_path / "local", host_profile=HostProfile.LOCAL, time_display=TimeDisplay.NONE, pace_seconds=NO_DELAY_SECONDS
+            DemoRunRequest(tmp_path / "local", host_profile=HostProfile.LOCAL, time_display=TimeDisplay.NONE, pace_seconds=NO_DELAY_SECONDS)
         )
         actual_hosted_demo_result: DemoResult = await run_demo(
-            tmp_path / "hosted", host_profile=HostProfile.HOSTED, time_display=TimeDisplay.NONE, pace_seconds=NO_DELAY_SECONDS
+            DemoRunRequest(tmp_path / "hosted", host_profile=HostProfile.HOSTED, time_display=TimeDisplay.NONE, pace_seconds=NO_DELAY_SECONDS)
         )
 
         # Assert
@@ -337,7 +358,7 @@ class TestDemoHosts:
 
         # Act
         actual_demo_result: DemoResult = await run_demo(
-            tmp_path, host_profile=HostProfile.HOSTED, time_display=TimeDisplay.NONE, pace_seconds=NO_DELAY_SECONDS
+            DemoRunRequest(tmp_path, host_profile=HostProfile.HOSTED, time_display=TimeDisplay.NONE, pace_seconds=NO_DELAY_SECONDS)
         )
 
         # Assert
@@ -352,7 +373,7 @@ class TestDemoHosts:
 
         # Act
         actual_demo_result: DemoResult = await run_demo(
-            tmp_path, host_profile=HostProfile.HOSTED, time_display=TimeDisplay.NONE, pace_seconds=NO_DELAY_SECONDS
+            DemoRunRequest(tmp_path, host_profile=HostProfile.HOSTED, time_display=TimeDisplay.NONE, pace_seconds=NO_DELAY_SECONDS)
         )
 
         # Assert
@@ -376,11 +397,13 @@ class TestDemoHosts:
 
         # Act
         actual_demo_result: DemoResult = await run_demo(
-            tmp_path,
-            fail_page=MALFORMED_PAGE_NUMBER,
-            host_profile=HostProfile.HOSTED,
-            time_display=TimeDisplay.NONE,
-            pace_seconds=NO_DELAY_SECONDS,
+            DemoRunRequest(
+                tmp_path,
+                fail_page=MALFORMED_PAGE_NUMBER,
+                host_profile=HostProfile.HOSTED,
+                time_display=TimeDisplay.NONE,
+                pace_seconds=NO_DELAY_SECONDS,
+            )
         )
 
         # Assert
@@ -397,7 +420,10 @@ class TestDemoHosts:
         expected_levels: set[int] = {logging.INFO, logging.WARNING, logging.ERROR}
 
         # Act
-        await run_demo(tmp_path, logger=run_logger, host_profile=HostProfile.HOSTED, fail_page=MALFORMED_PAGE_NUMBER, pace_seconds=NO_DELAY_SECONDS)
+        await run_demo(
+            DemoRunRequest(tmp_path, host_profile=HostProfile.HOSTED, fail_page=MALFORMED_PAGE_NUMBER, pace_seconds=NO_DELAY_SECONDS),
+            logger=run_logger,
+        )
 
         # Assert - the caller's logger carried every record, the informational ones included, and was left as it was found
         actual_levels: set[int] = {actual_log_record.levelno for actual_log_record in record_capture.records}

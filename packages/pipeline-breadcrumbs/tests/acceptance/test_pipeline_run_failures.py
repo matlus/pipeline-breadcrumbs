@@ -23,6 +23,7 @@ from pipeline_breadcrumbs import (
     EventKind,
     PipelineRun,
     Step,
+    StepScope,
     WorkItem,
     WorkItemNotOpenError,
     WorkItemScope,
@@ -250,6 +251,28 @@ class TestWorkItemScopeMisuse:
                 pass
             with pytest.raises(WorkItemNotOpenError) as actual_raised:
                 closed_work_item_scope.skipped(METADATA_AUDIT, create_random_skip_reason())
+
+        # Assert
+        AsserterException.assert_exception(expected_exception, actual_raised.value)
+
+    async def test_PipelineRun_WhenAStepIsEnteredAfterItsWorkItemHasClosed_ThenTheStepIsRefused(
+        self, artifact_sink_testing: ArtifactSinkTesting, run_logger: logging.Logger
+    ) -> None:
+        # Arrange
+        pipeline_name: str = create_random_pipeline_name()
+        work_item: WorkItem = create_random_work_item()
+        pipeline_run: PipelineRun = PipelineRun(pipeline_name=pipeline_name, artifact_sink=artifact_sink_testing, logger=run_logger)
+        expected_exception: ExpectedException = ExpectedException(
+            WorkItemNotOpenError, message_phrases=[f"Work item '{work_item.name}' is not open", "Metadata Audit"]
+        )
+
+        # Act
+        async with pipeline_run:
+            async with pipeline_run.open_work_item(work_item) as work_item_scope:
+                late_step_scope: StepScope = work_item_scope.step(METADATA_AUDIT)
+            with pytest.raises(WorkItemNotOpenError) as actual_raised:
+                async with late_step_scope:
+                    pass
 
         # Assert
         AsserterException.assert_exception(expected_exception, actual_raised.value)

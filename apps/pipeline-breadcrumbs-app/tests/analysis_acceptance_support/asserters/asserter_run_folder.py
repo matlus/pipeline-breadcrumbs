@@ -45,6 +45,13 @@ class ExpectedExceptionTelemetry:
 
 
 @dataclass(frozen=True)
+class ExpectedRunFailure:
+    run_status: StepStatus
+    failed_work_item_names: Sequence[str]
+    exception_telemetry: ExpectedExceptionTelemetry
+
+
+@dataclass(frozen=True)
 class ExpectedHostedBlobs:
     container: Path
     blob_names_within_run: AbstractSet[str]
@@ -274,23 +281,29 @@ class AsserterRunFolder:
 
     @staticmethod
     def assert_run_failure_reported_once(
-        expected_run_status: StepStatus,
-        expected_exception_telemetry: ExpectedExceptionTelemetry,
+        expected_run_failure: ExpectedRunFailure,
         actual_run_status: StepStatus,
+        actual_failed_work_item_names: Sequence[str],
         actual_exception_telemetry_records: Sequence[ExceptionTelemetry],
     ) -> None:
         """The run counts as failed, and telemetry receives the run's own failure, named by the artifact it lost, exactly once."""
-        expected_lost_artifact_filename: object = expected_exception_telemetry.custom_dimensions.get(_ARTIFACT_FILENAME_DIMENSION)
+        expected_lost_artifact_filename: object = expected_run_failure.exception_telemetry.custom_dimensions.get(_ARTIFACT_FILENAME_DIMENSION)
         actual_run_failure_telemetry_records: list[ExceptionTelemetry] = [
             actual_exception_telemetry
             for actual_exception_telemetry in actual_exception_telemetry_records
             if actual_exception_telemetry.custom_dimensions.get(_ARTIFACT_FILENAME_DIMENSION) == expected_lost_artifact_filename
         ]
         mismatches: list[str] = []
-        if actual_run_status != expected_run_status:
-            mismatches.append(f"run status: expected {expected_run_status.value!r} but found {actual_run_status.value!r}")
+        if actual_run_status != expected_run_failure.run_status:
+            mismatches.append(f"run status: expected {expected_run_failure.run_status.value!r} but found {actual_run_status.value!r}")
+        if list(actual_failed_work_item_names) != list(expected_run_failure.failed_work_item_names):
+            mismatches.append(
+                f"failed work items: expected {list(expected_run_failure.failed_work_item_names)} but found {list(actual_failed_work_item_names)}"
+            )
         if len(actual_run_failure_telemetry_records) == 1:
-            mismatches.extend(AsserterRunFolder._compare_exception_telemetry(expected_exception_telemetry, actual_run_failure_telemetry_records[0]))
+            mismatches.extend(
+                AsserterRunFolder._compare_exception_telemetry(expected_run_failure.exception_telemetry, actual_run_failure_telemetry_records[0])
+            )
         else:
             mismatches.append(
                 f"failure to persist {expected_lost_artifact_filename!r}: expected once but found {len(actual_run_failure_telemetry_records)} time(s)"
