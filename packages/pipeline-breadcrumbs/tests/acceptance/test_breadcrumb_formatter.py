@@ -9,7 +9,7 @@ from collections.abc import Iterable
 from typing import Final
 
 import pytest
-from breadcrumbs_acceptance_support.asserters.asserter_rendered_text import AsserterRenderedText, ExpectedRenderedText
+from breadcrumbs_acceptance_support.asserters.asserter_rendered_text import EveryRenderedTextAsserter, ExpectedRenderedText, RenderedTextAsserter
 from breadcrumbs_acceptance_support.clock_testing import ClockTesting
 from breadcrumbs_acceptance_support.data_generators import create_random_pipeline_name, create_random_work_item
 from breadcrumbs_acceptance_support.exceptions_testing import PlainTestingError
@@ -65,8 +65,12 @@ class TestBanners:
         actual_texts: list[str] = [breadcrumb_formatter.format(actual_log_record) for actual_log_record in record_capture.records]
 
         # Assert
-        AsserterRenderedText.assert_text(expected_started_banner_rendered_text, _retrieve_text(actual_texts, "STEP 2: Metadata Audit - STARTED"))
-        AsserterRenderedText.assert_text(expected_complete_banner_rendered_text, _retrieve_text(actual_texts, "STEP 2: Metadata Audit - COMPLETE"))
+        RenderedTextAsserter.assert_expected_and_actual_are_equal(
+            expected_started_banner_rendered_text, _retrieve_text(actual_texts, "STEP 2: Metadata Audit - STARTED")
+        )
+        RenderedTextAsserter.assert_expected_and_actual_are_equal(
+            expected_complete_banner_rendered_text, _retrieve_text(actual_texts, "STEP 2: Metadata Audit - COMPLETE")
+        )
 
     async def test_BreadcrumbFormatter_WhenAStepFailed_ThenTheBannerNamesTheFailure(
         self, clock_testing: ClockTesting, run_logger: logging.Logger, record_capture: RecordCapture
@@ -82,7 +86,9 @@ class TestBanners:
         actual_texts: list[str] = [breadcrumb_formatter.format(actual_log_record) for actual_log_record in record_capture.records]
 
         # Assert
-        AsserterRenderedText.assert_text(expected_failed_banner_rendered_text, _retrieve_text(actual_texts, "STEP 2: Metadata Audit - FAILED"))
+        RenderedTextAsserter.assert_expected_and_actual_are_equal(
+            expected_failed_banner_rendered_text, _retrieve_text(actual_texts, "STEP 2: Metadata Audit - FAILED")
+        )
 
     async def test_BreadcrumbFormatter_WhenARunFailedBecauseAWorkItemFailed_ThenTheBannerShowsTheWorkItemCounts(
         self, clock_testing: ClockTesting, run_logger: logging.Logger, record_capture: RecordCapture
@@ -99,7 +105,9 @@ class TestBanners:
         actual_texts: list[str] = [breadcrumb_formatter.format(actual_log_record) for actual_log_record in record_capture.records]
 
         # Assert
-        AsserterRenderedText.assert_text(expected_run_banner_rendered_text, _retrieve_text(actual_texts, f"RUN: {pipeline_name} - FAILED"))
+        RenderedTextAsserter.assert_expected_and_actual_are_equal(
+            expected_run_banner_rendered_text, _retrieve_text(actual_texts, f"RUN: {pipeline_name} - FAILED")
+        )
 
     async def test_BreadcrumbFormatter_WhenTheBannerWidthIsConfigured_ThenTheSeparatorUsesIt(
         self, clock_testing: ClockTesting, run_logger: logging.Logger, record_capture: RecordCapture
@@ -116,7 +124,7 @@ class TestBanners:
         actual_first_banner: str = breadcrumb_formatter.format(record_capture.records[0])
 
         # Assert
-        AsserterRenderedText.assert_text(expected_first_banner_rendered_text, actual_first_banner)
+        RenderedTextAsserter.assert_expected_and_actual_are_equal(expected_first_banner_rendered_text, actual_first_banner)
 
 
 @pytest.mark.acceptance
@@ -148,7 +156,7 @@ class TestTimeDisplay:
         actual_texts: list[str] = [breadcrumb_formatter.format(actual_log_record) for actual_log_record in record_capture.records]
 
         # Assert
-        AsserterRenderedText.assert_every_text(expected_every_rendered_text, actual_texts)
+        EveryRenderedTextAsserter.assert_expected_and_actual_are_equal(expected_every_rendered_text, actual_texts)
 
     async def test_BreadcrumbFormatter_WhenTimeDisplayIsAll_ThenEveryProgressLineStartsWithATime(
         self, clock_testing: ClockTesting, run_logger: logging.Logger, record_capture: RecordCapture
@@ -162,7 +170,9 @@ class TestTimeDisplay:
         actual_texts: list[str] = [breadcrumb_formatter.format(actual_log_record) for actual_log_record in record_capture.records]
 
         # Assert
-        AsserterRenderedText.assert_text(expected_progress_line_rendered_text, _retrieve_text(actual_texts, PROGRESS_MESSAGE))
+        RenderedTextAsserter.assert_expected_and_actual_are_equal(
+            expected_progress_line_rendered_text, _retrieve_text(actual_texts, PROGRESS_MESSAGE)
+        )
 
     @pytest.mark.parametrize("time_display", list(TimeDisplay))
     async def test_BreadcrumbFormatter_WhenAnyTimeDisplayIsChosen_ThenTheRecordsOwnMessageStaysOneCleanLine(
@@ -178,7 +188,7 @@ class TestTimeDisplay:
             breadcrumb_formatter.format(actual_log_record)
 
         # Assert
-        AsserterRenderedText.assert_every_text(
+        EveryRenderedTextAsserter.assert_expected_and_actual_are_equal(
             expected_every_message_rendered_text, [actual_log_record.getMessage() for actual_log_record in record_capture.records]
         )
 
@@ -212,4 +222,4 @@ class TestPlainRecords:
         actual_text: str = BreadcrumbFormatter().format(failed_log_record)
 
         # Assert
-        AsserterRenderedText.assert_text(expected_rendered_text, actual_text)
+        RenderedTextAsserter.assert_expected_and_actual_are_equal(expected_rendered_text, actual_text)

@@ -8,9 +8,9 @@ from pathlib import Path
 from typing import Final
 
 import pytest
-from breadcrumbs_acceptance_support.asserters.asserter_artifacts import AsserterArtifacts
-from breadcrumbs_acceptance_support.asserters.asserter_exception import AsserterException, ExpectedException
-from breadcrumbs_acceptance_support.asserters.asserter_rendered_text import AsserterRenderedText, ExpectedRenderedText
+from breadcrumbs_acceptance_support.asserters.asserter_artifacts import ArtifactFilenamesAsserter
+from breadcrumbs_acceptance_support.asserters.asserter_exception import ExceptionAsserter, ExpectedException
+from breadcrumbs_acceptance_support.asserters.asserter_rendered_text import ExpectedRenderedText, RenderedTextAsserter
 from breadcrumbs_acceptance_support.clock_testing import ClockTesting
 from breadcrumbs_acceptance_support.data_generators import create_random_discriminator, create_random_pipeline_name, create_random_work_item
 
@@ -217,7 +217,7 @@ class TestArtifactSinkFileSystem:
             await artifact_sink_file_system.persist(StepArtifact(PAGE_TEXT, b"second", second_work_item, StepPath((1,))))
 
         # Assert
-        AsserterException.assert_exception(expected_exception, actual_raised.value)
+        ExceptionAsserter.assert_expected_and_actual_are_equal(expected_exception, actual_raised.value)
 
     async def test_ArtifactSinkFileSystem_WhenFolderNamesDifferOnlyByCase_ThenTheyCountAsTheSameFolder(self, tmp_path: Path) -> None:
         # Arrange - Windows and macOS file systems treat these as one folder
@@ -235,7 +235,7 @@ class TestArtifactSinkFileSystem:
             await artifact_sink_file_system.persist(StepArtifact(PAGE_TEXT, b"second", second_work_item, StepPath((1,))))
 
         # Assert
-        AsserterException.assert_exception(expected_exception, actual_raised.value)
+        ExceptionAsserter.assert_expected_and_actual_are_equal(expected_exception, actual_raised.value)
 
 
 @pytest.mark.acceptance
@@ -265,7 +265,7 @@ class TestAttachedRunLog:
                 await step_scope.emit(PAGE_TEXT, b"hello")
 
         # Assert - the log sits beside the manifest and the work item's folder, and the handler is gone again
-        AsserterRenderedText.assert_text(expected_run_log_rendered_text, _read_written_text(tmp_path / RUN_LOG_FILENAME))
+        RenderedTextAsserter.assert_expected_and_actual_are_equal(expected_run_log_rendered_text, _read_written_text(tmp_path / RUN_LOG_FILENAME))
         assert _list_entry_names(tmp_path) == expected_entry_names
         assert len(run_logger.handlers) == expected_handler_count
 
@@ -307,5 +307,5 @@ class TestArtifactSinkSwapping:
                     await read_pages_step_scope.emit(PAGE_IMAGE, secrets.token_bytes(8), discriminator=discriminator)
 
         # Assert
-        AsserterArtifacts.assert_exactly_these_filenames_in_order(expected_received_filenames, artifact_sink_testing.artifacts)
+        ArtifactFilenamesAsserter.assert_expected_and_actual_are_equal(expected_received_filenames, artifact_sink_testing.artifacts)
         assert _list_file_paths(tmp_path) == expected_file_paths

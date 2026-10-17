@@ -9,16 +9,26 @@ from typing import Final
 
 import pytest
 from analysis_acceptance_support.asserters.asserter_run_folder import (
-    AsserterRunFolder,
+    BlobNamesAsserter,
+    DistinctRunFoldersAsserter,
+    ExceptionTelemetryAsserter,
     ExpectedExceptionTelemetry,
     ExpectedHostedBlobs,
     ExpectedRunFailure,
     ExpectedRunOutcome,
     ExpectedWorkItemOutcome,
+    FailureLogAsserter,
+    RawRepliesAsserter,
+    RunFailureAsserter,
+    RunFolderEntriesAsserter,
+    RunOutcomeAsserter,
+    StepOrderAsserter,
+    WorkItemFilesAsserter,
+    WorkItemListingsAsserter,
 )
-from analysis_acceptance_support.asserters.asserter_shared_logger import AsserterSharedLogger
+from analysis_acceptance_support.asserters.asserter_shared_logger import SharedLoggerAsserter
 from analysis_acceptance_support.run_folder_reader import RunFolderReader
-from breadcrumbs_acceptance_support.asserters.asserter_exception import AsserterException, ExpectedException
+from breadcrumbs_acceptance_support.asserters.asserter_exception import ExceptionAsserter, ExpectedException
 from breadcrumbs_acceptance_support.clock_testing import ClockTesting
 
 from pipeline_breadcrumbs import StepStatus, TimeDisplay
@@ -70,7 +80,7 @@ class TestDemoRunExpectedPaths:
         actual_demo_result: DemoResult = await run_demo(DemoRunRequest(tmp_path, time_display=TimeDisplay.NONE, pace_seconds=NO_DELAY_SECONDS))
 
         # Assert
-        AsserterRunFolder.assert_run_outcome(
+        RunOutcomeAsserter.assert_expected_and_actual_are_equal(
             expected_run_outcome, actual_demo_result.failed_work_items, RunFolderReader.read_manifest(actual_demo_result.run_directory)
         )
 
@@ -97,7 +107,7 @@ class TestDemoRunExpectedPaths:
         actual_demo_result: DemoResult = await run_demo(DemoRunRequest(tmp_path, time_display=TimeDisplay.NONE, pace_seconds=NO_DELAY_SECONDS))
 
         # Assert
-        AsserterRunFolder.assert_run_outcome(
+        RunOutcomeAsserter.assert_expected_and_actual_are_equal(
             expected_run_outcome, actual_demo_result.failed_work_items, RunFolderReader.read_manifest(actual_demo_result.run_directory)
         )
 
@@ -114,8 +124,10 @@ class TestDemoRunExpectedPaths:
         actual_demo_result: DemoResult = await run_demo(DemoRunRequest(tmp_path, time_display=TimeDisplay.NONE, pace_seconds=NO_DELAY_SECONDS))
 
         # Assert
-        AsserterRunFolder.assert_exactly_these_entries(expected_entry_names, RunFolderReader.list_entry_names(actual_demo_result.run_directory))
-        AsserterRunFolder.assert_work_item_files(
+        RunFolderEntriesAsserter.assert_expected_and_actual_are_equal(
+            expected_entry_names, RunFolderReader.list_entry_names(actual_demo_result.run_directory)
+        )
+        WorkItemFilesAsserter.assert_expected_and_actual_are_equal(
             expected_file_start_by_filename, RunFolderReader.read_text_by_filename(actual_demo_result.run_directory / CONTRACT_FOLDER_NAME)
         )
 
@@ -128,7 +140,7 @@ class TestDemoRunExpectedPaths:
 
         # Assert - the step path in each filename, read in the order an ordinary file listing shows them, never goes backwards
         actual_contract_folder: Path = actual_demo_result.run_directory / CONTRACT_FOLDER_NAME
-        AsserterRunFolder.assert_listing_in_step_order(
+        StepOrderAsserter.assert_expected_and_actual_are_equal(
             expected_first_step_path,
             RunFolderReader.list_entry_names(actual_contract_folder),
             RunFolderReader.list_folder_names(actual_contract_folder),
@@ -176,7 +188,7 @@ class TestDemoRunExpectedPaths:
             actual_demo_result.run_directory: RunFolderReader.list_entry_names(actual_demo_result.run_directory)
             for actual_demo_result in (actual_first_demo_result, actual_second_demo_result)
         }
-        AsserterRunFolder.assert_distinct_run_folders(
+        DistinctRunFoldersAsserter.assert_expected_and_actual_are_equal(
             expected_manifest_filename,
             actual_first_demo_result.run_directory,
             actual_second_demo_result.run_directory,
@@ -209,10 +221,10 @@ class TestDemoRunFailures:
         )
 
         # Assert
-        AsserterRunFolder.assert_run_outcome(
+        RunOutcomeAsserter.assert_expected_and_actual_are_equal(
             expected_run_outcome, actual_demo_result.failed_work_items, RunFolderReader.read_manifest(actual_demo_result.run_directory)
         )
-        AsserterRunFolder.assert_raw_replies(
+        RawRepliesAsserter.assert_expected_and_actual_are_equal(
             expected_raw_reply_filenames,
             expected_reply_start_by_filename,
             RunFolderReader.read_text_by_filename(actual_demo_result.run_directory / CONTRACT_FOLDER_NAME),
@@ -234,7 +246,7 @@ class TestDemoRunFailures:
         )
 
         # Assert - the step and work item breadcrumbs name the failure but never print a traceback; the first one is the application's
-        AsserterRunFolder.assert_failure_logged_once(
+        FailureLogAsserter.assert_expected_and_actual_are_equal(
             expected_host_log_line, expected_facts, RunFolderReader.read_run_log(actual_demo_result.run_directory)
         )
 
@@ -268,7 +280,7 @@ class TestDemoRunFailures:
         )
 
         # Assert
-        AsserterRunFolder.assert_run_failure_reported_once(
+        RunFailureAsserter.assert_expected_and_actual_are_equal(
             expected_run_failure,
             actual_demo_result.run_status,
             actual_demo_result.failed_work_items,
@@ -288,8 +300,8 @@ class TestDemoRunFailures:
             await run_demo(DemoRunRequest(tmp_path, fail_page=missing_page_number, time_display=TimeDisplay.NONE, pace_seconds=NO_DELAY_SECONDS))
 
         # Assert
-        AsserterException.assert_exception(expected_exception, actual_raised.value)
-        AsserterRunFolder.assert_exactly_these_entries(expected_entry_names, RunFolderReader.list_entry_names(tmp_path))
+        ExceptionAsserter.assert_expected_and_actual_are_equal(expected_exception, actual_raised.value)
+        RunFolderEntriesAsserter.assert_expected_and_actual_are_equal(expected_entry_names, RunFolderReader.list_entry_names(tmp_path))
 
 
 @pytest.mark.acceptance
@@ -310,7 +322,9 @@ class TestDemoHosts:
         )
 
         # Assert - the exact entries leave no room for a telemetry file
-        AsserterRunFolder.assert_exactly_these_entries(expected_entry_names, RunFolderReader.list_entry_names(actual_demo_result.run_directory))
+        RunFolderEntriesAsserter.assert_expected_and_actual_are_equal(
+            expected_entry_names, RunFolderReader.list_entry_names(actual_demo_result.run_directory)
+        )
 
     async def test_run_demo_WhenRunHosted_ThenEveryArtifactIsStillPersistedExactlyAsItIsLocally(self, tmp_path: Path) -> None:
         # Arrange - the artifacts are the record of what each step did, so where the application runs never changes them
@@ -334,10 +348,10 @@ class TestDemoHosts:
             folder_name: RunFolderReader.list_entry_names(actual_hosted_demo_result.artifact_directory / folder_name)
             for folder_name in RunFolderReader.list_folder_names(actual_hosted_demo_result.artifact_directory)
         }
-        AsserterRunFolder.assert_same_work_item_listings(
+        WorkItemListingsAsserter.assert_expected_and_actual_are_equal(
             expected_work_item_folder_names, actual_local_listing_by_folder_name, actual_hosted_listing_by_folder_name
         )
-        AsserterRunFolder.assert_exactly_these_entries(
+        RunFolderEntriesAsserter.assert_expected_and_actual_are_equal(
             expected_hosted_entry_names, RunFolderReader.list_entry_names(actual_hosted_demo_result.artifact_directory)
         )
 
@@ -362,7 +376,7 @@ class TestDemoHosts:
         )
 
         # Assert
-        AsserterRunFolder.assert_blobs_named_by_run(
+        BlobNamesAsserter.assert_expected_and_actual_are_equal(
             expected_hosted_blobs,
             RunFolderReader.read_hosted_run_trail(expected_container, actual_demo_result.run_directory, actual_demo_result.artifact_directory),
         )
@@ -408,7 +422,7 @@ class TestDemoHosts:
 
         # Assert
         actual_manifest_run_id: str = RunFolderReader.read_manifest(actual_demo_result.artifact_directory)["run_id"]
-        AsserterRunFolder.assert_single_exception_telemetry(
+        ExceptionTelemetryAsserter.assert_expected_and_actual_are_equal(
             expected_exception_telemetry, RunFolderReader.read_exception_telemetry(actual_demo_result.run_directory), actual_manifest_run_id
         )
 
@@ -427,4 +441,4 @@ class TestDemoHosts:
 
         # Assert - the caller's logger carried every record, the informational ones included, and was left as it was found
         actual_levels: set[int] = {actual_log_record.levelno for actual_log_record in record_capture.records}
-        AsserterSharedLogger.assert_logger_shared_and_restored(expected_levels, expected_handler_count, actual_levels, len(run_logger.handlers))
+        SharedLoggerAsserter.assert_expected_and_actual_are_equal(expected_levels, expected_handler_count, actual_levels, len(run_logger.handlers))

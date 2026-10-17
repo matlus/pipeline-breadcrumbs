@@ -7,7 +7,7 @@ from pathlib import Path
 from typing import Final
 
 import pytest
-from breadcrumbs_acceptance_support.asserters.asserter_exception import AsserterException, ExpectedException
+from breadcrumbs_acceptance_support.asserters.asserter_exception import ExceptionAsserter, ExpectedException
 
 from pipeline_breadcrumbs import ArtifactKind, StepArtifact, StepPath, WorkItem
 from pipeline_breadcrumbs.hosting import WorkItemFolderCollisionError
@@ -47,7 +47,7 @@ class TestArtifactSinkBlobStorage:
             await artifact_sink_blob_storage.persist(StepArtifact(PAGE_TEXT, secrets.token_bytes(8), second_work_item, StepPath((1,))))
 
         # Assert
-        AsserterException.assert_exception(expected_exception, actual_raised.value)
+        ExceptionAsserter.assert_expected_and_actual_are_equal(expected_exception, actual_raised.value)
 
     async def test_ArtifactSinkBlobStorage_WhenBlobPrefixesDifferOnlyByCase_ThenTheyCountAsTheSamePrefix(self, tmp_path: Path) -> None:
         # Arrange - the stand-in container is a local folder, and Windows and macOS treat these names as one
@@ -65,4 +65,4 @@ class TestArtifactSinkBlobStorage:
             await artifact_sink_blob_storage.persist(StepArtifact(PAGE_TEXT, secrets.token_bytes(8), second_work_item, StepPath((1,))))
 
         # Assert
-        AsserterException.assert_exception(expected_exception, actual_raised.value)
+        ExceptionAsserter.assert_expected_and_actual_are_equal(expected_exception, actual_raised.value)

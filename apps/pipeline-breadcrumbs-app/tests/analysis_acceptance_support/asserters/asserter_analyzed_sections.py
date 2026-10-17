@@ -7,13 +7,15 @@ from breadcrumbs_acceptance_support.assertion_reports import format_assertion_re
 from pipeline_breadcrumbs_app.document_analysis.models import ScoredSection
 
 
-class AsserterAnalyzedSections:
+class AnalyzedSectionsAsserter:
     """Checks the sections an analysis returned, field by field and in page order, reporting every difference at once."""
 
     ANALYZED_SECTIONS_ASSERTION_FAILED_HEADER: Final[str] = "ANALYZED SECTIONS ASSERTION FAILED"
 
     @staticmethod
-    def assert_exactly_these_sections(expected_scored_sections: Sequence[ScoredSection], actual_scored_sections: Sequence[ScoredSection]) -> None:
+    def assert_expected_and_actual_are_equal(
+        expected_scored_sections: Sequence[ScoredSection], actual_scored_sections: Sequence[ScoredSection]
+    ) -> None:
         mismatches: list[str] = []
         position: int
         expected_scored_section: ScoredSection
@@ -38,7 +40,7 @@ class AsserterAnalyzedSections:
             )
         )
         assert not mismatches, format_assertion_report(
-            AsserterAnalyzedSections.ANALYZED_SECTIONS_ASSERTION_FAILED_HEADER,
+            AnalyzedSectionsAsserter.ANALYZED_SECTIONS_ASSERTION_FAILED_HEADER,
             "Each section carries the title, category and confidence the model gave its page, in page order.",
             f"{len(expected_scored_sections)} section(s) expected, {len(actual_scored_sections)} returned",
             mismatches,

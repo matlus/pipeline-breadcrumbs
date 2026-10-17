@@ -6,10 +6,10 @@ import logging
 from typing import Final, NoReturn, final, override
 
 import pytest
-from breadcrumbs_acceptance_support.asserters.asserter_artifacts import AsserterArtifacts
-from breadcrumbs_acceptance_support.asserters.asserter_exception import ANY_CONTEXTUAL_VALUE, AsserterException, ExpectedException
-from breadcrumbs_acceptance_support.asserters.asserter_log_record import AsserterLogRecord, ExpectedLogRecord
-from breadcrumbs_acceptance_support.asserters.asserter_step_boundaries import AsserterStepBoundaries, ExpectedStepBoundary
+from breadcrumbs_acceptance_support.asserters.asserter_artifacts import ArtifactFilenamesAsserter
+from breadcrumbs_acceptance_support.asserters.asserter_exception import ANY_CONTEXTUAL_VALUE, ExceptionAsserter, ExpectedException
+from breadcrumbs_acceptance_support.asserters.asserter_log_record import ExpectedLogRecord, LogRecordAsserter
+from breadcrumbs_acceptance_support.asserters.asserter_step_boundaries import ExpectedStepBoundary, StepBoundariesAsserter
 from breadcrumbs_acceptance_support.clock_testing import ClockTesting
 from breadcrumbs_acceptance_support.data_generators import (
     create_random_failure_message,
@@ -87,9 +87,9 @@ class TestFailingStep:
                 _advance_then_fail(clock_testing, expected_elapsed_seconds, expected_failure_message)
 
         # Assert
-        AsserterException.assert_exception(expected_exception, actual_raised.value)
-        AsserterStepBoundaries.assert_exactly_these_step_boundaries(expected_step_boundaries, record_capture.records)
-        AsserterLogRecord.assert_record(expected_failed_log_record, record_capture.boundaries(EventKind.STEP)[-1])
+        ExceptionAsserter.assert_expected_and_actual_are_equal(expected_exception, actual_raised.value)
+        StepBoundariesAsserter.assert_expected_and_actual_are_equal(expected_step_boundaries, record_capture.records)
+        LogRecordAsserter.assert_expected_and_actual_are_equal(expected_failed_log_record, record_capture.boundaries(EventKind.STEP)[-1])
 
     async def test_PipelineRun_WhenADiagnosticExceptionEscapesANestedStep_ThenTheInnermostStepIsStampedOntoItOnce(
         self, artifact_sink_testing: ArtifactSinkTesting, run_logger: logging.Logger
@@ -117,7 +117,7 @@ class TestFailingStep:
                 raise DiagnosticTestingError(failure_message)
 
         # Assert
-        AsserterException.assert_exception(expected_exception, actual_raised.value)
+        ExceptionAsserter.assert_expected_and_actual_are_equal(expected_exception, actual_raised.value)
 
     async def test_PipelineRun_WhenTheExceptionCarriesNoDiagnosticData_ThenItPassesThroughUntouched(
         self, artifact_sink_testing: ArtifactSinkTesting, run_logger: logging.Logger
@@ -169,7 +169,7 @@ class TestFailingSink:
                 await step_scope.emit(PAGE_EVIDENCE, b"{}")
 
         # Assert
-        AsserterException.assert_exception(expected_exception, actual_raised.value)
+        ExceptionAsserter.assert_expected_and_actual_are_equal(expected_exception, actual_raised.value)
 
     async def test_PipelineRun_WhenTheManifestCannotBeWrittenWhileTheRunIsFailing_ThenTheOriginalFailureIsNotHidden(
         self, run_logger: logging.Logger
@@ -188,7 +188,7 @@ class TestFailingSink:
                 raise PlainTestingError(real_problem_message)
 
         # Assert - the run's own failure, not the storage outage, reaches the caller, carrying the lost manifest as a note
-        AsserterException.assert_exception(expected_exception, actual_raised.value)
+        ExceptionAsserter.assert_expected_and_actual_are_equal(expected_exception, actual_raised.value)
 
     async def test_PipelineRun_WhenTheManifestCannotBeWrittenAndNothingElseFailed_ThenTheOutageIsReported(self, run_logger: logging.Logger) -> None:
         # Arrange
@@ -212,7 +212,7 @@ class TestFailingSink:
                 pass
 
         # Assert
-        AsserterException.assert_exception(expected_exception, actual_raised.value)
+        ExceptionAsserter.assert_expected_and_actual_are_equal(expected_exception, actual_raised.value)
 
 
 @pytest.mark.acceptance
@@ -236,8 +236,8 @@ class TestWorkItemScopeMisuse:
                 unentered_work_item_scope.step(METADATA_AUDIT)
 
         # Assert
-        AsserterException.assert_exception(expected_exception, actual_raised.value)
-        AsserterArtifacts.assert_exactly_these_filenames_in_order(expected_filenames, artifact_sink_testing.artifacts)
+        ExceptionAsserter.assert_expected_and_actual_are_equal(expected_exception, actual_raised.value)
+        ArtifactFilenamesAsserter.assert_expected_and_actual_are_equal(expected_filenames, artifact_sink_testing.artifacts)
 
     async def test_PipelineRun_WhenAStepIsSkippedOnAWorkItemThatHasClosed_ThenTheCallIsRefused(
         self, artifact_sink_testing: ArtifactSinkTesting, run_logger: logging.Logger
@@ -258,7 +258,7 @@ class TestWorkItemScopeMisuse:
                 closed_work_item_scope.skipped(METADATA_AUDIT, create_random_skip_reason())
 
         # Assert
-        AsserterException.assert_exception(expected_exception, actual_raised.value)
+        ExceptionAsserter.assert_expected_and_actual_are_equal(expected_exception, actual_raised.value)
 
     async def test_PipelineRun_WhenAStepIsEnteredAfterItsWorkItemHasClosed_ThenTheStepIsRefused(
         self, artifact_sink_testing: ArtifactSinkTesting, run_logger: logging.Logger
@@ -280,7 +280,7 @@ class TestWorkItemScopeMisuse:
                     pass
 
         # Assert
-        AsserterException.assert_exception(expected_exception, actual_raised.value)
+        ExceptionAsserter.assert_expected_and_actual_are_equal(expected_exception, actual_raised.value)
 
 
 @pytest.mark.acceptance
@@ -307,4 +307,4 @@ class TestRunSummary:
                     raise PlainTestingError("boom")
 
         # Assert
-        AsserterLogRecord.assert_record(expected_run_summary_log_record, record_capture.boundaries(EventKind.RUN)[-1])
+        LogRecordAsserter.assert_expected_and_actual_are_equal(expected_run_summary_log_record, record_capture.boundaries(EventKind.RUN)[-1])

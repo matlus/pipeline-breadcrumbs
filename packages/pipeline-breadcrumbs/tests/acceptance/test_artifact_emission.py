@@ -7,9 +7,9 @@ import secrets
 from typing import Final
 
 import pytest
-from breadcrumbs_acceptance_support.asserters.asserter_artifacts import AsserterArtifacts
-from breadcrumbs_acceptance_support.asserters.asserter_exception import AsserterException, ExpectedException
-from breadcrumbs_acceptance_support.asserters.asserter_log_record import AsserterLogRecord, ExpectedLogRecord
+from breadcrumbs_acceptance_support.asserters.asserter_artifacts import ArtifactFilenamesAsserter, EmittedArtifactAsserter
+from breadcrumbs_acceptance_support.asserters.asserter_exception import ExceptionAsserter, ExpectedException
+from breadcrumbs_acceptance_support.asserters.asserter_log_record import ExpectedLogRecord, LogRecordAsserter
 from breadcrumbs_acceptance_support.data_generators import create_random_discriminator, create_random_pipeline_name, create_random_work_item
 
 from pipeline_breadcrumbs import ArtifactKind, ArtifactRole, AttributeKey, InvalidDeclarationError, PipelineRun, Step, StepArtifact, WorkItem
@@ -47,11 +47,13 @@ class TestEmit:
             actual_emitted_step_artifact: StepArtifact = await step_scope.emit(PAGE_EVIDENCE, expected_content, discriminator=discriminator)
 
         # Assert
-        AsserterArtifacts.assert_emitted_artifact(expected_filename, expected_content, actual_emitted_step_artifact, artifact_sink_testing.artifacts)
+        EmittedArtifactAsserter.assert_expected_and_actual_are_equal(
+            expected_filename, expected_content, actual_emitted_step_artifact, artifact_sink_testing.artifacts
+        )
         actual_emit_log_record: logging.LogRecord = next(
             actual_log_record for actual_log_record in record_capture.records if AttributeKey.ARTIFACT_FILENAME in actual_log_record.__dict__
         )
-        AsserterLogRecord.assert_record(expected_emit_log_record, actual_emit_log_record)
+        LogRecordAsserter.assert_expected_and_actual_are_equal(expected_emit_log_record, actual_emit_log_record)
 
     async def test_StepScope_WhenAnArtifactIsEmitted_ThenItDescribesItselfToTheSink(
         self, artifact_sink_testing: ArtifactSinkTesting, run_logger: logging.Logger
@@ -114,7 +116,7 @@ class TestEmit:
                 await step_scope.emit(PAGE_EVIDENCE, b"{}", discriminator=unsafe_discriminator)
 
         # Assert
-        AsserterException.assert_exception(expected_exception, actual_raised.value)
+        ExceptionAsserter.assert_expected_and_actual_are_equal(expected_exception, actual_raised.value)
 
 
 @pytest.mark.acceptance
@@ -129,7 +131,7 @@ class TestArtifactKindDeclaration:
             ArtifactKind(vague_key, "json", "application/json")
 
         # Assert
-        AsserterException.assert_exception(expected_exception, actual_raised.value)
+        ExceptionAsserter.assert_expected_and_actual_are_equal(expected_exception, actual_raised.value)
 
     @pytest.mark.parametrize("malformed_key", ["Page Evidence", "page-evidence", "_page", "page__evidence"])
     def test_ArtifactKind_WhenTheKeyIsMalformed_ThenItIsRefused(self, malformed_key: str) -> None:
@@ -141,7 +143,7 @@ class TestArtifactKindDeclaration:
             ArtifactKind(malformed_key, "json", "application/json")
 
         # Assert
-        AsserterException.assert_exception(expected_exception, actual_raised.value)
+        ExceptionAsserter.assert_expected_and_actual_are_equal(expected_exception, actual_raised.value)
 
     def test_ArtifactKind_WhenTheExtensionCarriesADot_ThenItIsRefused(self) -> None:
         # Arrange
@@ -153,7 +155,7 @@ class TestArtifactKindDeclaration:
             ArtifactKind("page_evidence", dotted_extension, "application/json")
 
         # Assert
-        AsserterException.assert_exception(expected_exception, actual_raised.value)
+        ExceptionAsserter.assert_expected_and_actual_are_equal(expected_exception, actual_raised.value)
 
     def test_ArtifactKind_WhenNoRoleIsGiven_ThenTheArtifactIsInterim(self) -> None:
         # Arrange
@@ -197,7 +199,7 @@ class TestWorkItemIdentity:
             WorkItem(" ", f"{create_random_document_stem()}.pdf")
 
         # Assert
-        AsserterException.assert_exception(expected_exception, actual_raised.value)
+        ExceptionAsserter.assert_expected_and_actual_are_equal(expected_exception, actual_raised.value)
 
     def test_WorkItem_WhenTheNameIsBlank_ThenItIsRefused(self) -> None:
         # Arrange
@@ -208,7 +210,7 @@ class TestWorkItemIdentity:
             WorkItem(secrets.token_hex(_RANDOM_SUFFIX_BYTES), " ")
 
         # Assert
-        AsserterException.assert_exception(expected_exception, actual_raised.value)
+        ExceptionAsserter.assert_expected_and_actual_are_equal(expected_exception, actual_raised.value)
 
 
 @pytest.mark.acceptance
@@ -226,4 +228,4 @@ class TestRunLevelArtifact:
             pass
 
         # Assert
-        AsserterArtifacts.assert_exactly_these_filenames_in_order(expected_filenames, artifact_sink_testing.artifacts)
+        ArtifactFilenamesAsserter.assert_expected_and_actual_are_equal(expected_filenames, artifact_sink_testing.artifacts)

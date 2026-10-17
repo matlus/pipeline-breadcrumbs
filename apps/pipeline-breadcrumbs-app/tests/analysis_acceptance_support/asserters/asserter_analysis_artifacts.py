@@ -6,13 +6,13 @@ from breadcrumbs_acceptance_support.assertion_reports import format_assertion_re
 from pipeline_breadcrumbs import Artifact, ArtifactKind, ArtifactRole, StepArtifact
 
 
-class AsserterAnalysisArtifacts:
+class AnalysisArtifactsAsserter:
     """Checks the trail an analysis handed to its sink: every file in pipeline order, which of them are outputs, and the report."""
 
     ANALYSIS_ARTIFACTS_ASSERTION_FAILED_HEADER: Final[str] = "ANALYSIS ARTIFACTS ASSERTION FAILED"
 
     @staticmethod
-    def assert_trail(
+    def assert_expected_and_actual_are_equal(
         expected_filenames: Sequence[str],
         expected_output_filenames: Sequence[str],
         expected_report_artifact_kind: ArtifactKind,
@@ -40,7 +40,7 @@ class AsserterAnalysisArtifacts:
             if not actual_report_text.startswith(expected_report_heading):
                 mismatches.append(f"report: expected it to start with {expected_report_heading!r} but it starts with {actual_report_text[:40]!r}")
         assert not mismatches, format_assertion_report(
-            AsserterAnalysisArtifacts.ANALYSIS_ARTIFACTS_ASSERTION_FAILED_HEADER,
+            AnalysisArtifactsAsserter.ANALYSIS_ARTIFACTS_ASSERTION_FAILED_HEADER,
             "The analysis leaves its whole trail in pipeline order, marks its outputs, and ends with one report.",
             f"{len(expected_filenames)} artifact(s) expected, {len(actual_artifacts)} received",
             mismatches,
