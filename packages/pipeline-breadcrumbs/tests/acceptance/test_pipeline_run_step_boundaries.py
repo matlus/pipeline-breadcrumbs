@@ -3,6 +3,7 @@
 # observations are the log records the run wrote and the artifacts it handed to the sink.
 
 import logging
+from collections.abc import Iterable
 from typing import Final
 
 import pytest
@@ -22,7 +23,7 @@ RECONCILE_SCORES: Final[Step] = Step(3, "Reconcile")
 PAGE_EVIDENCE: Final[ArtifactKind] = ArtifactKind("page_evidence", "json", "application/json")
 
 
-def _find_record(actual_log_records: list[logging.LogRecord], expected_message: str) -> logging.LogRecord:
+def _retrieve_record(actual_log_records: Iterable[logging.LogRecord], expected_message: str) -> logging.LogRecord:
     return next(actual_log_record for actual_log_record in actual_log_records if actual_log_record.getMessage() == expected_message)
 
 
@@ -60,14 +61,14 @@ class TestStepBoundaries:
         # Arrange
         work_item: WorkItem = create_random_work_item()
         pipeline_run: PipelineRun = PipelineRun(pipeline_name="demo", sink=artifact_sink_testing, logger=run_logger)
+        expected_outcome: str = "Found 5 write-up starts"
 
         # Act
         async with pipeline_run, pipeline_run.open_work_item(work_item) as work_item_scope, work_item_scope.step(METADATA_AUDIT) as step_scope:
-            step_scope.outcome("Found 5 write-up starts", starts=5)
+            step_scope.outcome(expected_outcome, starts=5)
 
         # Assert
         actual_completion_record: logging.LogRecord = record_capture.boundaries(EventKind.STEP)[-1]
-        expected_outcome: str = "Found 5 write-up starts"
         assert actual_completion_record.getMessage().endswith(f": {expected_outcome}")
         assert RecordCapture.attribute(actual_completion_record, AttributeKey.OUTCOME) == expected_outcome
         assert RecordCapture.attribute(actual_completion_record, f"{AttributeKey.DETAIL_PREFIX}starts") == 5
@@ -138,7 +139,7 @@ class TestProgressLinesAndAttributes:
             step_scope.info(expected_progress_message, pages=14, concurrency=5)
 
         # Assert
-        actual_progress_record: logging.LogRecord = _find_record(record_capture.records, expected_progress_message)
+        actual_progress_record: logging.LogRecord = _retrieve_record(record_capture.records, expected_progress_message)
         assert RecordCapture.attribute(actual_progress_record, f"{AttributeKey.DETAIL_PREFIX}pages") == 14
         assert RecordCapture.attribute(actual_progress_record, f"{AttributeKey.DETAIL_PREFIX}concurrency") == 5
         assert AttributeKey.EVENT not in actual_progress_record.__dict__
@@ -156,7 +157,7 @@ class TestProgressLinesAndAttributes:
             step_scope.info(expected_progress_message, name="Contract 12", message="x", filename="a.pdf")
 
         # Assert
-        actual_progress_record: logging.LogRecord = _find_record(record_capture.records, expected_progress_message)
+        actual_progress_record: logging.LogRecord = _retrieve_record(record_capture.records, expected_progress_message)
         assert RecordCapture.attribute(actual_progress_record, f"{AttributeKey.DETAIL_PREFIX}name") == "Contract 12"
 
     async def test_PipelineRun_WhenCallerAttributesAreGiven_ThenEveryRecordCarriesThem(
@@ -166,8 +167,9 @@ class TestProgressLinesAndAttributes:
         work_item: WorkItem = create_random_work_item()
         expected_trace_id: str = "abc123"
         trace_id_attribute_name: str = "trace_id"
+        pipeline_name: str = "demo"
         pipeline_run: PipelineRun = PipelineRun(
-            pipeline_name="demo", sink=artifact_sink_testing, logger=run_logger, attributes={trace_id_attribute_name: expected_trace_id}
+            pipeline_name=pipeline_name, sink=artifact_sink_testing, logger=run_logger, attributes={trace_id_attribute_name: expected_trace_id}
         )
 
         # Act
@@ -179,7 +181,7 @@ class TestProgressLinesAndAttributes:
         assert record_capture.records
         for actual_log_record in record_capture.records:
             assert RecordCapture.attribute(actual_log_record, trace_id_attribute_name) == expected_trace_id
-            assert RecordCapture.attribute(actual_log_record, AttributeKey.PIPELINE_NAME) == "demo"
+            assert RecordCapture.attribute(actual_log_record, AttributeKey.PIPELINE_NAME) == pipeline_name
             assert RecordCapture.attribute(actual_log_record, AttributeKey.RUN_ID) == pipeline_run.run_id
 
     async def test_PipelineRun_WhenAStepRecordIsWritten_ThenItCarriesTheWorkItemsIdentity(

@@ -1,6 +1,7 @@
 """Step 2: detect the section each page starts. A model processor that fans out across pages."""
 
 import asyncio
+from collections.abc import Iterable
 from typing import Final
 
 from pipeline_breadcrumbs import StepHostProtocol, StepScope
@@ -37,7 +38,6 @@ class SectionDetector:
     async def _detect_page(self, step_scope: StepScope, page_semaphore: asyncio.Semaphore, page_number: int, page_text: str) -> DetectedSection:
         async with page_semaphore:
             step_scope.info("Calling the model", page=page_number)
-            # A real processor sends the page and its prompt to the model here.
             raw_reply: str = await self._model_gateway.detect_section(page_number, page_text)
             # Emit before validating: if parsing fails, the raw reply is already on disk.
             await step_scope.emit(RAW_DETECTION_RESPONSE, raw_reply.encode("utf-8"), discriminator=page_discriminator(page_number))
@@ -46,7 +46,7 @@ class SectionDetector:
             return detected_section
 
     @staticmethod
-    def _sections_or_first_failure(page_outcomes: list[DetectedSection | BaseException]) -> list[DetectedSection]:
+    def _sections_or_first_failure(page_outcomes: Iterable[DetectedSection | BaseException]) -> list[DetectedSection]:
         detected_sections: list[DetectedSection] = []
         for page_outcome in page_outcomes:
             if isinstance(page_outcome, BaseException):

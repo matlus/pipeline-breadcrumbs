@@ -1,7 +1,7 @@
 """The demo's input: two small documents, one page of text per list entry."""
 
 from collections.abc import Mapping
-from typing import Final
+from typing import Final, final
 
 from pipeline_breadcrumbs_app.document_analysis.gateways.model_gateway_fake import MALFORMED_REPLY_MARKER
 
@@ -20,6 +20,7 @@ SAMPLE_DOCUMENTS: Final[dict[str, list[str]]] = {
 }
 
 
+@final
 class InvalidFailPageError(ValueError):
     """The page asked to fail does not exist in the document."""
 

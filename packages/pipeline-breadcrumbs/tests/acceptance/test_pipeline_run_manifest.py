@@ -33,6 +33,7 @@ class TestRunManifest:
         # Arrange
         work_item: WorkItem = create_random_work_item()
         pipeline_name: str = "demo"
+        expected_step_outcome: str = "Loaded 1 page"
         pipeline_run: PipelineRun = PipelineRun(pipeline_name=pipeline_name, sink=artifact_sink_testing, logger=run_logger, clock=clock_testing.clock)
         expected_manifest: ExpectedManifest = ExpectedManifest(
             pipeline_name=pipeline_name,
@@ -44,7 +45,7 @@ class TestRunManifest:
                     name=work_item.name,
                     work_item_status="COMPLETE",
                     step_records=[
-                        ExpectedManifestStep("1", "COMPLETE", elapsed_seconds=1.5, outcome="Loaded 1 page"),
+                        ExpectedManifestStep("1", "COMPLETE", elapsed_seconds=1.5, outcome=expected_step_outcome),
                         ExpectedManifestStep("2", "COMPLETE", elapsed_seconds=2.0),
                     ],
                     artifact_filenames=[f"{work_item.stem}_step_01_page_text_page_0000.txt"],
@@ -58,7 +59,7 @@ class TestRunManifest:
                 async with work_item_scope.step(LOAD_PAGES) as step_scope:
                     clock_testing.advance(1.5)
                     await step_scope.emit(PAGE_TEXT, b"hello", discriminator="page_0000")
-                    step_scope.outcome("Loaded 1 page")
+                    step_scope.outcome(expected_step_outcome)
                 async with work_item_scope.step(DETECT_SECTIONS):
                     clock_testing.advance(2.0)
             clock_testing.advance(0.5)
@@ -92,6 +93,7 @@ class TestRunManifest:
         # Arrange
         failing_work_item: WorkItem = create_random_work_item()
         healthy_work_item: WorkItem = create_random_work_item()
+        failure_message: str = "unreadable"
         pipeline_name: str = "demo"
         pipeline_run: PipelineRun = PipelineRun(pipeline_name=pipeline_name, sink=artifact_sink_testing, logger=run_logger, clock=clock_testing.clock)
         expected_manifest: ExpectedManifest = ExpectedManifest(
@@ -116,9 +118,9 @@ class TestRunManifest:
 
         # Act
         async with pipeline_run:
-            with pytest.raises(ValueError, match="unreadable"):
+            with pytest.raises(ValueError, match=failure_message):
                 async with pipeline_run.open_work_item(failing_work_item) as work_item_scope, work_item_scope.step(LOAD_PAGES):
-                    raise ValueError("unreadable")
+                    raise ValueError(failure_message)
             async with pipeline_run.open_work_item(healthy_work_item) as work_item_scope, work_item_scope.step(LOAD_PAGES):
                 pass
 
@@ -161,6 +163,7 @@ class TestRunManifest:
     ) -> None:
         # Arrange - a retry reopens the same work item; the failure of the first attempt must not be erased by the success of the second
         work_item: WorkItem = create_random_work_item()
+        first_attempt_failure_message: str = "first attempt"
         pipeline_name: str = "demo"
         pipeline_run: PipelineRun = PipelineRun(pipeline_name=pipeline_name, sink=artifact_sink_testing, logger=run_logger, clock=clock_testing.clock)
         expected_manifest: ExpectedManifest = ExpectedManifest(
@@ -185,9 +188,9 @@ class TestRunManifest:
 
         # Act
         async with pipeline_run:
-            with pytest.raises(ValueError, match="first attempt"):
+            with pytest.raises(ValueError, match=first_attempt_failure_message):
                 async with pipeline_run.open_work_item(work_item) as work_item_scope, work_item_scope.step(LOAD_PAGES):
-                    raise ValueError("first attempt")
+                    raise ValueError(first_attempt_failure_message)
             async with pipeline_run.open_work_item(work_item) as work_item_scope, work_item_scope.step(LOAD_PAGES):
                 pass
 
@@ -257,6 +260,7 @@ class TestRunManifest:
 
         async def load_one_page(work_item_scope: WorkItemScope, page_number: int) -> None:
             async with work_item_scope.step(LOAD_PAGES) as step_scope:
+                # Yield to the event loop so the other openings start before this one closes; without it they would run one after another.
                 await asyncio.sleep(0)
                 step_scope.outcome(f"page {page_number}")
 

@@ -87,17 +87,18 @@ class TestAnalyzeDocumentExpectedPaths:
         section_titles: list[str] = create_random_section_titles(3)
         doubtful_title: str = section_titles[1]
         confident_category: str = "Legal"
+        reconciled_category: str = "Commercial"
         model_gateway_testing: ModelGatewayTesting = ModelGatewayTesting(
             detection_reply_by_page_number={page_number: create_title_reply(title) for page_number, title in enumerate(section_titles)},
             score_reply_by_title={
                 title: create_score_reply(confident_category, DOUBTFUL if title == doubtful_title else CONFIDENT) for title in section_titles
             },
-            reconcile_reply_by_title={doubtful_title: create_score_reply("Commercial", RECONCILED)},
+            reconcile_reply_by_title={doubtful_title: create_score_reply(reconciled_category, RECONCILED)},
         )
         document_analysis_manager: DocumentAnalysisManager = create_document_analysis_manager(model_gateway_testing)
         expected_scored_sections: list[ScoredSection] = [
             ScoredSection(0, section_titles[0], confident_category, CONFIDENT),
-            ScoredSection(1, doubtful_title, "Commercial", RECONCILED),
+            ScoredSection(1, doubtful_title, reconciled_category, RECONCILED),
             ScoredSection(2, section_titles[2], confident_category, CONFIDENT),
         ]
 

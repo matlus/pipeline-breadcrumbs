@@ -28,6 +28,9 @@ _CATEGORY_BY_TITLE: Final[dict[str, str]] = {
 _LOW_CONFIDENCE: Final[float] = 0.55
 _HIGH_CONFIDENCE: Final[float] = 0.92
 _RECONCILED_CONFIDENCE: Final[float] = 0.81
+_TITLE_FIELD: Final[str] = "title"
+_CATEGORY_FIELD: Final[str] = "category"
+_CONFIDENCE_FIELD: Final[str] = "confidence"
 
 
 class ModelGatewayFake:
@@ -36,18 +39,30 @@ class ModelGatewayFake:
 
     async def detect_section(self, page_number: int, page_text: str) -> str:  # noqa: ARG002 - the real gateway receives the page number too
         await asyncio.sleep(self._latency_seconds)
-        text_after_label: list[str] = page_text.partition(":")[2].splitlines()
-        title: str = text_after_label[0].strip() if text_after_label else _UNTITLED_PAGE_TITLE
+        title: str = self._title_from_page(page_text)
         if MALFORMED_REPLY_MARKER in page_text:
-            return f'Sure! Here is the JSON you asked for: {{"title": "{title}", "category": '
-        return json.dumps({"title": title})
+            return f'Sure! Here is the JSON you asked for: {{"{_TITLE_FIELD}": "{title}", "{_CATEGORY_FIELD}": '
+        return json.dumps({_TITLE_FIELD: title})
 
     async def score_section(self, classification_prompt: ClassificationPrompt) -> str:
         await asyncio.sleep(self._latency_seconds)
-        confidence: float = _LOW_CONFIDENCE if classification_prompt.title in _AMBIGUOUS_TITLES else _HIGH_CONFIDENCE
-        return json.dumps({"category": _CATEGORY_BY_TITLE.get(classification_prompt.title, _DEFAULT_CATEGORY), "confidence": confidence})
+        confidence: float = _LOW_CONFIDENCE if self._is_ambiguous(classification_prompt.title) else _HIGH_CONFIDENCE
+        return self._category_reply(classification_prompt.title, confidence)
 
     async def reconcile_section(self, classification_prompt: ClassificationPrompt) -> str:
         await asyncio.sleep(self._latency_seconds)
-        confidence: float = _RECONCILED_CONFIDENCE if classification_prompt.title in _AMBIGUOUS_TITLES else _HIGH_CONFIDENCE
-        return json.dumps({"category": _CATEGORY_BY_TITLE.get(classification_prompt.title, _DEFAULT_CATEGORY), "confidence": confidence})
+        confidence: float = _RECONCILED_CONFIDENCE if self._is_ambiguous(classification_prompt.title) else _HIGH_CONFIDENCE
+        return self._category_reply(classification_prompt.title, confidence)
+
+    @staticmethod
+    def _title_from_page(page_text: str) -> str:
+        lines_after_label: list[str] = page_text.partition(":")[2].splitlines()
+        return lines_after_label[0].strip() if lines_after_label else _UNTITLED_PAGE_TITLE
+
+    @staticmethod
+    def _is_ambiguous(title: str) -> bool:
+        return title in _AMBIGUOUS_TITLES
+
+    @staticmethod
+    def _category_reply(title: str, confidence: float) -> str:
+        return json.dumps({_CATEGORY_FIELD: _CATEGORY_BY_TITLE.get(title, _DEFAULT_CATEGORY), _CONFIDENCE_FIELD: confidence})

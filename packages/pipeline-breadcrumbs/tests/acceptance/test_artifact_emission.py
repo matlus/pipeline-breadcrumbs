@@ -28,11 +28,11 @@ class TestEmit:
 
         # Act
         async with pipeline_run, pipeline_run.open_work_item(work_item) as work_item_scope, work_item_scope.step(METADATA_AUDIT) as step_scope:
-            actual_emitted_artifact: StepArtifact = await step_scope.emit(PAGE_EVIDENCE, expected_content, discriminator="page_0003")
+            actual_emitted_step_artifact: StepArtifact = await step_scope.emit(PAGE_EVIDENCE, expected_content, discriminator="page_0003")
 
         # Assert
         expected_filename: str = f"{work_item.stem}_step_02_page_evidence_page_0003.json"
-        assert actual_emitted_artifact.filename == expected_filename
+        assert actual_emitted_step_artifact.filename == expected_filename
         assert artifact_sink_testing.of_kind(PAGE_EVIDENCE)[0].content == expected_content
         actual_emit_record: logging.LogRecord = next(
             actual_log_record for actual_log_record in record_capture.records if AttributeKey.ARTIFACT_FILENAME in actual_log_record.__dict__

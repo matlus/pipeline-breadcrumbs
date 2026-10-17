@@ -3,6 +3,7 @@
 # against a real temporary folder.
 
 import logging
+from collections.abc import Iterable
 from pathlib import Path
 from typing import Final
 
@@ -33,7 +34,7 @@ def _list_entry_names(actual_folder: Path) -> list[str]:
     return sorted(actual_entry.name for actual_entry in actual_folder.iterdir())
 
 
-def _all_are_files(actual_folder: Path, actual_entry_names: list[str]) -> bool:
+def _all_are_files(actual_folder: Path, actual_entry_names: Iterable[str]) -> bool:
     return all((actual_folder / actual_entry_name).is_file() for actual_entry_name in actual_entry_names)
 
 
