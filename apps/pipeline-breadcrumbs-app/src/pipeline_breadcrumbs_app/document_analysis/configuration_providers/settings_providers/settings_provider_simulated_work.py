@@ -4,7 +4,7 @@ from typing import Final, final
 
 from pipeline_breadcrumbs_app.document_analysis.configuration_providers.settings_models.simulated_work_settings import SimulatedWorkSettings
 from pipeline_breadcrumbs_app.document_analysis.configuration_providers.settings_providers.settings_source import SettingsSource
-from pipeline_breadcrumbs_app.document_analysis.exceptions import ConfigurationSettingError
+from pipeline_breadcrumbs_app.document_analysis.exceptions import ConfigurationSettingException
 
 SIMULATED_WORK_SECONDS_VARIABLE_NAME: Final[str] = "DOCUMENT_ANALYSIS_SIMULATED_WORK_SECONDS"
 SIMULATED_WORK_SECONDS_DEFAULT: Final[float] = 0.0
@@ -34,8 +34,8 @@ class SettingsProviderSimulatedWork:
         return delay_seconds
 
     @staticmethod
-    def _create_invalid_delay_error(delay_seconds_raw_value: str) -> ConfigurationSettingError:
-        return ConfigurationSettingError(
+    def _create_invalid_delay_error(delay_seconds_raw_value: str) -> ConfigurationSettingException:
+        return ConfigurationSettingException(
             f"Setting '{SIMULATED_WORK_SECONDS_VARIABLE_NAME}' is '{delay_seconds_raw_value}', which is not a number of seconds of 0 or more",
             SIMULATED_WORK_SECONDS_VARIABLE_NAME,
         )

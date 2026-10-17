@@ -3,7 +3,7 @@
 from collections.abc import Sequence
 from typing import final
 
-from pipeline_breadcrumbs_app.document_analysis.exceptions import DocumentValidationError
+from pipeline_breadcrumbs_app.document_analysis.exceptions import DocumentValidationException
 
 
 @final
@@ -19,4 +19,4 @@ class DocumentAnalysisValidator:
         if blank_page_numbers:
             validation_problems.append(f"pages {blank_page_numbers} are blank; every page needs text")
         if validation_problems:
-            raise DocumentValidationError(validation_problems, {"PageCount": len(pages)})
+            raise DocumentValidationException(validation_problems, {"PageCount": len(pages)})

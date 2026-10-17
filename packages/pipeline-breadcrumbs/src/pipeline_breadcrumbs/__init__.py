@@ -6,17 +6,24 @@ outcome. The result is an ordered trail on disk that a person, or a coding assis
 read to find the first step whose output went wrong.
 """
 
+from pipeline_breadcrumbs.artifact_sink_exceptions import ArtifactSinkException
 from pipeline_breadcrumbs.artifacts import Artifact, ArtifactKind, ArtifactRole, ArtifactSinkProtocol, RunArtifact, StepArtifact
 from pipeline_breadcrumbs.attributes import AttributeBag, AttributeKey, AttributeValue, EventKind
 from pipeline_breadcrumbs.breadcrumb_formatter import BreadcrumbFormatter, TimeDisplay
 from pipeline_breadcrumbs.clock import Clock
-from pipeline_breadcrumbs.declaration_errors import InvalidDeclarationError
-from pipeline_breadcrumbs.errors import ArtifactSinkError, ContextualDataDict, ContextualExceptionProtocol
+from pipeline_breadcrumbs.declaration_exceptions import InvalidDeclarationException
+from pipeline_breadcrumbs.exceptions import (
+    ContextualDataDict,
+    ContextualExceptionProtocol,
+    PipelineBreadcrumbsBaseException,
+    PipelineBreadcrumbsBusinessBaseException,
+    PipelineBreadcrumbsTechnicalBaseException,
+)
 from pipeline_breadcrumbs.formatting import format_byte_size, format_elapsed
 from pipeline_breadcrumbs.manifest import MANIFEST_KIND
 from pipeline_breadcrumbs.path_components import safe_path_component
 from pipeline_breadcrumbs.pipeline_run import DEFAULT_LOGGER_NAME, PipelineRun
-from pipeline_breadcrumbs.scope_errors import WorkItemNotOpenError
+from pipeline_breadcrumbs.scope_exceptions import WorkItemNotOpenException
 from pipeline_breadcrumbs.scopes import StepHostProtocol, StepScope, WorkItemScope
 from pipeline_breadcrumbs.steps import Step, StepPath, StepStatus
 from pipeline_breadcrumbs.work_items import WorkItem
@@ -27,7 +34,7 @@ __all__ = [
     "Artifact",
     "ArtifactKind",
     "ArtifactRole",
-    "ArtifactSinkError",
+    "ArtifactSinkException",
     "ArtifactSinkProtocol",
     "AttributeBag",
     "AttributeKey",
@@ -37,7 +44,10 @@ __all__ = [
     "ContextualDataDict",
     "ContextualExceptionProtocol",
     "EventKind",
-    "InvalidDeclarationError",
+    "InvalidDeclarationException",
+    "PipelineBreadcrumbsBaseException",
+    "PipelineBreadcrumbsBusinessBaseException",
+    "PipelineBreadcrumbsTechnicalBaseException",
     "PipelineRun",
     "RunArtifact",
     "Step",
@@ -48,7 +58,7 @@ __all__ = [
     "StepStatus",
     "TimeDisplay",
     "WorkItem",
-    "WorkItemNotOpenError",
+    "WorkItemNotOpenException",
     "WorkItemScope",
     "format_byte_size",
     "format_elapsed",

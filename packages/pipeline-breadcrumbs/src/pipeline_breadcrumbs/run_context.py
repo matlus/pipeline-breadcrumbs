@@ -8,10 +8,10 @@ import logging
 from collections.abc import Mapping
 from typing import final
 
+from pipeline_breadcrumbs.artifact_sink_exceptions import ArtifactSinkException
 from pipeline_breadcrumbs.artifacts import Artifact, ArtifactSinkProtocol
 from pipeline_breadcrumbs.attributes import AttributeBag, AttributeValue
 from pipeline_breadcrumbs.clock import Clock
-from pipeline_breadcrumbs.errors import ArtifactSinkError
 from pipeline_breadcrumbs.manifest import RunRecorder
 
 
@@ -43,4 +43,4 @@ class RunContext:
         try:
             await self._artifact_sink.persist(artifact)
         except Exception as error:
-            raise ArtifactSinkError(artifact) from error
+            raise ArtifactSinkException(artifact) from error

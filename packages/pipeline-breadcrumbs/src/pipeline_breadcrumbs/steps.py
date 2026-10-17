@@ -5,7 +5,7 @@ from dataclasses import InitVar, dataclass, field
 from enum import StrEnum
 from typing import Final, final, override
 
-from pipeline_breadcrumbs.declaration_errors import InvalidDeclarationError
+from pipeline_breadcrumbs.declaration_exceptions import InvalidDeclarationException
 
 MAX_STEP_NUMBER: Final[int] = 99
 
@@ -48,13 +48,13 @@ class Step:
 
     def __post_init__(self, requested_key: str | None) -> None:
         if not 1 <= self.step_number <= MAX_STEP_NUMBER:
-            raise InvalidDeclarationError(f"Step number must be between 1 and {MAX_STEP_NUMBER}, got {self.step_number}")
+            raise InvalidDeclarationException(f"Step number must be between 1 and {MAX_STEP_NUMBER}, got {self.step_number}")
         display_name: str = self.name.strip()
         if not display_name:
-            raise InvalidDeclarationError(f"Step {self.step_number} name must not be blank")
+            raise InvalidDeclarationException(f"Step {self.step_number} name must not be blank")
         resolved_key: str = requested_key if requested_key is not None else _derive_key(display_name)
         if not _KEY_PATTERN.fullmatch(resolved_key):
-            raise InvalidDeclarationError(
+            raise InvalidDeclarationException(
                 f"Step {self.step_number} '{display_name}' key '{resolved_key}' must be lowercase letters and digits separated by single underscores"
             )
         object.__setattr__(self, "name", display_name)

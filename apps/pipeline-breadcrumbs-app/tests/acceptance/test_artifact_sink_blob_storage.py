@@ -10,7 +10,7 @@ import pytest
 from breadcrumbs_acceptance_support.asserters.asserter_exception import ExceptionAsserter, ExpectedException
 
 from pipeline_breadcrumbs import ArtifactKind, StepArtifact, StepPath, WorkItem
-from pipeline_breadcrumbs.hosting import WorkItemFolderCollisionError
+from pipeline_breadcrumbs.hosting import WorkItemFolderCollisionException
 from pipeline_breadcrumbs_app.artifact_sink_blob_storage import ArtifactSinkBlobStorage
 
 PAGE_TEXT: Final[ArtifactKind] = ArtifactKind("page_text", "txt", "text/plain")
@@ -39,11 +39,11 @@ class TestArtifactSinkBlobStorage:
         artifact_sink_blob_storage: ArtifactSinkBlobStorage = ArtifactSinkBlobStorage(tmp_path / create_random_run_name())
         await artifact_sink_blob_storage.persist(StepArtifact(PAGE_TEXT, secrets.token_bytes(8), first_work_item, StepPath((1,))))
         expected_exception: ExpectedException = ExpectedException(
-            WorkItemFolderCollisionError, message_phrases=[first_work_item.id, second_work_item.id, shared_stem, "must be unique within a run"]
+            WorkItemFolderCollisionException, message_phrases=[first_work_item.id, second_work_item.id, shared_stem, "must be unique within a run"]
         )
 
         # Act
-        with pytest.raises(WorkItemFolderCollisionError) as actual_raised:
+        with pytest.raises(WorkItemFolderCollisionException) as actual_raised:
             await artifact_sink_blob_storage.persist(StepArtifact(PAGE_TEXT, secrets.token_bytes(8), second_work_item, StepPath((1,))))
 
         # Assert
@@ -57,11 +57,11 @@ class TestArtifactSinkBlobStorage:
         artifact_sink_blob_storage: ArtifactSinkBlobStorage = ArtifactSinkBlobStorage(tmp_path / create_random_run_name())
         await artifact_sink_blob_storage.persist(StepArtifact(PAGE_TEXT, secrets.token_bytes(8), first_work_item, StepPath((1,))))
         expected_exception: ExpectedException = ExpectedException(
-            WorkItemFolderCollisionError, message_phrases=[first_work_item.id, second_work_item.id, "must be unique within a run"]
+            WorkItemFolderCollisionException, message_phrases=[first_work_item.id, second_work_item.id, "must be unique within a run"]
         )
 
         # Act
-        with pytest.raises(WorkItemFolderCollisionError) as actual_raised:
+        with pytest.raises(WorkItemFolderCollisionException) as actual_raised:
             await artifact_sink_blob_storage.persist(StepArtifact(PAGE_TEXT, secrets.token_bytes(8), second_work_item, StepPath((1,))))
 
         # Assert

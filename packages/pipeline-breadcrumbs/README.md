@@ -15,13 +15,14 @@ for the reasoning.
 | `ArtifactKind`, `Artifact`, `ArtifactSinkProtocol` | A declared kind of file, the complete frozen artifact, and the protocol a sink class implements with `persist(artifact)`. |
 | `BreadcrumbFormatter`, `TimeDisplay` | The human rendering of boundary records, and the single switch for time. |
 | `AttributeKey` | The names of the attributes every record carries. |
-| `ArtifactSinkError`, `ContextualExceptionProtocol` | Sink failures, and the shape an exception takes to receive step diagnostics. |
-| `InvalidDeclarationError` | A step, artifact kind, work item or run declared with a value the library refuses (a `ValueError`). |
-| `WorkItemNotOpenError` | A step opened, entered, skipped or emitted from outside its work item's `async with` block (a `RuntimeError`). |
+| `PipelineBreadcrumbsBaseException`, `PipelineBreadcrumbsBusinessBaseException`, `PipelineBreadcrumbsTechnicalBaseException` | The sample's one exception hierarchy: an abstract root, and the business and technical branches every concrete exception descends through. |
+| `ArtifactSinkException`, `ContextualExceptionProtocol` | Sink failures (technical), and the shape an exception takes to receive step diagnostics. |
+| `InvalidDeclarationException` | A step, artifact kind, work item or run declared with a value the library refuses (business). |
+| `WorkItemNotOpenException` | A step opened, entered, skipped or emitted from outside its work item's `async with` block (technical). |
 
 `pipeline_breadcrumbs.hosting` holds local file system helpers (`ArtifactSinkFileSystem`,
 `create_run_folder`, `attached_run_log`, and `safe_path_component` again). `ArtifactSinkFileSystem` raises
-`WorkItemFolderCollisionError` (a `ValueError`) when two work items in one run map to the same folder. `pipeline_breadcrumbs.testing` holds
+`WorkItemFolderCollisionException` (business) when two work items in one run map to the same folder. `pipeline_breadcrumbs.testing` holds
 `ArtifactSinkTesting` and `RecordCapture` for acceptance tests.
 
 Create a run with `PipelineRun(pipeline_name=..., artifact_sink=...)` and open each item

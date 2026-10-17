@@ -4,7 +4,7 @@ from dataclasses import dataclass
 from pathlib import PurePosixPath
 from typing import final
 
-from pipeline_breadcrumbs.declaration_errors import InvalidDeclarationError
+from pipeline_breadcrumbs.declaration_exceptions import InvalidDeclarationException
 from pipeline_breadcrumbs.path_components import safe_path_component
 
 
@@ -32,9 +32,9 @@ class WorkItem:
 
     def __post_init__(self) -> None:
         if not self.id.strip():
-            raise InvalidDeclarationError(f"WorkItem id must not be blank (name {self.name!r})")
+            raise InvalidDeclarationException(f"WorkItem id must not be blank (name {self.name!r})")
         if not self.name.strip():
-            raise InvalidDeclarationError(f"WorkItem name must not be blank (id {self.id!r})")
+            raise InvalidDeclarationException(f"WorkItem name must not be blank (id {self.id!r})")
         if self.file_stem is not None:
             _require_file_safe_stem(self.file_stem, self.id)
 
@@ -53,9 +53,9 @@ class WorkItem:
 
 def _require_file_safe_stem(file_stem: str, work_item_id: str) -> None:
     if not file_stem.strip():
-        raise InvalidDeclarationError(f"WorkItem file_stem must not be blank (id {work_item_id!r})")
+        raise InvalidDeclarationException(f"WorkItem file_stem must not be blank (id {work_item_id!r})")
     file_safe_stem: str = safe_path_component(file_stem)
     if file_stem != file_safe_stem:
-        raise InvalidDeclarationError(
+        raise InvalidDeclarationException(
             f"WorkItem file_stem {file_stem!r} must be safe to use as a file name, such as {file_safe_stem!r} (id {work_item_id!r})"
         )

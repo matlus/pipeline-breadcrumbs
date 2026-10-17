@@ -22,7 +22,7 @@ from breadcrumbs_acceptance_support.data_generators import (
     create_random_work_item,
 )
 
-from pipeline_breadcrumbs import ArtifactKind, AttributeKey, EventKind, InvalidDeclarationError, PipelineRun, Step, WorkItem
+from pipeline_breadcrumbs import ArtifactKind, AttributeKey, EventKind, InvalidDeclarationException, PipelineRun, Step, WorkItem
 from pipeline_breadcrumbs.testing import ArtifactSinkTesting, RecordCapture
 
 MANIFEST_FILENAME: Final[str] = "manifest.json"
@@ -251,11 +251,11 @@ class TestProgressLinesAndAttributes:
         pipeline_name: str = create_random_pipeline_name()
         shadowing_attribute_name: str = "name"
         expected_exception: ExpectedException = ExpectedException(
-            InvalidDeclarationError, message_phrases=["reserved logging attribute names", shadowing_attribute_name]
+            InvalidDeclarationException, message_phrases=["reserved logging attribute names", shadowing_attribute_name]
         )
 
         # Act
-        with pytest.raises(InvalidDeclarationError) as actual_raised:
+        with pytest.raises(InvalidDeclarationException) as actual_raised:
             PipelineRun(pipeline_name=pipeline_name, artifact_sink=artifact_sink_testing, attributes={shadowing_attribute_name: "x"})
 
         # Assert
@@ -264,10 +264,10 @@ class TestProgressLinesAndAttributes:
     def test_PipelineRun_WhenTheNameIsBlank_ThenTheRunIsRefused(self, artifact_sink_testing: ArtifactSinkTesting) -> None:
         # Arrange
         blank_pipeline_name: str = " "
-        expected_exception: ExpectedException = ExpectedException(InvalidDeclarationError, message_phrases=["needs a name"])
+        expected_exception: ExpectedException = ExpectedException(InvalidDeclarationException, message_phrases=["needs a name"])
 
         # Act
-        with pytest.raises(InvalidDeclarationError) as actual_raised:
+        with pytest.raises(InvalidDeclarationException) as actual_raised:
             PipelineRun(pipeline_name=blank_pipeline_name, artifact_sink=artifact_sink_testing)
 
         # Assert

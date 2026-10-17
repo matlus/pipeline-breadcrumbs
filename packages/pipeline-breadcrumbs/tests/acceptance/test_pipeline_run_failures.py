@@ -22,7 +22,7 @@ from breadcrumbs_acceptance_support.exceptions_testing import DiagnosticTestingE
 from pipeline_breadcrumbs import (
     Artifact,
     ArtifactKind,
-    ArtifactSinkError,
+    ArtifactSinkException,
     ArtifactSinkProtocol,
     AttributeKey,
     EventKind,
@@ -30,7 +30,7 @@ from pipeline_breadcrumbs import (
     Step,
     StepScope,
     WorkItem,
-    WorkItemNotOpenError,
+    WorkItemNotOpenException,
     WorkItemScope,
 )
 from pipeline_breadcrumbs.testing import ArtifactSinkTesting, RecordCapture
@@ -149,10 +149,10 @@ class TestFailingSink:
         expected_artifact_filename: str = f"{work_item.stem}_step_02_{expected_artifact_kind_key}.json"
         pipeline_run: PipelineRun = PipelineRun(pipeline_name=pipeline_name, artifact_sink=ArtifactSinkUnreachable(), logger=run_logger)
         expected_exception: ExpectedException = ExpectedException(
-            ArtifactSinkError,
+            ArtifactSinkException,
             message_phrases=[expected_artifact_filename],
             contextual_data_by_name={
-                "ExceptionType": "ArtifactSinkError",
+                "ExceptionType": "ArtifactSinkException",
                 "ArtifactKind": expected_artifact_kind_key,
                 "ArtifactFilename": expected_artifact_filename,
                 "ArtifactBytes": 2,
@@ -164,7 +164,7 @@ class TestFailingSink:
         )
 
         # Act
-        with pytest.raises(ArtifactSinkError) as actual_raised:
+        with pytest.raises(ArtifactSinkException) as actual_raised:
             async with pipeline_run, pipeline_run.open_work_item(work_item) as work_item_scope, work_item_scope.step(METADATA_AUDIT) as step_scope:
                 await step_scope.emit(PAGE_EVIDENCE, b"{}")
 
@@ -211,10 +211,10 @@ class TestFailingSink:
         pipeline_name: str = create_random_pipeline_name()
         pipeline_run: PipelineRun = PipelineRun(pipeline_name=pipeline_name, artifact_sink=ArtifactSinkUnreachable(), logger=run_logger)
         expected_exception: ExpectedException = ExpectedException(
-            ArtifactSinkError,
+            ArtifactSinkException,
             message_phrases=[MANIFEST_FILENAME],
             contextual_data_by_name={
-                "ExceptionType": "ArtifactSinkError",
+                "ExceptionType": "ArtifactSinkException",
                 "ArtifactKind": "manifest",
                 "ArtifactFilename": MANIFEST_FILENAME,
                 "ArtifactBytes": ANY_CONTEXTUAL_VALUE,
@@ -223,7 +223,7 @@ class TestFailingSink:
         )
 
         # Act
-        with pytest.raises(ArtifactSinkError) as actual_raised:
+        with pytest.raises(ArtifactSinkException) as actual_raised:
             async with pipeline_run:
                 pass
 
@@ -241,14 +241,14 @@ class TestWorkItemScopeMisuse:
         work_item: WorkItem = create_random_work_item()
         pipeline_run: PipelineRun = PipelineRun(pipeline_name=pipeline_name, artifact_sink=artifact_sink_testing, logger=run_logger)
         expected_exception: ExpectedException = ExpectedException(
-            WorkItemNotOpenError, message_phrases=[f"Work item '{work_item.name}' is not open", "Metadata Audit"]
+            WorkItemNotOpenException, message_phrases=[f"Work item '{work_item.name}' is not open", "Metadata Audit"]
         )
         expected_filenames: list[str] = [MANIFEST_FILENAME]
 
         # Act
         async with pipeline_run:
             unentered_work_item_scope: WorkItemScope = pipeline_run.open_work_item(work_item)
-            with pytest.raises(WorkItemNotOpenError) as actual_raised:
+            with pytest.raises(WorkItemNotOpenException) as actual_raised:
                 unentered_work_item_scope.step(METADATA_AUDIT)
 
         # Assert
@@ -263,14 +263,14 @@ class TestWorkItemScopeMisuse:
         work_item: WorkItem = create_random_work_item()
         pipeline_run: PipelineRun = PipelineRun(pipeline_name=pipeline_name, artifact_sink=artifact_sink_testing, logger=run_logger)
         expected_exception: ExpectedException = ExpectedException(
-            WorkItemNotOpenError, message_phrases=[f"Work item '{work_item.name}' is not open", "Metadata Audit"]
+            WorkItemNotOpenException, message_phrases=[f"Work item '{work_item.name}' is not open", "Metadata Audit"]
         )
 
         # Act
         async with pipeline_run:
             async with pipeline_run.open_work_item(work_item) as closed_work_item_scope:
                 pass
-            with pytest.raises(WorkItemNotOpenError) as actual_raised:
+            with pytest.raises(WorkItemNotOpenException) as actual_raised:
                 closed_work_item_scope.skipped(METADATA_AUDIT, create_random_skip_reason())
 
         # Assert
@@ -284,14 +284,14 @@ class TestWorkItemScopeMisuse:
         work_item: WorkItem = create_random_work_item()
         pipeline_run: PipelineRun = PipelineRun(pipeline_name=pipeline_name, artifact_sink=artifact_sink_testing, logger=run_logger)
         expected_exception: ExpectedException = ExpectedException(
-            WorkItemNotOpenError, message_phrases=[f"Work item '{work_item.name}' is not open", "Metadata Audit"]
+            WorkItemNotOpenException, message_phrases=[f"Work item '{work_item.name}' is not open", "Metadata Audit"]
         )
 
         # Act
         async with pipeline_run:
             async with pipeline_run.open_work_item(work_item) as work_item_scope:
                 late_step_scope: StepScope = work_item_scope.step(METADATA_AUDIT)
-            with pytest.raises(WorkItemNotOpenError) as actual_raised:
+            with pytest.raises(WorkItemNotOpenException) as actual_raised:
                 async with late_step_scope:
                     pass
 

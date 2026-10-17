@@ -33,7 +33,7 @@ from pipeline_breadcrumbs import (
 )
 from pipeline_breadcrumbs.hosting import (
     ArtifactSinkFileSystem,
-    WorkItemFolderCollisionError,
+    WorkItemFolderCollisionException,
     attached_run_log,
     create_run_folder,
     safe_path_component,
@@ -232,11 +232,11 @@ class TestArtifactSinkFileSystem:
         artifact_sink_file_system: ArtifactSinkFileSystem = ArtifactSinkFileSystem(tmp_path)
         await artifact_sink_file_system.persist(StepArtifact(PAGE_TEXT, b"first", first_work_item, StepPath((1,))))
         expected_exception: ExpectedException = ExpectedException(
-            WorkItemFolderCollisionError, message_phrases=[first_work_item.id, second_work_item.id, shared_stem, "must be unique within a run"]
+            WorkItemFolderCollisionException, message_phrases=[first_work_item.id, second_work_item.id, shared_stem, "must be unique within a run"]
         )
 
         # Act
-        with pytest.raises(WorkItemFolderCollisionError) as actual_raised:
+        with pytest.raises(WorkItemFolderCollisionException) as actual_raised:
             await artifact_sink_file_system.persist(StepArtifact(PAGE_TEXT, b"second", second_work_item, StepPath((1,))))
 
         # Assert
@@ -250,11 +250,11 @@ class TestArtifactSinkFileSystem:
         artifact_sink_file_system: ArtifactSinkFileSystem = ArtifactSinkFileSystem(tmp_path)
         await artifact_sink_file_system.persist(StepArtifact(PAGE_TEXT, b"first", first_work_item, StepPath((1,))))
         expected_exception: ExpectedException = ExpectedException(
-            WorkItemFolderCollisionError, message_phrases=[first_work_item.id, second_work_item.id, "must be unique within a run"]
+            WorkItemFolderCollisionException, message_phrases=[first_work_item.id, second_work_item.id, "must be unique within a run"]
         )
 
         # Act
-        with pytest.raises(WorkItemFolderCollisionError) as actual_raised:
+        with pytest.raises(WorkItemFolderCollisionException) as actual_raised:
             await artifact_sink_file_system.persist(StepArtifact(PAGE_TEXT, b"second", second_work_item, StepPath((1,))))
 
         # Assert

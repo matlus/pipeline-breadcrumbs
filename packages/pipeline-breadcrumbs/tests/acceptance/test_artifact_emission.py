@@ -17,7 +17,7 @@ from pipeline_breadcrumbs import (
     ArtifactKind,
     ArtifactRole,
     AttributeKey,
-    InvalidDeclarationError,
+    InvalidDeclarationException,
     PipelineRun,
     RunArtifact,
     Step,
@@ -131,11 +131,11 @@ class TestEmit:
         work_item: WorkItem = create_random_work_item()
         pipeline_run: PipelineRun = PipelineRun(pipeline_name=pipeline_name, artifact_sink=artifact_sink_testing, logger=run_logger)
         expected_exception: ExpectedException = ExpectedException(
-            InvalidDeclarationError, message_phrases=["discriminator", "letters, digits, dot, underscore and hyphen"]
+            InvalidDeclarationException, message_phrases=["discriminator", "letters, digits, dot, underscore and hyphen"]
         )
 
         # Act
-        with pytest.raises(InvalidDeclarationError) as actual_raised:
+        with pytest.raises(InvalidDeclarationException) as actual_raised:
             async with pipeline_run, pipeline_run.open_work_item(work_item) as work_item_scope, work_item_scope.step(METADATA_AUDIT) as step_scope:
                 await step_scope.emit(PAGE_EVIDENCE, b"{}", discriminator=unsafe_discriminator)
 
@@ -148,10 +148,10 @@ class TestArtifactKindDeclaration:
     @pytest.mark.parametrize("vague_key", ["result", "output", "data", "artifact", "payload", "results"])
     def test_ArtifactKind_WhenTheKeyIsVague_ThenItIsRefused(self, vague_key: str) -> None:
         # Arrange - a kind named for its role can be found again; "result" cannot
-        expected_exception: ExpectedException = ExpectedException(InvalidDeclarationError, message_phrases=[vague_key, "too vague"])
+        expected_exception: ExpectedException = ExpectedException(InvalidDeclarationException, message_phrases=[vague_key, "too vague"])
 
         # Act
-        with pytest.raises(InvalidDeclarationError) as actual_raised:
+        with pytest.raises(InvalidDeclarationException) as actual_raised:
             ArtifactKind(vague_key, "json", "application/json")
 
         # Assert
@@ -160,10 +160,10 @@ class TestArtifactKindDeclaration:
     @pytest.mark.parametrize("malformed_key", ["Page Evidence", "page-evidence", "_page", "page__evidence"])
     def test_ArtifactKind_WhenTheKeyIsMalformed_ThenItIsRefused(self, malformed_key: str) -> None:
         # Arrange
-        expected_exception: ExpectedException = ExpectedException(InvalidDeclarationError, message_phrases=[malformed_key, "lowercase words"])
+        expected_exception: ExpectedException = ExpectedException(InvalidDeclarationException, message_phrases=[malformed_key, "lowercase words"])
 
         # Act
-        with pytest.raises(InvalidDeclarationError) as actual_raised:
+        with pytest.raises(InvalidDeclarationException) as actual_raised:
             ArtifactKind(malformed_key, "json", "application/json")
 
         # Assert
@@ -172,10 +172,10 @@ class TestArtifactKindDeclaration:
     def test_ArtifactKind_WhenTheExtensionCarriesADot_ThenItIsRefused(self) -> None:
         # Arrange
         dotted_extension: str = ".json"
-        expected_exception: ExpectedException = ExpectedException(InvalidDeclarationError, message_phrases=[dotted_extension, "without a dot"])
+        expected_exception: ExpectedException = ExpectedException(InvalidDeclarationException, message_phrases=[dotted_extension, "without a dot"])
 
         # Act
-        with pytest.raises(InvalidDeclarationError) as actual_raised:
+        with pytest.raises(InvalidDeclarationException) as actual_raised:
             ArtifactKind("page_evidence", dotted_extension, "application/json")
 
         # Assert
@@ -238,10 +238,10 @@ class TestWorkItemIdentity:
 
     def test_WorkItem_WhenTheFileStemIsBlank_ThenItIsRefused(self) -> None:
         # Arrange
-        expected_exception: ExpectedException = ExpectedException(InvalidDeclarationError, message_phrases=["file_stem must not be blank"])
+        expected_exception: ExpectedException = ExpectedException(InvalidDeclarationException, message_phrases=["file_stem must not be blank"])
 
         # Act
-        with pytest.raises(InvalidDeclarationError) as actual_raised:
+        with pytest.raises(InvalidDeclarationException) as actual_raised:
             WorkItem(secrets.token_hex(_RANDOM_SUFFIX_BYTES), create_random_model_identifier(), file_stem=" ")
 
         # Assert
@@ -251,11 +251,11 @@ class TestWorkItemIdentity:
         # Arrange
         model_identifier: str = create_random_model_identifier()
         expected_exception: ExpectedException = ExpectedException(
-            InvalidDeclarationError, message_phrases=["must be safe to use as a file name", repr(safe_path_component(model_identifier))]
+            InvalidDeclarationException, message_phrases=["must be safe to use as a file name", repr(safe_path_component(model_identifier))]
         )
 
         # Act
-        with pytest.raises(InvalidDeclarationError) as actual_raised:
+        with pytest.raises(InvalidDeclarationException) as actual_raised:
             WorkItem(secrets.token_hex(_RANDOM_SUFFIX_BYTES), model_identifier, file_stem=model_identifier)
 
         # Assert
@@ -280,10 +280,10 @@ class TestWorkItemIdentity:
 
     def test_WorkItem_WhenTheIdentityIsBlank_ThenItIsRefused(self) -> None:
         # Arrange
-        expected_exception: ExpectedException = ExpectedException(InvalidDeclarationError, message_phrases=["id must not be blank"])
+        expected_exception: ExpectedException = ExpectedException(InvalidDeclarationException, message_phrases=["id must not be blank"])
 
         # Act
-        with pytest.raises(InvalidDeclarationError) as actual_raised:
+        with pytest.raises(InvalidDeclarationException) as actual_raised:
             WorkItem(" ", f"{create_random_document_stem()}.pdf")
 
         # Assert
@@ -291,10 +291,10 @@ class TestWorkItemIdentity:
 
     def test_WorkItem_WhenTheNameIsBlank_ThenItIsRefused(self) -> None:
         # Arrange
-        expected_exception: ExpectedException = ExpectedException(InvalidDeclarationError, message_phrases=["name must not be blank"])
+        expected_exception: ExpectedException = ExpectedException(InvalidDeclarationException, message_phrases=["name must not be blank"])
 
         # Act
-        with pytest.raises(InvalidDeclarationError) as actual_raised:
+        with pytest.raises(InvalidDeclarationException) as actual_raised:
             WorkItem(secrets.token_hex(_RANDOM_SUFFIX_BYTES), " ")
 
         # Assert
@@ -346,10 +346,10 @@ class TestRunLevelArtifact:
     ) -> None:
         # Arrange - the run writes its own manifest when it closes, so a second one would overwrite or be overwritten
         pipeline_run: PipelineRun = PipelineRun(pipeline_name=create_random_pipeline_name(), artifact_sink=artifact_sink_testing, logger=run_logger)
-        expected_exception: ExpectedException = ExpectedException(InvalidDeclarationError, message_phrases=["is reserved for the manifest"])
+        expected_exception: ExpectedException = ExpectedException(InvalidDeclarationException, message_phrases=["is reserved for the manifest"])
 
         # Act
-        with pytest.raises(InvalidDeclarationError) as actual_raised:
+        with pytest.raises(InvalidDeclarationException) as actual_raised:
             async with pipeline_run:
                 await pipeline_run.emit(MANIFEST_KIND, b"{}")
 

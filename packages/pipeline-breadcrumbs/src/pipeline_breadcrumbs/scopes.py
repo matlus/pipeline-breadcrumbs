@@ -18,7 +18,7 @@ from uuid import uuid4
 
 from pipeline_breadcrumbs.artifacts import ArtifactKind, StepArtifact
 from pipeline_breadcrumbs.attributes import AttributeBag, AttributeKey, AttributeValue, EventKind, detail_key
-from pipeline_breadcrumbs.errors import (
+from pipeline_breadcrumbs.exceptions import (
     FAILED_AT_STEP_KEY_KEY,
     FAILED_AT_STEP_NAME_KEY,
     FAILED_AT_STEP_NUMBER_KEY,
@@ -27,7 +27,7 @@ from pipeline_breadcrumbs.errors import (
 from pipeline_breadcrumbs.formatting import format_byte_size, format_elapsed
 from pipeline_breadcrumbs.manifest import ArtifactRecord, ArtifactRecorded, StepClosed, StepRecord, StepRecorded, WorkItemClosed, WorkItemOpened
 from pipeline_breadcrumbs.run_context import RunContext
-from pipeline_breadcrumbs.scope_errors import WorkItemNotOpenError
+from pipeline_breadcrumbs.scope_exceptions import WorkItemNotOpenException
 from pipeline_breadcrumbs.steps import Step, StepPath, StepStatus
 from pipeline_breadcrumbs.work_items import WorkItem
 
@@ -106,7 +106,7 @@ class WorkItemScope:
     def require_open(self, step: Step) -> None:
         """Refuse `step` when this work item is not open: every step on it, at any depth, runs inside its `async with` block."""
         if not self._is_open:
-            raise WorkItemNotOpenError(
+            raise WorkItemNotOpenException(
                 f"Work item '{self._work_item.name}' is not open; enter it with `async with` before using step {step.step_number} {step.name}"
             )
 

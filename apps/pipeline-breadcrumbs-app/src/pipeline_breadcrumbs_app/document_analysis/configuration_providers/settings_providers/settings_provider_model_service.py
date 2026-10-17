@@ -5,7 +5,7 @@ import httpx
 
 from pipeline_breadcrumbs_app.document_analysis.configuration_providers.settings_models.model_service_settings import ModelServiceSettings
 from pipeline_breadcrumbs_app.document_analysis.configuration_providers.settings_providers.settings_source import SettingsSource
-from pipeline_breadcrumbs_app.document_analysis.exceptions import ConfigurationSettingError
+from pipeline_breadcrumbs_app.document_analysis.exceptions import ConfigurationSettingException
 
 MODEL_SERVICE_BASE_URL_VARIABLE_NAME: Final[str] = "DOCUMENT_ANALYSIS_MODEL_SERVICE_BASE_URL"
 
@@ -32,7 +32,7 @@ class SettingsProviderModelService:
     def _read_base_url(self) -> str:
         base_url_raw_value: str | None = self._settings_source.read_setting_value(MODEL_SERVICE_BASE_URL_VARIABLE_NAME)
         if not SettingsSource.is_setting_present(base_url_raw_value):
-            raise ConfigurationSettingError(
+            raise ConfigurationSettingException(
                 f"Setting '{MODEL_SERVICE_BASE_URL_VARIABLE_NAME}' needs the model service base URL but was {_describe_absence(base_url_raw_value)}",
                 MODEL_SERVICE_BASE_URL_VARIABLE_NAME,
             )
@@ -42,7 +42,7 @@ class SettingsProviderModelService:
         try:
             parsed_base_url: httpx.URL = httpx.URL(base_url)
         except httpx.InvalidURL as invalid_url_error:
-            raise ConfigurationSettingError(not_absolute_message, MODEL_SERVICE_BASE_URL_VARIABLE_NAME) from invalid_url_error
+            raise ConfigurationSettingException(not_absolute_message, MODEL_SERVICE_BASE_URL_VARIABLE_NAME) from invalid_url_error
         if parsed_base_url.scheme not in ("http", "https") or not parsed_base_url.host:
-            raise ConfigurationSettingError(not_absolute_message, MODEL_SERVICE_BASE_URL_VARIABLE_NAME)
+            raise ConfigurationSettingException(not_absolute_message, MODEL_SERVICE_BASE_URL_VARIABLE_NAME)
         return base_url

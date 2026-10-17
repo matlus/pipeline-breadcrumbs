@@ -35,12 +35,14 @@ from typing import Final
 from uuid import uuid4
 
 from pipeline_breadcrumbs import (
-    ArtifactSinkError,
+    ArtifactSinkException,
     ArtifactSinkProtocol,
     AttributeKey,
     BreadcrumbFormatter,
     Clock,
     ContextualExceptionProtocol,
+    PipelineBreadcrumbsBusinessBaseException,
+    PipelineBreadcrumbsTechnicalBaseException,
     PipelineRun,
     StepStatus,
     TimeDisplay,
@@ -50,8 +52,7 @@ from pipeline_breadcrumbs import (
 from pipeline_breadcrumbs.hosting import ArtifactSinkFileSystem, attached_run_log, create_run_folder
 from pipeline_breadcrumbs_app.artifact_sink_blob_storage import ArtifactSinkBlobStorage
 from pipeline_breadcrumbs_app.document_analysis.document_analysis_manager import DocumentAnalysisManager
-from pipeline_breadcrumbs_app.document_analysis.exceptions import DocumentAnalysisBusinessError, DocumentAnalysisTechnicalError
-from pipeline_breadcrumbs_app.sample_documents import SAMPLE_DOCUMENTS, InvalidFailPageError, with_malformed_reply
+from pipeline_breadcrumbs_app.sample_documents import SAMPLE_DOCUMENTS, InvalidFailPageException, with_malformed_reply
 from pipeline_breadcrumbs_app.service_locator_demo import ServiceLocatorDemo
 from pipeline_breadcrumbs_app.telemetry import TELEMETRY_FILENAME, attached_exception_telemetry
 
@@ -189,25 +190,25 @@ async def _analyze_work_items(
             work_item_scope: WorkItemScope
             async with pipeline_run.open_work_item(WorkItem(id=str(uuid4()), name=document_name)) as work_item_scope:
                 await document_analysis_manager.analyze_document(work_item_scope, pages)
-        except DocumentAnalysisBusinessError as document_analysis_business_error:
+        except PipelineBreadcrumbsBusinessBaseException as business_exception:
             # The document itself cannot be analyzed; whoever sent it can correct it. A warning names every problem,
             # and no traceback, because nothing in the system failed.
             logger.warning(
                 "Work item '%s' was rejected:\n%s",
                 document_name,
-                _describe_contextual_data(document_analysis_business_error),
+                _describe_contextual_data(business_exception),
                 extra=_identify_work_item(pipeline_run, document_name),
             )
             failed_document_names.append(document_name)
-        except (DocumentAnalysisTechnicalError, ArtifactSinkError) as technical_error:
+        except PipelineBreadcrumbsTechnicalBaseException as technical_exception:
             # The application's single outer boundary for failures an operator owns: the exception is logged once,
             # with its traceback and every named fact it carries. Steps only leave breadcrumbs. The run and work
             # item identity travel as attributes, so telemetry can tell which run this was.
             logger.error(
                 "Work item '%s' failed:\n%s",
                 document_name,
-                _describe_contextual_data(technical_error),
-                exc_info=technical_error,
+                _describe_contextual_data(technical_exception),
+                exc_info=technical_exception,
                 extra=_identify_work_item(pipeline_run, document_name),
             )
             failed_document_names.append(document_name)
@@ -226,14 +227,14 @@ async def _analyze_documents(
     try:
         async with pipeline_run:
             failed_document_names = await _analyze_work_items(pipeline_run, pages_by_document_name, document_analysis_manager, logger)
-    except ArtifactSinkError as artifact_sink_error:
+    except ArtifactSinkException as artifact_sink_exception:
         # Every work item's failure was handled above, so a sink failure that reaches here is the manifest the run
         # persists as it closes. It belongs to the same outer boundary: logged once, and the whole run counts as failed.
         logger.error(
             "Run '%s' failed:\n%s",
             pipeline_run.run_id,
-            _describe_contextual_data(artifact_sink_error),
-            exc_info=artifact_sink_error,
+            _describe_contextual_data(artifact_sink_exception),
+            exc_info=artifact_sink_exception,
             extra=_identify_run(pipeline_run),
         )
         return AnalysisOutcome(StepStatus.FAILED, failed_document_names)
@@ -307,8 +308,8 @@ def main() -> None:
                 )
             ),
         )
-    except InvalidFailPageError as invalid_fail_page_error:
-        argument_parser.error(str(invalid_fail_page_error))
+    except InvalidFailPageException as invalid_fail_page_exception:
+        argument_parser.error(str(invalid_fail_page_exception))
     if demo_result.run_status is StepStatus.FAILED:
         sys.exit(1)
 

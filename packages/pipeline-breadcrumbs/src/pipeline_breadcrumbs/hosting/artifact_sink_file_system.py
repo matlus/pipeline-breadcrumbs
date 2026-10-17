@@ -6,13 +6,17 @@ from pathlib import Path
 from typing import final, override
 
 from pipeline_breadcrumbs.artifacts import Artifact, ArtifactSinkProtocol, RunArtifact
+from pipeline_breadcrumbs.exceptions import PipelineBreadcrumbsBusinessBaseException
 from pipeline_breadcrumbs.path_components import safe_path_component
 from pipeline_breadcrumbs.work_items import WorkItem
 
 
 @final
-class WorkItemFolderCollisionError(ValueError):
-    """Two work items in one run map to the same folder, so the second would overwrite the first's artifacts."""
+class WorkItemFolderCollisionException(PipelineBreadcrumbsBusinessBaseException):
+    """Two work items in one run map to the same folder, so the second would overwrite the first's artifacts.
+
+    The work items' names come from the caller, who can correct them, so it is a business exception.
+    """
 
 
 @final
@@ -58,7 +62,7 @@ class ArtifactSinkFileSystem(ArtifactSinkProtocol):
         # store decomposed names), so the claim key is the NFC form, case-folded for case-insensitive folders.
         owner_id: str = self._work_item_id_by_folder.setdefault(unicodedata.normalize("NFC", folder_name).casefold(), work_item.id)
         if owner_id != work_item.id:
-            raise WorkItemFolderCollisionError(
+            raise WorkItemFolderCollisionException(
                 f"Work items '{owner_id}' and '{work_item.id}' both map to the folder '{folder_name}'; work item names must be unique within a run"
             )
         return folder_name

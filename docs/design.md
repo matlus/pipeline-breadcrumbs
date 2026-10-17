@@ -186,15 +186,15 @@ shortened here; the real log prints all of it.
 ```
 ================================================================================
 STEP 2: Detect Sections - FAILED (10:54:35)
-Failed after 0.615s: ModelResponseParseError: The model response for page 2 could not be parsed: JSONDecodeError: Expecting value: line 1 column 1 (char 0)
+Failed after 0.615s: ModelResponseParseException: The model response for page 2 could not be parsed: JSONDecodeError: Expecting value: line 1 column 1 (char 0)
 ================================================================================
 
 ================================================================================
 WORK ITEM: Contract 12.pdf - FAILED (10:54:35)
-Failed after 1.043s: ModelResponseParseError: The model response for page 2 could not be parsed: JSONDecodeError: Expecting value: line 1 column 1 (char 0)
+Failed after 1.043s: ModelResponseParseException: The model response for page 2 could not be parsed: JSONDecodeError: Expecting value: line 1 column 1 (char 0)
 ================================================================================
 Work item 'Contract 12.pdf' failed:
-  ExceptionType: ModelResponseParseError
+  ExceptionType: ModelResponseParseException
   Message: The model response for page 2 could not be parsed: JSONDecodeError: Expecting value: line 1 column 1 (char 0)
   PageNumber: 2
   FailedAtStepNumber: 2
@@ -235,13 +235,13 @@ failure. From the failed run, abridged:
     {
       "work_item_name": "Contract 12.pdf",
       "work_item_status": "FAILED",
-      "failure": "ModelResponseParseError: The model response for page 2 could not be parsed: ...",
+      "failure": "ModelResponseParseException: The model response for page 2 could not be parsed: ...",
       "step_records": [
         { "step_path": "1", "step_key": "load_pages", "step_name": "Load Pages",
           "step_status": "COMPLETE", "elapsed_seconds": 0.427, "outcome": "Loaded 4 page(s)" },
         { "step_path": "2", "step_key": "detect_sections", "step_name": "Detect Sections",
           "step_status": "FAILED", "elapsed_seconds": 0.615,
-          "failure": "ModelResponseParseError: The model response for page 2 could not be parsed: ..." }
+          "failure": "ModelResponseParseException: The model response for page 2 could not be parsed: ..." }
       ],
       "artifact_records": [
         { "filename": "Contract 12_step_01_page_text_page_0000.txt", "artifact_type": "page_text",
@@ -262,7 +262,7 @@ with the exception's own `ExceptionType` and `Message` entries and the timestamp
 ```json
 {
   "severity": "ERROR",
-  "exception_type": "ModelResponseParseError",
+  "exception_type": "ModelResponseParseException",
   "custom_dimensions": {
     "pipeline.name": "document-analysis-demo",
     "pipeline.run.id": "20261005_104822_97eb942c",
@@ -530,7 +530,7 @@ FINAL_REPORT = ArtifactKind("final_report", "md", "text/markdown", role=Artifact
   to `PipelineRun`. The library ships `ArtifactSinkFileSystem` and, for tests, `ArtifactSinkTesting`. The
   demo adds `ArtifactSinkBlobStorage`, a stand-in for a storage container. The choice of a class over
   a callback is explained in [the next section](#decision-how-the-host-receives-artifacts).
-- A sink that raises is translated to `ArtifactSinkError`, which carries the artifact's identity, so a
+- A sink that raises is translated to `ArtifactSinkException`, which carries the artifact's identity, so a
   storage outage does not read as a failure in the pipeline's logic. An implementation raises whatever
   error is natural for its destination, and the run does the wrapping.
 - Steps never know where a file lands. They call `emit`, and the host owns the sink.
@@ -568,7 +568,7 @@ Consequences:
 - The method name is `persist`, and the parameter on `PipelineRun` is `artifact_sink`, so the call site
   names its type.
 - A sink raises whatever error is natural for its destination. `RunContext.persist` wraps it in
-  `ArtifactSinkError`, which keeps the artifact's identity.
+  `ArtifactSinkException`, which keeps the artifact's identity.
 
 ### Run folder and manifest
 
@@ -620,10 +620,28 @@ needs them.
 
 ### Exceptions
 
-The library does not own an exception hierarchy. It works with the one in the Meridian Python codebase
-(business and technical branches, severity, action and contextual data) through structure alone: any
-exception that has `contextual_data_by_name` and `add_contextual_data` takes part. The protocol is
-`ContextualExceptionProtocol`. The library's own exception, `ArtifactSinkError`, has the same shape.
+This repository is a sample that people copy whole, or class by class, into their own system, and
+copied code becomes part of that system. A system owns exactly one exception hierarchy, named for it
+(matlus/PWI-Code-Review#647), so the sample has one: `PipelineBreadcrumbsBaseException`, with a business
+branch, `PipelineBreadcrumbsBusinessBaseException`, for failures the caller can correct, and a technical
+branch, `PipelineBreadcrumbsTechnicalBaseException`, for failures the system's owner must correct. It lives
+in the package, the shared core, and the demo application derives its own exceptions from the same two
+branches instead of keeping a second root. The bases are abstract; only `@final` concrete exceptions,
+named `...Exception`, are raised (matlus/PWI-Code-Review#278).
+
+| Exception | Branch | Why |
+|---|---|---|
+| `InvalidDeclarationException` | business | The caller supplied the refused value, often from its data (a document's name). |
+| `WorkItemFolderCollisionException` | business | Two work items the caller named alike map to one folder. |
+| `ArtifactSinkException` | technical | The host's storage failed; the request was fine. |
+| `WorkItemNotOpenException` | technical | The pipeline's code used a scope in the wrong order; no data causes it. |
+| `DocumentValidationException`, `InvalidFailPageException` | business | The document, or the page asked to fail, is wrong. |
+| `ModelResponseParseException`, `ConfigurationSettingException`, `ModelService...Exception` | technical | The model, the configuration or the model service failed. |
+
+A failing step stamps its identity onto any exception shaped like `ContextualExceptionProtocol`
+(`contextual_data_by_name` and `add_contextual_data`). The sample's root satisfies it, and the protocol
+stays, so `scopes.py` copied on its own into a system with its own root of the same shape, such as the
+Meridian application base exception, stamps that system's exceptions without an edit.
 
 The policy is the one the Meridian reference uses. Steps leave breadcrumbs and do not log tracebacks.
 The exception is logged once, at the application's outer boundary, with its traceback and every named
@@ -664,12 +682,12 @@ diagnosed by whether its file exists.
 | Role is information | Hosts can apply retention rules, such as colder storage for interim files. | Using the role as a filter |
 | Emit before validate | A malformed reply is the evidence you most need. | Emitting only after a successful parse |
 | The sink is a class that implements `ArtifactSinkProtocol` | A sink keeps state across calls, and a class owns it. The pipeline never knows whether files go to disk or blob storage. See [the decision](#decision-how-the-host-receives-artifacts). | A bare async callback; a storage path or client inside the steps |
-| Sink failures become `ArtifactSinkError` | A storage outage should not read as a bug in the pipeline's logic. | Letting the raw exception escape |
+| Sink failures become `ArtifactSinkException` | A storage outage should not read as a bug in the pipeline's logic. | Letting the raw exception escape |
 | One folder per run, timestamp in the name | A repeat run never overwrites an earlier one. | A fixed output folder, cleaned by hand |
 | The manifest is built from immutable events | No record is edited after it is made. A retry or a per-page step keeps every opening. | Mutable records edited in place, which let a reopened id erase the first attempt |
 | Failure context is added to the exception | The failing step's identity travels with the exception to the place it is logged. | Logging at every step, which repeats the traceback |
 | The exception is logged once, at the outer boundary | One traceback, with all its facts. | Log and rethrow at each level |
-| Exceptions take part by shape | The library works with any hierarchy that offers contextual data. | A base exception class owned by the library |
+| One exception hierarchy, with the step stamping by shape | Copied code joins its system's one hierarchy; `scopes.py` still stamps any exception that offers contextual data. | Exceptions straight from builtins, which skip the business and technical classification |
 | Async only | Pipelines of consequence await model calls, and production persistence is network I/O. | A synchronous twin; one of the projects the pattern evolved through was synchronous and would wrap the library |
 | Per-page work gathers every result, then raises the first failure in page order | Every raw reply is on disk when the step fails. | A task group, which cancels siblings and wraps the error in an exception group |
 | Host helpers are separate from the core | The core knows no paths. | Filesystem code inside the scopes |
@@ -695,7 +713,7 @@ diagnosed by whether its file exists.
   its own record.
 - **A hostile model reply must still be one error.** A reply with a number thousands of digits long, or
   nesting deeper than the parser allows, raised a different exception than a malformed reply did. All of
-  them end as `ModelResponseParseError`, with the page.
+  them end as `ModelResponseParseException`, with the page.
 
 ### Revisions after the first PWI review
 
@@ -716,8 +734,8 @@ Findings left open on purpose, because removing them would cost clarity more tha
 - Scopes, `PipelineRun`, `RunRecorder` and `ArtifactSinkFileSystem` still hold lifecycle state: a start
   time, a step's outcome, an append-only event list, the folder registry. A context manager cannot be
   stateless.
-- `ArtifactSinkError` and `DocumentAnalysisError` accumulate contextual data as they propagate, the way
-  the Meridian exception base does.
+- `PipelineBreadcrumbsBaseException` accumulates contextual data as it propagates, the way the Meridian
+  exception base does.
 - `StepScope` keeps its run context instead of receiving the artifact sink on every `emit`.
 
 Open: each emitted artifact logs one informational line. That is right for a local trail, and the

@@ -2,14 +2,14 @@
 
 A model reply is input from outside the system. Syntactically valid JSON of the wrong shape
 (a list, `null`, a title that is not text, a confidence of "high" or `NaN`) is as unusable as
-malformed JSON, so every case ends the same way: a `ModelResponseParseError` carrying the page.
+malformed JSON, so every case ends the same way: a `ModelResponseParseException` carrying the page.
 """
 
 import json
 from collections.abc import Mapping
 from typing import Any, cast, final
 
-from pipeline_breadcrumbs_app.document_analysis.exceptions import ModelResponseParseError
+from pipeline_breadcrumbs_app.document_analysis.exceptions import ModelResponseParseException
 
 
 def _describe_rejected_value(rejected_value: object) -> str:
@@ -40,21 +40,23 @@ class ModelReply:
         except (ValueError, RecursionError) as error:
             # JSONDecodeError is a ValueError. So is the error for an absurdly long digit string, and a deeply
             # nested reply raises RecursionError; to the system all three are the same unusable reply.
-            raise ModelResponseParseError(page_number, f"{type(error).__name__}: {error}") from error
+            raise ModelResponseParseException(page_number, f"{type(error).__name__}: {error}") from error
         if not isinstance(parsed_reply, dict):
-            raise ModelResponseParseError(page_number, f"expected a JSON object, got {type(parsed_reply).__name__}")
+            raise ModelResponseParseException(page_number, f"expected a JSON object, got {type(parsed_reply).__name__}")
         return ModelReply(page_number, cast("dict[str, Any]", parsed_reply))
 
     def require_text(self, field_name: str) -> str:
         field_value: Any = self._reply_value_by_field_name.get(field_name)
         if not isinstance(field_value, str) or not field_value.strip():
-            raise ModelResponseParseError(self._page_number, f"'{field_name}' must be non-empty text, got {_describe_rejected_value(field_value)}")
+            raise ModelResponseParseException(
+                self._page_number, f"'{field_name}' must be non-empty text, got {_describe_rejected_value(field_value)}"
+            )
         return field_value.strip()
 
     def require_confidence(self, field_name: str = "confidence") -> float:
         field_value: Any = self._reply_value_by_field_name.get(field_name)
         if isinstance(field_value, bool) or not isinstance(field_value, int | float) or not 0.0 <= field_value <= 1.0:
-            raise ModelResponseParseError(
+            raise ModelResponseParseException(
                 self._page_number, f"'{field_name}' must be a number from 0 to 1, got {_describe_rejected_value(field_value)}"
             )
         return float(field_value)

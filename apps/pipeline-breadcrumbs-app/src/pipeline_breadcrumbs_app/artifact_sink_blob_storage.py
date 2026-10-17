@@ -13,7 +13,7 @@ from pathlib import Path
 from typing import final, override
 
 from pipeline_breadcrumbs import Artifact, ArtifactSinkProtocol, RunArtifact, WorkItem
-from pipeline_breadcrumbs.hosting import WorkItemFolderCollisionError, safe_path_component
+from pipeline_breadcrumbs.hosting import WorkItemFolderCollisionException, safe_path_component
 
 
 @final
@@ -56,7 +56,7 @@ class ArtifactSinkBlobStorage(ArtifactSinkProtocol):
         # store decomposed names), so the claim key is the NFC form, case-folded for case-insensitive folders.
         owner_id: str = self._work_item_id_by_prefix.setdefault(unicodedata.normalize("NFC", blob_prefix).casefold(), work_item.id)
         if owner_id != work_item.id:
-            raise WorkItemFolderCollisionError(
+            raise WorkItemFolderCollisionException(
                 f"Work items '{owner_id}' and '{work_item.id}' both map to the blob prefix '{blob_prefix}'; "
                 "work item names must be unique within a run"
             )

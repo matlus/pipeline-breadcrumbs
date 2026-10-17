@@ -34,7 +34,7 @@ from breadcrumbs_acceptance_support.clock_testing import ClockTesting
 from pipeline_breadcrumbs import StepStatus, TimeDisplay
 from pipeline_breadcrumbs.testing import RecordCapture
 from pipeline_breadcrumbs_app.main import BLOB_CONTAINER_NAME, PIPELINE_NAME, DemoResult, DemoRunRequest, HostProfile, run_demo
-from pipeline_breadcrumbs_app.sample_documents import InvalidFailPageError
+from pipeline_breadcrumbs_app.sample_documents import InvalidFailPageException
 from pipeline_breadcrumbs_app.telemetry import ExceptionTelemetry
 
 NO_DELAY_SECONDS: Final[float] = 0.0
@@ -205,7 +205,9 @@ class TestDemoRunFailures:
             run_status="FAILED",
             failed_work_item_names=[CONTRACT_DOCUMENT_NAME],
             work_item_outcomes=[
-                ExpectedWorkItemOutcome(CONTRACT_DOCUMENT_NAME, "FAILED", {"1": "COMPLETE", "2": "FAILED"}, failure_phrase="ModelResponseParseError"),
+                ExpectedWorkItemOutcome(
+                    CONTRACT_DOCUMENT_NAME, "FAILED", {"1": "COMPLETE", "2": "FAILED"}, failure_phrase="ModelResponseParseException"
+                ),
                 # The failure did not stop the batch.
                 ExpectedWorkItemOutcome(LEASE_DOCUMENT_NAME, "COMPLETE", {**EVERY_STEP_COMPLETE, "3.3": "SKIPPED"}),
             ],
@@ -262,7 +264,7 @@ class TestDemoRunFailures:
             failed_work_item_names=[],
             exception_telemetry=ExpectedExceptionTelemetry(
                 severity="ERROR",
-                exception_type="ArtifactSinkError",
+                exception_type="ArtifactSinkException",
                 stack_trace_phrase="Traceback",
                 custom_dimensions={"pipeline.name": PIPELINE_NAME, "ArtifactKind": "manifest", "ArtifactFilename": MANIFEST_FILENAME},
             ),
@@ -291,12 +293,12 @@ class TestDemoRunFailures:
         # Arrange
         missing_page_number: int = 99
         expected_exception: ExpectedException = ExpectedException(
-            InvalidFailPageError, message_phrases=[f"Page {missing_page_number} does not exist", CONTRACT_DOCUMENT_NAME]
+            InvalidFailPageException, message_phrases=[f"Page {missing_page_number} does not exist", CONTRACT_DOCUMENT_NAME]
         )
         expected_entry_names: set[str] = set()
 
         # Act
-        with pytest.raises(InvalidFailPageError) as actual_raised:
+        with pytest.raises(InvalidFailPageException) as actual_raised:
             await run_demo(DemoRunRequest(tmp_path, fail_page=missing_page_number, time_display=TimeDisplay.NONE, pace_seconds=NO_DELAY_SECONDS))
 
         # Assert
@@ -397,7 +399,7 @@ class TestDemoHosts:
         # Arrange - one exception, even though the failing step and its work item each logged a warning breadcrumb
         expected_exception_telemetry: ExpectedExceptionTelemetry = ExpectedExceptionTelemetry(
             severity="ERROR",
-            exception_type="ModelResponseParseError",
+            exception_type="ModelResponseParseException",
             stack_trace_phrase="Traceback",
             custom_dimensions={
                 "pipeline.name": PIPELINE_NAME,

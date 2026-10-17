@@ -7,11 +7,11 @@ from types import TracebackType
 from typing import Final, Self, final
 from uuid import uuid4
 
+from pipeline_breadcrumbs.artifact_sink_exceptions import ArtifactSinkException
 from pipeline_breadcrumbs.artifacts import ArtifactKind, ArtifactSinkProtocol, RunArtifact
 from pipeline_breadcrumbs.attributes import AttributeBag, AttributeKey, AttributeValue, EventKind
 from pipeline_breadcrumbs.clock import Clock
-from pipeline_breadcrumbs.declaration_errors import InvalidDeclarationError
-from pipeline_breadcrumbs.errors import ArtifactSinkError
+from pipeline_breadcrumbs.declaration_exceptions import InvalidDeclarationException
 from pipeline_breadcrumbs.formatting import format_byte_size, format_elapsed
 from pipeline_breadcrumbs.manifest import MANIFEST_KIND, RunArtifactRecord, RunRecorder
 from pipeline_breadcrumbs.run_context import RunContext
@@ -142,10 +142,10 @@ class PipelineRun:
         run_artifact: RunArtifact = self._build_manifest_artifact(elapsed_seconds, run_status)
         try:
             await self._run_context.persist(run_artifact)
-        except ArtifactSinkError as artifact_sink_error:
+        except ArtifactSinkException as artifact_sink_exception:
             if original_error is None:
                 raise
-            self._report_lost_manifest(run_artifact, original_error, artifact_sink_error)
+            self._report_lost_manifest(run_artifact, original_error, artifact_sink_exception)
             return
         self._log_run_artifact_emitted(run_artifact)
 
@@ -167,37 +167,37 @@ class PipelineRun:
         }
         self._run_context.log(logging.INFO, f"Emitted artifact: {run_artifact.filename} ({format_byte_size(byte_count)})", attributes)
 
-    def _report_lost_manifest(self, run_artifact: RunArtifact, original_error: BaseException, artifact_sink_error: ArtifactSinkError) -> None:
+    def _report_lost_manifest(self, run_artifact: RunArtifact, original_error: BaseException, artifact_sink_exception: ArtifactSinkException) -> None:
         # The run is already failing; losing the manifest must not hide why. The run's own failure stays the one that escapes,
         # carrying the lost manifest and the sink's underlying failure as a note, so the host reports both, once, at its boundary.
         # The sink's failure is logged here with its traceback, because nothing else will raise it.
-        lost_manifest_description: str = f"The run manifest could not be persisted either: {_describe_sink_failure(artifact_sink_error)}"
+        lost_manifest_description: str = f"The run manifest could not be persisted either: {_describe_sink_failure(artifact_sink_exception)}"
         original_error.add_note(lost_manifest_description)
-        sink_failure: BaseException = artifact_sink_error.__cause__ or artifact_sink_error
+        sink_failure: BaseException = artifact_sink_exception.__cause__ or artifact_sink_exception
         attributes: AttributeBag = {
             AttributeKey.ARTIFACT_KIND: run_artifact.artifact_type,
             AttributeKey.ARTIFACT_FILENAME: run_artifact.filename,
             AttributeKey.FAILURE_TYPE: type(sink_failure).__name__,
             AttributeKey.FAILURE_MESSAGE: str(sink_failure),
         }
-        self._run_context.log(logging.ERROR, lost_manifest_description, attributes, exception=artifact_sink_error)
+        self._run_context.log(logging.ERROR, lost_manifest_description, attributes, exception=artifact_sink_exception)
 
 
 def _require_run_artifact_kind(artifact_kind: ArtifactKind) -> None:
     if artifact_kind.key == MANIFEST_KIND.key:
-        raise InvalidDeclarationError(f"The artifact kind '{MANIFEST_KIND.key}' is reserved for the manifest the run writes when it closes")
+        raise InvalidDeclarationException(f"The artifact kind '{MANIFEST_KIND.key}' is reserved for the manifest the run writes when it closes")
 
 
 def _require_pipeline_name(pipeline_name: str) -> None:
     if not pipeline_name.strip():
-        raise InvalidDeclarationError("A pipeline run needs a name, such as 'invoice-field-extraction'")
+        raise InvalidDeclarationException("A pipeline run needs a name, such as 'invoice-field-extraction'")
 
 
 def _validate_caller_attributes(attributes: Mapping[str, AttributeValue] | None) -> AttributeBag:
     caller_attributes: AttributeBag = dict(attributes or {})
     reserved_names: frozenset[str] = _RESERVED_RECORD_ATTRIBUTES.intersection(caller_attributes)
     if reserved_names:
-        raise InvalidDeclarationError(f"Run attributes may not use reserved logging attribute names: {sorted(reserved_names)}")
+        raise InvalidDeclarationException(f"Run attributes may not use reserved logging attribute names: {sorted(reserved_names)}")
     return caller_attributes
 
 
@@ -205,9 +205,9 @@ def _create_run_id(run_clock: Clock) -> str:
     return f"{run_clock.now():%Y%m%d_%H%M%S}_{uuid4().hex[:8]}"
 
 
-def _describe_sink_failure(artifact_sink_error: ArtifactSinkError) -> str:
+def _describe_sink_failure(artifact_sink_exception: ArtifactSinkException) -> str:
     """The sink's own message, followed by the failure underneath it, which is what explains the outage."""
-    sink_failure: BaseException | None = artifact_sink_error.__cause__
+    sink_failure: BaseException | None = artifact_sink_exception.__cause__
     if sink_failure is None:
-        return str(artifact_sink_error)
-    return f"{artifact_sink_error} because of {type(sink_failure).__name__}: {sink_failure}"
+        return str(artifact_sink_exception)
+    return f"{artifact_sink_exception} because of {type(sink_failure).__name__}: {sink_failure}"
