@@ -13,7 +13,7 @@ from breadcrumbs_acceptance_support.data_generators import create_random_work_it
 from breadcrumbs_acceptance_support.exceptions_testing import DiagnosticTestingError
 
 from pipeline_breadcrumbs import Artifact, ArtifactKind, ArtifactSinkError, AttributeKey, EventKind, PipelineRun, Step, WorkItem
-from pipeline_breadcrumbs.testing import ArtifactRecorder, RecordCapture
+from pipeline_breadcrumbs.testing import ArtifactSinkTesting, RecordCapture
 
 METADATA_AUDIT: Final[Step] = Step(2, "Metadata Audit")
 CLASSIFICATION: Final[Step] = Step(3, "Classification")
@@ -34,12 +34,12 @@ async def _run_a_step_that_fails_after(clock_testing: ClockTesting, pipeline_run
 @pytest.mark.acceptance
 class TestFailingStep:
     async def test_PipelineRun_WhenAStepRaises_ThenItLogsAFailedBreadcrumbAndTheExceptionEscapes(
-        self, clock_testing: ClockTesting, artifact_recorder: ArtifactRecorder, run_logger: logging.Logger, record_capture: RecordCapture
+        self, clock_testing: ClockTesting, artifact_sink_testing: ArtifactSinkTesting, run_logger: logging.Logger, record_capture: RecordCapture
     ) -> None:
         # Arrange
         work_item: WorkItem = create_random_work_item()
         expected_elapsed_seconds: float = 1.25
-        pipeline_run: PipelineRun = PipelineRun(pipeline_name="demo", sink=artifact_recorder, logger=run_logger, clock=clock_testing.clock)
+        pipeline_run: PipelineRun = PipelineRun(pipeline_name="demo", sink=artifact_sink_testing, logger=run_logger, clock=clock_testing.clock)
 
         # Act
         with pytest.raises(ValueError, match="bad json"):
@@ -58,12 +58,12 @@ class TestFailingStep:
         assert actual_failed_record.exc_info is None
 
     async def test_PipelineRun_WhenADiagnosticExceptionEscapesANestedStep_ThenTheInnermostStepIsStampedOntoItOnce(
-        self, artifact_recorder: ArtifactRecorder, run_logger: logging.Logger
+        self, artifact_sink_testing: ArtifactSinkTesting, run_logger: logging.Logger
     ) -> None:
         # Arrange
         work_item: WorkItem = create_random_work_item()
         diagnostic_testing_error: DiagnosticTestingError = DiagnosticTestingError("response was not json")
-        pipeline_run: PipelineRun = PipelineRun(pipeline_name="demo", sink=artifact_recorder, logger=run_logger)
+        pipeline_run: PipelineRun = PipelineRun(pipeline_name="demo", sink=artifact_sink_testing, logger=run_logger)
 
         # Act
         with pytest.raises(DiagnosticTestingError):
@@ -82,11 +82,11 @@ class TestFailingStep:
         )
 
     async def test_PipelineRun_WhenTheExceptionCarriesNoDiagnosticData_ThenItPassesThroughUntouched(
-        self, artifact_recorder: ArtifactRecorder, run_logger: logging.Logger
+        self, artifact_sink_testing: ArtifactSinkTesting, run_logger: logging.Logger
     ) -> None:
         # Arrange
         work_item: WorkItem = create_random_work_item()
-        pipeline_run: PipelineRun = PipelineRun(pipeline_name="demo", sink=artifact_recorder, logger=run_logger)
+        pipeline_run: PipelineRun = PipelineRun(pipeline_name="demo", sink=artifact_sink_testing, logger=run_logger)
 
         # Act / Assert
         with pytest.raises(KeyError):
@@ -149,12 +149,12 @@ class TestFailingSink:
 @pytest.mark.acceptance
 class TestRunSummary:
     async def test_PipelineRun_WhenOneWorkItemFails_ThenTheRunSummaryCountsItAndIsLoggedAsAWarning(
-        self, artifact_recorder: ArtifactRecorder, run_logger: logging.Logger, record_capture: RecordCapture
+        self, artifact_sink_testing: ArtifactSinkTesting, run_logger: logging.Logger, record_capture: RecordCapture
     ) -> None:
         # Arrange
         healthy_work_item: WorkItem = create_random_work_item()
         failing_work_item: WorkItem = create_random_work_item()
-        pipeline_run: PipelineRun = PipelineRun(pipeline_name="demo", sink=artifact_recorder, logger=run_logger)
+        pipeline_run: PipelineRun = PipelineRun(pipeline_name="demo", sink=artifact_sink_testing, logger=run_logger)
 
         # Act
         async with pipeline_run:

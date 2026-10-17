@@ -17,7 +17,7 @@ from breadcrumbs_acceptance_support.clock_testing import ClockTesting
 from breadcrumbs_acceptance_support.data_generators import create_random_work_item
 
 from pipeline_breadcrumbs import MANIFEST_KIND, Artifact, ArtifactKind, ArtifactRole, PipelineRun, Step, WorkItem, WorkItemScope
-from pipeline_breadcrumbs.testing import ArtifactRecorder
+from pipeline_breadcrumbs.testing import ArtifactSinkTesting
 
 LOAD_PAGES: Final[Step] = Step(1, "Load Pages")
 DETECT_SECTIONS: Final[Step] = Step(2, "Detect Sections")
@@ -28,12 +28,13 @@ FINAL_REPORT: Final[ArtifactKind] = ArtifactKind("final_report", "md", "text/mar
 @pytest.mark.acceptance
 class TestRunManifest:
     async def test_PipelineRun_WhenARunCompletes_ThenTheManifestIsTheLastArtifactAndIndexesTheRun(
-        self, clock_testing: ClockTesting, artifact_recorder: ArtifactRecorder, run_logger: logging.Logger
+        self, clock_testing: ClockTesting, artifact_sink_testing: ArtifactSinkTesting, run_logger: logging.Logger
     ) -> None:
         # Arrange
         work_item: WorkItem = create_random_work_item()
         pipeline_name: str = "demo"
-        pipeline_run: PipelineRun = PipelineRun(pipeline_name=pipeline_name, sink=artifact_recorder, logger=run_logger, clock=clock_testing.clock)
+        expected_step_outcome: str = "Loaded 1 page"
+        pipeline_run: PipelineRun = PipelineRun(pipeline_name=pipeline_name, sink=artifact_sink_testing, logger=run_logger, clock=clock_testing.clock)
         expected_manifest: ExpectedManifest = ExpectedManifest(
             pipeline_name=pipeline_name,
             run_id=pipeline_run.run_id,
@@ -44,7 +45,7 @@ class TestRunManifest:
                     name=work_item.name,
                     work_item_status="COMPLETE",
                     step_records=[
-                        ExpectedManifestStep("1", "COMPLETE", elapsed_seconds=1.5, outcome="Loaded 1 page"),
+                        ExpectedManifestStep("1", "COMPLETE", elapsed_seconds=1.5, outcome=expected_step_outcome),
                         ExpectedManifestStep("2", "COMPLETE", elapsed_seconds=2.0),
                     ],
                     artifact_filenames=[f"{work_item.stem}_step_01_page_text_page_0000.txt"],
@@ -58,22 +59,22 @@ class TestRunManifest:
                 async with work_item_scope.step(LOAD_PAGES) as step_scope:
                     clock_testing.advance(1.5)
                     await step_scope.emit(PAGE_TEXT, b"hello", discriminator="page_0000")
-                    step_scope.outcome("Loaded 1 page")
+                    step_scope.outcome(expected_step_outcome)
                 async with work_item_scope.step(DETECT_SECTIONS):
                     clock_testing.advance(2.0)
             clock_testing.advance(0.5)
 
         # Assert
-        actual_last_artifact: Artifact = artifact_recorder.artifacts[-1]
+        actual_last_artifact: Artifact = artifact_sink_testing.artifacts[-1]
         assert actual_last_artifact.artifact_kind == MANIFEST_KIND
         AsserterManifest.assert_manifest(expected_manifest, actual_last_artifact)
 
     async def test_PipelineRun_WhenAStepEmitsAnOutputArtifact_ThenTheManifestMarksItAsAnOutput(
-        self, artifact_recorder: ArtifactRecorder, run_logger: logging.Logger
+        self, artifact_sink_testing: ArtifactSinkTesting, run_logger: logging.Logger
     ) -> None:
         # Arrange
         work_item: WorkItem = create_random_work_item()
-        pipeline_run: PipelineRun = PipelineRun(pipeline_name="demo", sink=artifact_recorder, logger=run_logger)
+        pipeline_run: PipelineRun = PipelineRun(pipeline_name="demo", sink=artifact_sink_testing, logger=run_logger)
 
         # Act
         async with pipeline_run, pipeline_run.open_work_item(work_item) as work_item_scope, work_item_scope.step(LOAD_PAGES) as step_scope:
@@ -81,19 +82,20 @@ class TestRunManifest:
 
         # Assert
         actual_output_roles: list[ArtifactRole] = [
-            actual_artifact.artifact_kind.role for actual_artifact in artifact_recorder.artifacts if actual_artifact.artifact_kind == FINAL_REPORT
+            actual_artifact.artifact_kind.role for actual_artifact in artifact_sink_testing.artifacts if actual_artifact.artifact_kind == FINAL_REPORT
         ]
         assert actual_output_roles == [ArtifactRole.OUTPUT]
-        assert b'"role": "output"' in artifact_recorder.artifacts[-1].content
+        assert b'"role": "output"' in artifact_sink_testing.artifacts[-1].content
 
     async def test_PipelineRun_WhenOneWorkItemFails_ThenTheManifestMarksTheRunFailedAndRecordsWhy(
-        self, clock_testing: ClockTesting, artifact_recorder: ArtifactRecorder, run_logger: logging.Logger
+        self, clock_testing: ClockTesting, artifact_sink_testing: ArtifactSinkTesting, run_logger: logging.Logger
     ) -> None:
         # Arrange
         failing_work_item: WorkItem = create_random_work_item()
         healthy_work_item: WorkItem = create_random_work_item()
+        failure_message: str = "unreadable"
         pipeline_name: str = "demo"
-        pipeline_run: PipelineRun = PipelineRun(pipeline_name=pipeline_name, sink=artifact_recorder, logger=run_logger, clock=clock_testing.clock)
+        pipeline_run: PipelineRun = PipelineRun(pipeline_name=pipeline_name, sink=artifact_sink_testing, logger=run_logger, clock=clock_testing.clock)
         expected_manifest: ExpectedManifest = ExpectedManifest(
             pipeline_name=pipeline_name,
             run_id=pipeline_run.run_id,
@@ -116,22 +118,22 @@ class TestRunManifest:
 
         # Act
         async with pipeline_run:
-            with pytest.raises(ValueError, match="unreadable"):
+            with pytest.raises(ValueError, match=failure_message):
                 async with pipeline_run.open_work_item(failing_work_item) as work_item_scope, work_item_scope.step(LOAD_PAGES):
-                    raise ValueError("unreadable")
+                    raise ValueError(failure_message)
             async with pipeline_run.open_work_item(healthy_work_item) as work_item_scope, work_item_scope.step(LOAD_PAGES):
                 pass
 
         # Assert
-        AsserterManifest.assert_manifest(expected_manifest, artifact_recorder.artifacts[-1])
+        AsserterManifest.assert_manifest(expected_manifest, artifact_sink_testing.artifacts[-1])
 
     async def test_PipelineRun_WhenAChildStepIsSkipped_ThenTheManifestListsItWithItsReason(
-        self, clock_testing: ClockTesting, artifact_recorder: ArtifactRecorder, run_logger: logging.Logger
+        self, clock_testing: ClockTesting, artifact_sink_testing: ArtifactSinkTesting, run_logger: logging.Logger
     ) -> None:
         # Arrange
         work_item: WorkItem = create_random_work_item()
         pipeline_name: str = "demo"
-        pipeline_run: PipelineRun = PipelineRun(pipeline_name=pipeline_name, sink=artifact_recorder, logger=run_logger, clock=clock_testing.clock)
+        pipeline_run: PipelineRun = PipelineRun(pipeline_name=pipeline_name, sink=artifact_sink_testing, logger=run_logger, clock=clock_testing.clock)
         expected_manifest: ExpectedManifest = ExpectedManifest(
             pipeline_name=pipeline_name,
             run_id=pipeline_run.run_id,
@@ -154,15 +156,16 @@ class TestRunManifest:
             step_scope.skipped(DETECT_SECTIONS, "nothing to reconcile")
 
         # Assert
-        AsserterManifest.assert_manifest(expected_manifest, artifact_recorder.artifacts[-1])
+        AsserterManifest.assert_manifest(expected_manifest, artifact_sink_testing.artifacts[-1])
 
     async def test_PipelineRun_WhenTheSameWorkItemIsOpenedAgainAfterAFailure_ThenBothAttemptsStayInTheManifestAndTheRunIsFailed(
-        self, clock_testing: ClockTesting, artifact_recorder: ArtifactRecorder, run_logger: logging.Logger
+        self, clock_testing: ClockTesting, artifact_sink_testing: ArtifactSinkTesting, run_logger: logging.Logger
     ) -> None:
         # Arrange - a retry reopens the same work item; the failure of the first attempt must not be erased by the success of the second
         work_item: WorkItem = create_random_work_item()
+        first_attempt_failure_message: str = "first attempt"
         pipeline_name: str = "demo"
-        pipeline_run: PipelineRun = PipelineRun(pipeline_name=pipeline_name, sink=artifact_recorder, logger=run_logger, clock=clock_testing.clock)
+        pipeline_run: PipelineRun = PipelineRun(pipeline_name=pipeline_name, sink=artifact_sink_testing, logger=run_logger, clock=clock_testing.clock)
         expected_manifest: ExpectedManifest = ExpectedManifest(
             pipeline_name=pipeline_name,
             run_id=pipeline_run.run_id,
@@ -185,22 +188,22 @@ class TestRunManifest:
 
         # Act
         async with pipeline_run:
-            with pytest.raises(ValueError, match="first attempt"):
+            with pytest.raises(ValueError, match=first_attempt_failure_message):
                 async with pipeline_run.open_work_item(work_item) as work_item_scope, work_item_scope.step(LOAD_PAGES):
-                    raise ValueError("first attempt")
+                    raise ValueError(first_attempt_failure_message)
             async with pipeline_run.open_work_item(work_item) as work_item_scope, work_item_scope.step(LOAD_PAGES):
                 pass
 
         # Assert
-        AsserterManifest.assert_manifest(expected_manifest, artifact_recorder.artifacts[-1])
+        AsserterManifest.assert_manifest(expected_manifest, artifact_sink_testing.artifacts[-1])
 
     async def test_PipelineRun_WhenTheSameStepIsOpenedOncePerPage_ThenTheManifestKeepsEveryOpening(
-        self, clock_testing: ClockTesting, artifact_recorder: ArtifactRecorder, run_logger: logging.Logger
+        self, clock_testing: ClockTesting, artifact_sink_testing: ArtifactSinkTesting, run_logger: logging.Logger
     ) -> None:
         # Arrange
         work_item: WorkItem = create_random_work_item()
         pipeline_name: str = "demo"
-        pipeline_run: PipelineRun = PipelineRun(pipeline_name=pipeline_name, sink=artifact_recorder, logger=run_logger, clock=clock_testing.clock)
+        pipeline_run: PipelineRun = PipelineRun(pipeline_name=pipeline_name, sink=artifact_sink_testing, logger=run_logger, clock=clock_testing.clock)
         expected_manifest: ExpectedManifest = ExpectedManifest(
             pipeline_name=pipeline_name,
             run_id=pipeline_run.run_id,
@@ -232,15 +235,15 @@ class TestRunManifest:
                     await open_the_step_once_per_page(work_item_scope)
 
         # Assert
-        AsserterManifest.assert_manifest(expected_manifest, artifact_recorder.artifacts[-1])
+        AsserterManifest.assert_manifest(expected_manifest, artifact_sink_testing.artifacts[-1])
 
     async def test_PipelineRun_WhenTheSameStepRunsOnSeveralPagesAtOnce_ThenEachOpeningClosesItsOwnRecord(
-        self, clock_testing: ClockTesting, artifact_recorder: ArtifactRecorder, run_logger: logging.Logger
+        self, clock_testing: ClockTesting, artifact_sink_testing: ArtifactSinkTesting, run_logger: logging.Logger
     ) -> None:
         # Arrange
         work_item: WorkItem = create_random_work_item()
         pipeline_name: str = "demo"
-        pipeline_run: PipelineRun = PipelineRun(pipeline_name=pipeline_name, sink=artifact_recorder, logger=run_logger, clock=clock_testing.clock)
+        pipeline_run: PipelineRun = PipelineRun(pipeline_name=pipeline_name, sink=artifact_sink_testing, logger=run_logger, clock=clock_testing.clock)
         expected_manifest: ExpectedManifest = ExpectedManifest(
             pipeline_name=pipeline_name,
             run_id=pipeline_run.run_id,
@@ -257,6 +260,7 @@ class TestRunManifest:
 
         async def load_one_page(work_item_scope: WorkItemScope, page_number: int) -> None:
             async with work_item_scope.step(LOAD_PAGES) as step_scope:
+                # Yield to the event loop so the other openings start before this one closes; without it they would run one after another.
                 await asyncio.sleep(0)
                 step_scope.outcome(f"page {page_number}")
 
@@ -265,4 +269,4 @@ class TestRunManifest:
             await asyncio.gather(*(load_one_page(work_item_scope, page_number) for page_number in range(3)))
 
         # Assert
-        AsserterManifest.assert_manifest(expected_manifest, artifact_recorder.artifacts[-1])
+        AsserterManifest.assert_manifest(expected_manifest, artifact_sink_testing.artifacts[-1])

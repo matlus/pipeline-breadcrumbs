@@ -1,6 +1,6 @@
 """Helpers for acceptance tests of a pipeline built on the library.
 
-Use `ArtifactRecorder` as the sink and `RecordCapture` as a logging handler, run the
+Use `ArtifactSinkTesting` as the sink and `RecordCapture` as a logging handler, run the
 pipeline, then assert which steps ran and which artifacts and attributes they produced.
 Artifact presence is itself a signal: a remediation step that emits only when triggered is
 diagnosed by whether its file exists.
@@ -14,7 +14,7 @@ from pipeline_breadcrumbs.attributes import AttributeKey
 
 
 @final
-class ArtifactRecorder:
+class ArtifactSinkTesting:
     """An in-memory artifact sink. Pass the instance wherever a sink is expected."""
 
     def __init__(self) -> None:
@@ -40,7 +40,7 @@ class ArtifactRecorder:
 
 @final
 class RecordCapture(logging.Handler):
-    """A logging handler that keeps every record, for assertions on messages and attributes."""
+    """Keeps every record at every level; it never filters, so a test sees exactly what the run logged."""
 
     def __init__(self) -> None:
         super().__init__(level=logging.DEBUG)
@@ -59,5 +59,8 @@ class RecordCapture(logging.Handler):
         ]
 
     @staticmethod
-    def attribute(record: logging.LogRecord, key: str) -> object:
-        return record.__dict__.get(key)
+    def attribute(record: logging.LogRecord, attribute_key: str) -> object:
+        """The attribute's value. Raises `KeyError` when the record lacks it, so a misspelled key cannot pass as `None`."""
+        if attribute_key not in record.__dict__:
+            raise KeyError(f"Log record '{record.getMessage()}' has no attribute '{attribute_key}'")
+        return record.__dict__[attribute_key]

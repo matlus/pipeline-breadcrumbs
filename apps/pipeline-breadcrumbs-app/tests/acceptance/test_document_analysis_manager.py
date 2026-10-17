@@ -19,7 +19,7 @@ from breadcrumbs_acceptance_support.asserters.asserter_step_boundaries import As
 from breadcrumbs_acceptance_support.data_generators import create_random_work_item
 
 from pipeline_breadcrumbs import ArtifactRole, AttributeKey, EventKind, StepArtifact, WorkItem
-from pipeline_breadcrumbs.testing import ArtifactRecorder, RecordCapture
+from pipeline_breadcrumbs.testing import ArtifactSinkTesting, RecordCapture
 from pipeline_breadcrumbs_app.document_analysis.artifact_kinds import ANALYSIS_REPORT
 from pipeline_breadcrumbs_app.document_analysis.document_analysis_manager import DocumentAnalysisManager
 from pipeline_breadcrumbs_app.document_analysis.exceptions import DocumentValidationError, ModelResponseParseError
@@ -41,7 +41,7 @@ def _create_confident_gateway(section_titles: list[str], category: str = "Legal"
 @pytest.mark.acceptance
 class TestAnalyzeDocumentExpectedPaths:
     async def test_analyze_document_WhenEveryScoreIsConfident_ThenTheSectionsAreReturnedAndTheReconcileStepIsSkipped(
-        self, artifact_recorder: ArtifactRecorder, run_logger: logging.Logger, record_capture: RecordCapture
+        self, artifact_sink_testing: ArtifactSinkTesting, run_logger: logging.Logger, record_capture: RecordCapture
     ) -> None:
         # Arrange
         work_item: WorkItem = create_random_work_item()
@@ -54,7 +54,7 @@ class TestAnalyzeDocumentExpectedPaths:
 
         # Act
         actual_document_analysis: DocumentAnalysis = await analyze_in_a_run(
-            document_analysis_manager, create_page_texts(section_titles), work_item, artifact_recorder, run_logger
+            document_analysis_manager, create_page_texts(section_titles), work_item, artifact_sink_testing, run_logger
         )
 
         # Assert
@@ -80,30 +80,31 @@ class TestAnalyzeDocumentExpectedPaths:
         assert model_gateway_testing.asked_reconcile_titles == []
 
     async def test_analyze_document_WhenOneScoreIsDoubtful_ThenTheModelIsAskedAgainAndTheReconciledScoreIsReturned(
-        self, artifact_recorder: ArtifactRecorder, run_logger: logging.Logger, record_capture: RecordCapture
+        self, artifact_sink_testing: ArtifactSinkTesting, run_logger: logging.Logger, record_capture: RecordCapture
     ) -> None:
         # Arrange
         work_item: WorkItem = create_random_work_item()
         section_titles: list[str] = create_random_section_titles(3)
         doubtful_title: str = section_titles[1]
         confident_category: str = "Legal"
+        reconciled_category: str = "Commercial"
         model_gateway_testing: ModelGatewayTesting = ModelGatewayTesting(
             detection_reply_by_page_number={page_number: create_title_reply(title) for page_number, title in enumerate(section_titles)},
             score_reply_by_title={
                 title: create_score_reply(confident_category, DOUBTFUL if title == doubtful_title else CONFIDENT) for title in section_titles
             },
-            reconcile_reply_by_title={doubtful_title: create_score_reply("Commercial", RECONCILED)},
+            reconcile_reply_by_title={doubtful_title: create_score_reply(reconciled_category, RECONCILED)},
         )
         document_analysis_manager: DocumentAnalysisManager = create_document_analysis_manager(model_gateway_testing)
         expected_scored_sections: list[ScoredSection] = [
             ScoredSection(0, section_titles[0], confident_category, CONFIDENT),
-            ScoredSection(1, doubtful_title, "Commercial", RECONCILED),
+            ScoredSection(1, doubtful_title, reconciled_category, RECONCILED),
             ScoredSection(2, section_titles[2], confident_category, CONFIDENT),
         ]
 
         # Act
         actual_document_analysis: DocumentAnalysis = await analyze_in_a_run(
-            document_analysis_manager, create_page_texts(section_titles), work_item, artifact_recorder, run_logger
+            document_analysis_manager, create_page_texts(section_titles), work_item, artifact_sink_testing, run_logger
         )
 
         # Assert
@@ -117,7 +118,7 @@ class TestAnalyzeDocumentExpectedPaths:
         assert "3.3 SKIPPED" not in actual_step_boundaries
 
     async def test_analyze_document_WhenTheDocumentIsAnalyzed_ThenEveryArtifactLandsInPipelineOrderWithTheReportAsTheOnlyOutput(
-        self, artifact_recorder: ArtifactRecorder, run_logger: logging.Logger
+        self, artifact_sink_testing: ArtifactSinkTesting, run_logger: logging.Logger
     ) -> None:
         # Arrange
         work_item: WorkItem = create_random_work_item()
@@ -140,20 +141,20 @@ class TestAnalyzeDocumentExpectedPaths:
         ]
 
         # Act
-        await analyze_in_a_run(document_analysis_manager, create_page_texts(section_titles), work_item, artifact_recorder, run_logger)
+        await analyze_in_a_run(document_analysis_manager, create_page_texts(section_titles), work_item, artifact_sink_testing, run_logger)
 
         # Assert
-        AsserterArtifacts.assert_exactly_these_filenames_in_order(expected_filenames, artifact_recorder.artifacts)
+        AsserterArtifacts.assert_exactly_these_filenames_in_order(expected_filenames, artifact_sink_testing.artifacts)
         actual_output_filenames: list[str] = [
             actual_artifact.filename
-            for actual_artifact in artifact_recorder.artifacts
+            for actual_artifact in artifact_sink_testing.artifacts
             if isinstance(actual_artifact, StepArtifact) and actual_artifact.artifact_kind.role is ArtifactRole.OUTPUT
         ]
         assert actual_output_filenames == [expected_analysis_report_filename]
-        assert artifact_recorder.of_kind(ANALYSIS_REPORT)[0].content.decode("utf-8").startswith("# Section analysis")
+        assert artifact_sink_testing.of_kind(ANALYSIS_REPORT)[0].content.decode("utf-8").startswith("# Section analysis")
 
     async def test_analyze_document_WhenManyPagesAreDetected_ThenTheModelIsNeverAskedAboutMoreThanTheConcurrencyLimitAtOnce(
-        self, artifact_recorder: ArtifactRecorder, run_logger: logging.Logger
+        self, artifact_sink_testing: ArtifactSinkTesting, run_logger: logging.Logger
     ) -> None:
         # Arrange
         work_item: WorkItem = create_random_work_item()
@@ -162,7 +163,7 @@ class TestAnalyzeDocumentExpectedPaths:
         document_analysis_manager: DocumentAnalysisManager = create_document_analysis_manager(model_gateway_testing)
 
         # Act
-        await analyze_in_a_run(document_analysis_manager, create_page_texts(section_titles), work_item, artifact_recorder, run_logger)
+        await analyze_in_a_run(document_analysis_manager, create_page_texts(section_titles), work_item, artifact_sink_testing, run_logger)
 
         # Assert - every page was asked about, and never more than the limit at the same moment
         assert sorted(model_gateway_testing.asked_detection_page_numbers) == list(range(len(section_titles)))
@@ -172,7 +173,7 @@ class TestAnalyzeDocumentExpectedPaths:
 @pytest.mark.acceptance
 class TestAnalyzeDocumentValidation:
     async def test_analyze_document_WhenTheDocumentHasNoPages_ThenItIsRefusedBeforeAnyWorkOrArtifact(
-        self, artifact_recorder: ArtifactRecorder, run_logger: logging.Logger, record_capture: RecordCapture
+        self, artifact_sink_testing: ArtifactSinkTesting, run_logger: logging.Logger, record_capture: RecordCapture
     ) -> None:
         # Arrange
         work_item: WorkItem = create_random_work_item()
@@ -181,7 +182,7 @@ class TestAnalyzeDocumentValidation:
 
         # Act
         with pytest.raises(DocumentValidationError, match="the document has no pages") as actual_raised:
-            await analyze_in_a_run(document_analysis_manager, [], work_item, artifact_recorder, run_logger)
+            await analyze_in_a_run(document_analysis_manager, [], work_item, artifact_sink_testing, run_logger)
 
         # Assert - nothing ran: no step, no model question, only the run's own manifest
         AsserterContextualData.assert_exactly_these_entries(
@@ -194,10 +195,10 @@ class TestAnalyzeDocumentValidation:
         )
         assert record_capture.boundaries(EventKind.STEP) == []
         assert model_gateway_testing.total_question_count() == 0
-        AsserterArtifacts.assert_exactly_these_filenames_in_order(["manifest.json"], artifact_recorder.artifacts)
+        AsserterArtifacts.assert_exactly_these_filenames_in_order(["manifest.json"], artifact_sink_testing.artifacts)
 
     async def test_analyze_document_WhenSeveralPagesAreBlank_ThenOneErrorNamesAllOfThem(
-        self, artifact_recorder: ArtifactRecorder, run_logger: logging.Logger
+        self, artifact_sink_testing: ArtifactSinkTesting, run_logger: logging.Logger
     ) -> None:
         # Arrange
         work_item: WorkItem = create_random_work_item()
@@ -207,7 +208,7 @@ class TestAnalyzeDocumentValidation:
 
         # Act
         with pytest.raises(DocumentValidationError) as actual_raised:
-            await analyze_in_a_run(document_analysis_manager, pages_with_blanks, work_item, artifact_recorder, run_logger)
+            await analyze_in_a_run(document_analysis_manager, pages_with_blanks, work_item, artifact_sink_testing, run_logger)
 
         # Assert
         assert "pages [0, 2] are blank" in str(actual_raised.value)
@@ -216,7 +217,7 @@ class TestAnalyzeDocumentValidation:
 @pytest.mark.acceptance
 class TestAnalyzeDocumentModelReplyFailures:
     async def test_analyze_document_WhenAPageGetsAMalformedReply_ThenTheStepFailsButEveryRawReplyIsAlreadyOnDisk(
-        self, artifact_recorder: ArtifactRecorder, run_logger: logging.Logger, record_capture: RecordCapture
+        self, artifact_sink_testing: ArtifactSinkTesting, run_logger: logging.Logger, record_capture: RecordCapture
     ) -> None:
         # Arrange
         work_item: WorkItem = create_random_work_item()
@@ -234,7 +235,7 @@ class TestAnalyzeDocumentModelReplyFailures:
 
         # Act
         with pytest.raises(ModelResponseParseError) as actual_raised:
-            await analyze_in_a_run(document_analysis_manager, create_page_texts(section_titles), work_item, artifact_recorder, run_logger)
+            await analyze_in_a_run(document_analysis_manager, create_page_texts(section_titles), work_item, artifact_sink_testing, run_logger)
 
         # Assert - the failing step is named on the exception, and the evidence precedes the failure
         AsserterContextualData.assert_exactly_these_entries(
@@ -249,7 +250,7 @@ class TestAnalyzeDocumentModelReplyFailures:
             actual_raised.value,
         )
         actual_raw_reply_filenames: list[str] = [
-            actual_filename for actual_filename in artifact_recorder.filenames() if "raw_detection_response" in actual_filename
+            actual_filename for actual_filename in artifact_sink_testing.filenames() if "raw_detection_response" in actual_filename
         ]
         assert sorted(actual_raw_reply_filenames) == [f"{work_item.stem}_step_02_raw_detection_response_page_{page:04d}.txt" for page in range(4)]
         assert model_gateway_testing.asked_score_titles == []
@@ -264,7 +265,7 @@ class TestAnalyzeDocumentModelReplyFailures:
         )
 
     async def test_analyze_document_WhenSeveralPagesGetMalformedReplies_ThenTheFirstFailureInPageOrderEndsTheStep(
-        self, artifact_recorder: ArtifactRecorder, run_logger: logging.Logger
+        self, artifact_sink_testing: ArtifactSinkTesting, run_logger: logging.Logger
     ) -> None:
         # Arrange
         work_item: WorkItem = create_random_work_item()
@@ -282,7 +283,7 @@ class TestAnalyzeDocumentModelReplyFailures:
 
         # Act
         with pytest.raises(ModelResponseParseError) as actual_raised:
-            await analyze_in_a_run(document_analysis_manager, create_page_texts(section_titles), work_item, artifact_recorder, run_logger)
+            await analyze_in_a_run(document_analysis_manager, create_page_texts(section_titles), work_item, artifact_sink_testing, run_logger)
 
         # Assert
         assert actual_raised.value.contextual_data_by_name["PageNumber"] == 1
@@ -297,7 +298,7 @@ class TestAnalyzeDocumentModelReplyFailures:
         ],
     )
     async def test_analyze_document_WhenTheReplyIsHostileToTheJsonParser_ThenItIsStillRefusedAsAnUnusableReply(
-        self, hostile_reply: str, expected_reason_start: str, artifact_recorder: ArtifactRecorder, run_logger: logging.Logger
+        self, hostile_reply: str, expected_reason_start: str, artifact_sink_testing: ArtifactSinkTesting, run_logger: logging.Logger
     ) -> None:
         # Arrange
         work_item: WorkItem = create_random_work_item()
@@ -310,7 +311,7 @@ class TestAnalyzeDocumentModelReplyFailures:
 
         # Act
         with pytest.raises(ModelResponseParseError) as actual_raised:
-            await analyze_in_a_run(document_analysis_manager, create_page_texts(section_titles), work_item, artifact_recorder, run_logger)
+            await analyze_in_a_run(document_analysis_manager, create_page_texts(section_titles), work_item, artifact_sink_testing, run_logger)
 
         # Assert - the reply ended as the one exception the system promises, naming the page
         expected_message_start: str = f"The model response for page 0 could not be parsed: {expected_reason_start}"
@@ -340,7 +341,7 @@ class TestAnalyzeDocumentModelReplyFailures:
         ],
     )
     async def test_analyze_document_WhenTheScoreReplyHasTheWrongShape_ThenItIsRefusedWithAReasonThatNamesTheRejectedValue(
-        self, score_reply: str, expected_reason: str, artifact_recorder: ArtifactRecorder, run_logger: logging.Logger
+        self, score_reply: str, expected_reason: str, artifact_sink_testing: ArtifactSinkTesting, run_logger: logging.Logger
     ) -> None:
         # Arrange
         work_item: WorkItem = create_random_work_item()
@@ -353,7 +354,7 @@ class TestAnalyzeDocumentModelReplyFailures:
 
         # Act
         with pytest.raises(ModelResponseParseError) as actual_raised:
-            await analyze_in_a_run(document_analysis_manager, create_page_texts(section_titles), work_item, artifact_recorder, run_logger)
+            await analyze_in_a_run(document_analysis_manager, create_page_texts(section_titles), work_item, artifact_sink_testing, run_logger)
 
         # Assert
         expected_message: str = f"The model response for page 0 could not be parsed: {expected_reason}"

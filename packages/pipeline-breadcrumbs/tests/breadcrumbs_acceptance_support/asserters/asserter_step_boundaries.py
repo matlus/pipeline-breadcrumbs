@@ -47,9 +47,9 @@ class AsserterStepBoundaries:
     def _gather_step_boundaries(actual_log_records: Sequence[logging.LogRecord]) -> list[ExpectedStepBoundary]:
         actual_step_boundaries: list[ExpectedStepBoundary] = []
         for actual_log_record in actual_log_records:
-            if RecordCapture.attribute(actual_log_record, AttributeKey.EVENT) != EventKind.STEP:
+            if actual_log_record.__dict__.get(AttributeKey.EVENT) != EventKind.STEP:
                 continue
-            actual_elapsed_seconds: object = RecordCapture.attribute(actual_log_record, AttributeKey.ELAPSED_SECONDS)
+            actual_elapsed_seconds: object = actual_log_record.__dict__.get(AttributeKey.ELAPSED_SECONDS)
             actual_step_boundaries.append(
                 ExpectedStepBoundary(
                     step_number=str(RecordCapture.attribute(actual_log_record, AttributeKey.STEP_NUMBER)),

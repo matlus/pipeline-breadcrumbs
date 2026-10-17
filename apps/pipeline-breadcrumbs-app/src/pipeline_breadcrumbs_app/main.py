@@ -39,10 +39,10 @@ from pipeline_breadcrumbs import (
     WorkItem,
     WorkItemScope,
 )
-from pipeline_breadcrumbs.hosting import FileSystemArtifactSink, attached_run_log, create_run_folder
+from pipeline_breadcrumbs.hosting import ArtifactSinkFileSystem, attached_run_log, create_run_folder
 from pipeline_breadcrumbs_app.document_analysis.document_analysis_manager import DocumentAnalysisManager
 from pipeline_breadcrumbs_app.document_analysis.exceptions import DocumentAnalysisError
-from pipeline_breadcrumbs_app.document_analysis.gateways.fake_model_gateway import FakeModelGateway
+from pipeline_breadcrumbs_app.document_analysis.gateways.model_gateway_fake import ModelGatewayFake
 from pipeline_breadcrumbs_app.document_analysis.simulated_work import SimulatedWork
 from pipeline_breadcrumbs_app.sample_documents import SAMPLE_DOCUMENTS, InvalidFailPageError, with_malformed_reply
 from pipeline_breadcrumbs_app.telemetry import TELEMETRY_FILENAME, attached_exception_telemetry
@@ -82,7 +82,7 @@ def _create_artifact_callback(run_directory: Path) -> ArtifactSink:
     run could start from. A hosted application would hand the system a blob-storage sink here; this
     one writes to disk so the demo needs nothing else.
     """
-    return FileSystemArtifactSink(run_directory)
+    return ArtifactSinkFileSystem(run_directory)
 
 
 @contextmanager
@@ -166,7 +166,7 @@ async def run_demo(
     )
     run_directory: Path = create_run_folder(output_root, "batch")
     breadcrumb_formatter: BreadcrumbFormatter = BreadcrumbFormatter(time_display=time_display)
-    document_analysis_manager: DocumentAnalysisManager = DocumentAnalysisManager(FakeModelGateway(pace_seconds), SimulatedWork(pace_seconds / 3))
+    document_analysis_manager: DocumentAnalysisManager = DocumentAnalysisManager(ModelGatewayFake(pace_seconds), SimulatedWork(pace_seconds / 3))
     with ExitStack() as logging_scope:
         run_logger: logging.Logger = logger if logger is not None else logging_scope.enter_context(_console_logger(breadcrumb_formatter))
         if host_profile is HostProfile.LOCAL:

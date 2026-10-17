@@ -3,6 +3,7 @@
 # against a real temporary folder.
 
 import logging
+from collections.abc import Iterable
 from pathlib import Path
 from typing import Final
 
@@ -21,7 +22,7 @@ from pipeline_breadcrumbs import (
     TimeDisplay,
     WorkItem,
 )
-from pipeline_breadcrumbs.hosting import FileSystemArtifactSink, attached_run_log, create_run_folder, safe_path_component
+from pipeline_breadcrumbs.hosting import ArtifactSinkFileSystem, attached_run_log, create_run_folder, safe_path_component
 
 PAGE_IMAGE: Final[ArtifactKind] = ArtifactKind("page_image", "png", "image/png")
 PAGE_TEXT: Final[ArtifactKind] = ArtifactKind("page_text", "txt", "text/plain")
@@ -33,7 +34,7 @@ def _list_entry_names(actual_folder: Path) -> list[str]:
     return sorted(actual_entry.name for actual_entry in actual_folder.iterdir())
 
 
-def _all_are_files(actual_folder: Path, actual_entry_names: list[str]) -> bool:
+def _all_are_files(actual_folder: Path, actual_entry_names: Iterable[str]) -> bool:
     return all((actual_folder / actual_entry_name).is_file() for actual_entry_name in actual_entry_names)
 
 
@@ -91,41 +92,41 @@ class TestRunFolder:
 
 
 @pytest.mark.acceptance
-class TestFileSystemArtifactSink:
-    async def test_FileSystemArtifactSink_WhenAStepArtifactArrives_ThenItLandsInItsWorkItemsFolder(self, tmp_path: Path) -> None:
+class TestArtifactSinkFileSystem:
+    async def test_ArtifactSinkFileSystem_WhenAStepArtifactArrives_ThenItLandsInItsWorkItemsFolder(self, tmp_path: Path) -> None:
         # Arrange
         work_item: WorkItem = WorkItem("1", "Contract 12.pdf")
-        file_system_artifact_sink: FileSystemArtifactSink = FileSystemArtifactSink(tmp_path)
+        artifact_sink_file_system: ArtifactSinkFileSystem = ArtifactSinkFileSystem(tmp_path)
 
         # Act
-        await file_system_artifact_sink(StepArtifact(PAGE_TEXT, b"hello", work_item, StepPath((1,)), discriminator="page_0000"))
+        await artifact_sink_file_system(StepArtifact(PAGE_TEXT, b"hello", work_item, StepPath((1,)), discriminator="page_0000"))
 
         # Assert
         actual_written_content: bytes = (tmp_path / "Contract 12" / "Contract 12_step_01_page_text_page_0000.txt").read_bytes()
         assert actual_written_content == b"hello"
 
-    async def test_FileSystemArtifactSink_WhenARunArtifactArrives_ThenItSitsAtTheTop(self, tmp_path: Path) -> None:
+    async def test_ArtifactSinkFileSystem_WhenARunArtifactArrives_ThenItSitsAtTheTop(self, tmp_path: Path) -> None:
         # Arrange
-        file_system_artifact_sink: FileSystemArtifactSink = FileSystemArtifactSink(tmp_path)
+        artifact_sink_file_system: ArtifactSinkFileSystem = ArtifactSinkFileSystem(tmp_path)
 
         # Act
-        await file_system_artifact_sink(RunArtifact(MANIFEST, b"{}"))
+        await artifact_sink_file_system(RunArtifact(MANIFEST, b"{}"))
 
         # Assert
         assert (tmp_path / "manifest.json").read_bytes() == b"{}"
 
-    async def test_FileSystemArtifactSink_WhenOneWorkItemHasManyKindsOfArtifact_ThenTheyShareOneFolderThatListsInStepOrder(
+    async def test_ArtifactSinkFileSystem_WhenOneWorkItemHasManyKindsOfArtifact_ThenTheyShareOneFolderThatListsInStepOrder(
         self, tmp_path: Path
     ) -> None:
         # Arrange - the artifacts arrive in an order unrelated to their steps
         work_item: WorkItem = WorkItem("1", "Contract 12.pdf")
-        file_system_artifact_sink: FileSystemArtifactSink = FileSystemArtifactSink(tmp_path)
+        artifact_sink_file_system: ArtifactSinkFileSystem = ArtifactSinkFileSystem(tmp_path)
 
         # Act
-        await file_system_artifact_sink(StepArtifact(PAGE_TEXT, b"c", work_item, StepPath((10,))))
-        await file_system_artifact_sink(StepArtifact(PAGE_IMAGE, b"a", work_item, StepPath((2, 9))))
-        await file_system_artifact_sink(StepArtifact(PAGE_TEXT, b"b", work_item, StepPath((2, 10))))
-        await file_system_artifact_sink(StepArtifact(PAGE_IMAGE, b"d", work_item, StepPath((1,))))
+        await artifact_sink_file_system(StepArtifact(PAGE_TEXT, b"c", work_item, StepPath((10,))))
+        await artifact_sink_file_system(StepArtifact(PAGE_IMAGE, b"a", work_item, StepPath((2, 9))))
+        await artifact_sink_file_system(StepArtifact(PAGE_TEXT, b"b", work_item, StepPath((2, 10))))
+        await artifact_sink_file_system(StepArtifact(PAGE_IMAGE, b"d", work_item, StepPath((1,))))
 
         # Assert - one folder, no subfolders, and an alphabetical listing is the step order
         actual_work_item_folder: Path = tmp_path / "Contract 12"
@@ -139,23 +140,23 @@ class TestFileSystemArtifactSink:
         assert actual_entry_names == expected_entry_names
         assert _all_are_files(actual_work_item_folder, actual_entry_names)
 
-    async def test_FileSystemArtifactSink_WhenTwoWorkItemsShareAFolderName_ThenTheSecondIsRefusedInsteadOfOverwriting(self, tmp_path: Path) -> None:
+    async def test_ArtifactSinkFileSystem_WhenTwoWorkItemsShareAFolderName_ThenTheSecondIsRefusedInsteadOfOverwriting(self, tmp_path: Path) -> None:
         # Arrange
-        file_system_artifact_sink: FileSystemArtifactSink = FileSystemArtifactSink(tmp_path)
-        await file_system_artifact_sink(StepArtifact(PAGE_TEXT, b"first", WorkItem("1", "Contract 12.pdf"), StepPath((1,))))
+        artifact_sink_file_system: ArtifactSinkFileSystem = ArtifactSinkFileSystem(tmp_path)
+        await artifact_sink_file_system(StepArtifact(PAGE_TEXT, b"first", WorkItem("1", "Contract 12.pdf"), StepPath((1,))))
 
         # Act / Assert
         with pytest.raises(ValueError, match="must be unique within a run"):
-            await file_system_artifact_sink(StepArtifact(PAGE_TEXT, b"second", WorkItem("2", "Contract 12.docx"), StepPath((1,))))
+            await artifact_sink_file_system(StepArtifact(PAGE_TEXT, b"second", WorkItem("2", "Contract 12.docx"), StepPath((1,))))
 
-    async def test_FileSystemArtifactSink_WhenFolderNamesDifferOnlyByCase_ThenTheyCountAsTheSameFolder(self, tmp_path: Path) -> None:
+    async def test_ArtifactSinkFileSystem_WhenFolderNamesDifferOnlyByCase_ThenTheyCountAsTheSameFolder(self, tmp_path: Path) -> None:
         # Arrange - Windows and macOS file systems treat these as one folder
-        file_system_artifact_sink: FileSystemArtifactSink = FileSystemArtifactSink(tmp_path)
-        await file_system_artifact_sink(StepArtifact(PAGE_TEXT, b"first", WorkItem("1", "Contract 12.pdf"), StepPath((1,))))
+        artifact_sink_file_system: ArtifactSinkFileSystem = ArtifactSinkFileSystem(tmp_path)
+        await artifact_sink_file_system(StepArtifact(PAGE_TEXT, b"first", WorkItem("1", "Contract 12.pdf"), StepPath((1,))))
 
         # Act / Assert
         with pytest.raises(ValueError, match="must be unique within a run"):
-            await file_system_artifact_sink(StepArtifact(PAGE_TEXT, b"second", WorkItem("2", "CONTRACT 12.pdf"), StepPath((1,))))
+            await artifact_sink_file_system(StepArtifact(PAGE_TEXT, b"second", WorkItem("2", "CONTRACT 12.pdf"), StepPath((1,))))
 
 
 @pytest.mark.acceptance
@@ -169,7 +170,7 @@ class TestAttachedRunLog:
 
         # Act
         with attached_run_log(run_logger, tmp_path, BreadcrumbFormatter(time_display=TimeDisplay.NONE)):
-            pipeline_run: PipelineRun = PipelineRun(pipeline_name="demo", sink=FileSystemArtifactSink(tmp_path), logger=run_logger)
+            pipeline_run: PipelineRun = PipelineRun(pipeline_name="demo", sink=ArtifactSinkFileSystem(tmp_path), logger=run_logger)
             async with pipeline_run, pipeline_run.open_work_item(work_item) as work_item_scope, work_item_scope.step(LOAD_PAGES) as step_scope:
                 step_scope.info("Loading pages", count=3)
                 await step_scope.emit(PAGE_TEXT, b"hello")

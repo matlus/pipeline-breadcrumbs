@@ -4,14 +4,14 @@ The core library knows no paths. Everything here is composition-root code; a pro
 can replace it with a blob-storage sink and its own logging setup without touching a step.
 """
 
-from pipeline_breadcrumbs.hosting.file_system_artifact_sink import FileSystemArtifactSink
+from pipeline_breadcrumbs.hosting.artifact_sink_file_system import ArtifactSinkFileSystem
 from pipeline_breadcrumbs.hosting.paths import safe_path_component
 from pipeline_breadcrumbs.hosting.run_folder import create_run_folder
 from pipeline_breadcrumbs.hosting.run_log import RUN_LOG_FILENAME, attached_run_log
 
 __all__ = [
     "RUN_LOG_FILENAME",
-    "FileSystemArtifactSink",
+    "ArtifactSinkFileSystem",
     "attached_run_log",
     "create_run_folder",
     "safe_path_component",
