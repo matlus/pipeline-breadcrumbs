@@ -25,7 +25,6 @@ from pipeline_breadcrumbs_app.document_analysis.processors.page_loader import Pa
 from pipeline_breadcrumbs_app.document_analysis.processors.report_assembler import ReportAssembler
 from pipeline_breadcrumbs_app.document_analysis.processors.section_detector import SectionDetector
 from pipeline_breadcrumbs_app.document_analysis.service_locators.service_locator_base import ServiceLocatorBase
-from pipeline_breadcrumbs_app.document_analysis.simulated_work import SimulatedWork
 from pipeline_breadcrumbs_app.document_analysis.validators.document_analysis_validator import DocumentAnalysisValidator
 
 
@@ -39,14 +38,14 @@ class DocumentAnalysisManager:
         model_service_settings: ModelServiceSettings = configuration_provider.get_model_service_settings()
         simulated_work_settings: SimulatedWorkSettings = configuration_provider.get_simulated_work_settings()
 
-        simulated_work: SimulatedWork = SimulatedWork(simulated_work_settings.delay_seconds)
         self._gateway_model_service: GatewayModelService = GatewayModelService(
             model_service_settings.base_url, service_locator.create_http_transport()
         )
-        self._page_loader: PageLoader = PageLoader(simulated_work)
+        self._page_loader: PageLoader = PageLoader(simulated_work_settings.delay_seconds)
         self._section_detector: SectionDetector = SectionDetector(self._gateway_model_service)
-        self._section_classifier: SectionClassifier = SectionClassifier(self._gateway_model_service, simulated_work)
-        self._report_assembler: ReportAssembler = ReportAssembler(simulated_work)
+        self._section_classifier: SectionClassifier = SectionClassifier(self._gateway_model_service, simulated_work_settings.delay_seconds)
+        self._report_assembler: ReportAssembler = ReportAssembler(simulated_work_settings.delay_seconds)
+        self._closed: bool = False
 
     async def __aenter__(self) -> Self:
         return self
@@ -55,7 +54,10 @@ class DocumentAnalysisManager:
         await self.close()
 
     async def close(self) -> None:
+        if self._closed:
+            return
         await self._gateway_model_service.close()
+        self._closed = True
 
     async def analyze_document(self, step_host: StepHostProtocol, pages: list[str]) -> DocumentAnalysis:
         DocumentAnalysisValidator.validate(pages)

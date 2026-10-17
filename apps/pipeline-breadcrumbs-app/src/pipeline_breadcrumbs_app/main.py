@@ -11,7 +11,8 @@ every decision the system must not make:
 * which model service the system talks to: it hands the system `ServiceLocatorDemo`, whose transport
   answers the model service's API in-process, so the demo runs offline with the system's real gateway;
 * what to run and what to do when it fails: it opens the run, opens one work item per document,
-  calls the system, and logs a failure once, at this outer boundary.
+  calls the system, and logs a failure once, at this outer boundary. That includes a run whose
+  manifest cannot be persisted when it closes; the run is then reported as failed.
 
 The system receives the sink and the logger through the scope it is handed, and never sees a path, a
 container or a handler.
@@ -38,8 +39,10 @@ from pipeline_breadcrumbs import (
     ArtifactSinkProtocol,
     AttributeKey,
     BreadcrumbFormatter,
+    Clock,
     ContextualExceptionProtocol,
     PipelineRun,
+    StepStatus,
     TimeDisplay,
     WorkItem,
     WorkItemScope,
@@ -77,15 +80,42 @@ class HostProfile(StrEnum):
 
 
 @dataclass(frozen=True, slots=True)
+class DemoRunRequest:
+    """One demo run: where its folders go, how it reads, where it pretends to be hosted, and how fast it goes.
+
+    `fail_page` gives Contract 12 a malformed model reply on that zero-based page. `pace_seconds` is how
+    long a simulated model call takes; other simulated work takes a third of that. The default makes the log
+    readable as it appears; a test passes 0 to run instantly. `supplied_clock` names the run folder and
+    times the run. Left out, the system clock does; a test supplies a fixed one when it must know the run
+    folder's name before the run starts.
+    """
+
+    output_root: Path
+    fail_page: int | None = None
+    time_display: TimeDisplay = TimeDisplay.BOUNDARIES
+    host_profile: HostProfile = HostProfile.LOCAL
+    pace_seconds: float = DEFAULT_PACE_SECONDS
+    supplied_clock: Clock | None = None
+
+
+@dataclass(frozen=True, slots=True)
 class DemoResult:
-    """Where the trail landed: the run's own folder, the place its artifacts went, and which documents failed.
+    """Where the trail landed: the run's own folder, the place its artifacts went, how the run ended, and which documents failed.
 
     A local run keeps its artifacts in its run folder, so the two are the same. A hosted run keeps only its
-    telemetry there and uploads its artifacts to the blob container.
+    telemetry there and uploads its artifacts to the blob container. A run fails when a document fails, and
+    also when its manifest cannot be persisted, even if every document succeeded.
     """
 
     run_directory: Path
     artifact_directory: Path
+    run_status: StepStatus
+    failed_work_items: list[str]
+
+
+@dataclass(frozen=True, slots=True)
+class AnalysisOutcome:
+    run_status: StepStatus
     failed_work_items: list[str]
 
 
@@ -137,8 +167,51 @@ def _describe_contextual_data(contextual_exception: ContextualExceptionProtocol)
     return "\n".join(fact_lines)
 
 
+def _identify_run(pipeline_run: PipelineRun) -> dict[str, str]:
+    return {AttributeKey.PIPELINE_NAME: PIPELINE_NAME, AttributeKey.RUN_ID: pipeline_run.run_id}
+
+
 def _identify_work_item(pipeline_run: PipelineRun, document_name: str) -> dict[str, str]:
-    return {AttributeKey.PIPELINE_NAME: PIPELINE_NAME, AttributeKey.RUN_ID: pipeline_run.run_id, AttributeKey.WORK_ITEM_NAME: document_name}
+    return {**_identify_run(pipeline_run), AttributeKey.WORK_ITEM_NAME: document_name}
+
+
+async def _analyze_work_items(
+    pipeline_run: PipelineRun,
+    pages_by_document_name: Mapping[str, list[str]],
+    document_analysis_manager: DocumentAnalysisManager,
+    logger: logging.Logger,
+) -> list[str]:
+    failed_document_names: list[str] = []
+    document_name: str
+    pages: list[str]
+    for document_name, pages in pages_by_document_name.items():
+        try:
+            work_item_scope: WorkItemScope
+            async with pipeline_run.open_work_item(WorkItem(id=str(uuid4()), name=document_name)) as work_item_scope:
+                await document_analysis_manager.analyze_document(work_item_scope, pages)
+        except DocumentAnalysisBusinessError as document_analysis_business_error:
+            # The document itself cannot be analyzed; whoever sent it can correct it. A warning names every problem,
+            # and no traceback, because nothing in the system failed.
+            logger.warning(
+                "Work item '%s' was rejected:\n%s",
+                document_name,
+                _describe_contextual_data(document_analysis_business_error),
+                extra=_identify_work_item(pipeline_run, document_name),
+            )
+            failed_document_names.append(document_name)
+        except (DocumentAnalysisTechnicalError, ArtifactSinkError) as technical_error:
+            # The application's single outer boundary for failures an operator owns: the exception is logged once,
+            # with its traceback and every named fact it carries. Steps only leave breadcrumbs. The run and work
+            # item identity travel as attributes, so telemetry can tell which run this was.
+            logger.error(
+                "Work item '%s' failed:\n%s",
+                document_name,
+                _describe_contextual_data(technical_error),
+                exc_info=technical_error,
+                extra=_identify_work_item(pipeline_run, document_name),
+            )
+            failed_document_names.append(document_name)
+    return failed_document_names
 
 
 async def _analyze_documents(
@@ -146,81 +219,64 @@ async def _analyze_documents(
     document_analysis_manager: DocumentAnalysisManager,
     artifact_sink: ArtifactSinkProtocol,
     logger: logging.Logger,
-) -> list[str]:
+    run_clock: Clock,
+) -> AnalysisOutcome:
+    pipeline_run: PipelineRun = PipelineRun(pipeline_name=PIPELINE_NAME, artifact_sink=artifact_sink, logger=logger, supplied_clock=run_clock)
     failed_document_names: list[str] = []
-    document_name: str
-    pages: list[str]
-    async with PipelineRun(pipeline_name=PIPELINE_NAME, artifact_sink=artifact_sink, logger=logger) as pipeline_run:
-        for document_name, pages in pages_by_document_name.items():
-            try:
-                work_item_scope: WorkItemScope
-                async with pipeline_run.open_work_item(WorkItem(id=str(uuid4()), name=document_name)) as work_item_scope:
-                    await document_analysis_manager.analyze_document(work_item_scope, pages)
-            except DocumentAnalysisBusinessError as document_analysis_business_error:
-                # The document itself cannot be analyzed; whoever sent it can correct it. A warning names every problem,
-                # and no traceback, because nothing in the system failed.
-                logger.warning(
-                    "Work item '%s' was rejected:\n%s",
-                    document_name,
-                    _describe_contextual_data(document_analysis_business_error),
-                    extra=_identify_work_item(pipeline_run, document_name),
-                )
-                failed_document_names.append(document_name)
-            except (DocumentAnalysisTechnicalError, ArtifactSinkError) as technical_error:
-                # The application's single outer boundary for failures an operator owns: the exception is logged once,
-                # with its traceback and every named fact it carries. Steps only leave breadcrumbs. The run and work
-                # item identity travel as attributes, so telemetry can tell which run this was.
-                logger.error(
-                    "Work item '%s' failed:\n%s",
-                    document_name,
-                    _describe_contextual_data(technical_error),
-                    exc_info=technical_error,
-                    extra=_identify_work_item(pipeline_run, document_name),
-                )
-                failed_document_names.append(document_name)
-    return failed_document_names
+    try:
+        async with pipeline_run:
+            failed_document_names = await _analyze_work_items(pipeline_run, pages_by_document_name, document_analysis_manager, logger)
+    except ArtifactSinkError as artifact_sink_error:
+        # Every work item's failure was handled above, so a sink failure that reaches here is the manifest the run
+        # persists as it closes. It belongs to the same outer boundary: logged once, and the whole run counts as failed.
+        logger.error(
+            "Run '%s' failed:\n%s",
+            pipeline_run.run_id,
+            _describe_contextual_data(artifact_sink_error),
+            exc_info=artifact_sink_error,
+            extra=_identify_run(pipeline_run),
+        )
+        return AnalysisOutcome(StepStatus.FAILED, failed_document_names)
+    return AnalysisOutcome(StepStatus.FAILED if failed_document_names else StepStatus.COMPLETE, failed_document_names)
 
 
-async def run_demo(
-    output_root: Path,
-    *,
-    fail_page: int | None = None,
-    time_display: TimeDisplay = TimeDisplay.BOUNDARIES,
-    logger: logging.Logger | None = None,
-    host_profile: HostProfile = HostProfile.LOCAL,
-    pace_seconds: float = DEFAULT_PACE_SECONDS,
-) -> DemoResult:
+async def run_demo(demo_run_request: DemoRunRequest, *, logger: logging.Logger | None = None) -> DemoResult:
     """Run the system over the sample documents and return where the trail landed.
 
     The logger is a parameter, and the system shares just that one instance. Left out, the demo logs to
     the console through its own logger. When a caller supplies one (an acceptance test with a capturing
     handler, an application that already configured logging), the caller owns its handlers, level and
     propagation, and the demo only attaches its profile's handler for the duration of the run.
-
-    `pace_seconds` is how long a simulated model call takes; other simulated work takes a third of
-    that. The default makes the log readable as it appears; a test passes 0 to run instantly.
     """
     pages_by_document_name: Mapping[str, list[str]] = (
-        SAMPLE_DOCUMENTS if fail_page is None else with_malformed_reply(SAMPLE_DOCUMENTS, "Contract 12.pdf", fail_page)
+        SAMPLE_DOCUMENTS
+        if demo_run_request.fail_page is None
+        else with_malformed_reply(SAMPLE_DOCUMENTS, "Contract 12.pdf", demo_run_request.fail_page)
     )
-    run_directory: Path = create_run_folder(output_root, "batch")
-    breadcrumb_formatter: BreadcrumbFormatter = BreadcrumbFormatter(time_display=time_display)
+    run_clock: Clock = demo_run_request.supplied_clock or Clock.create_system_clock()
+    run_directory: Path = create_run_folder(demo_run_request.output_root, "batch", supplied_clock=run_clock)
+    breadcrumb_formatter: BreadcrumbFormatter = BreadcrumbFormatter(time_display=demo_run_request.time_display)
     with ExitStack() as logging_scope:
         run_logger: logging.Logger = logger if logger is not None else logging_scope.enter_context(_console_logger(breadcrumb_formatter))
         # The profile chooses both where log lines go and where artifacts go. Every profile persists every
         # artifact: they are the record of what each step did, and what a later run could start from.
         artifact_destination: ArtifactDestination
-        if host_profile is HostProfile.LOCAL:
+        if demo_run_request.host_profile is HostProfile.LOCAL:
             logging_scope.enter_context(attached_run_log(run_logger, run_directory, breadcrumb_formatter))
             artifact_destination = _create_file_system_destination(run_directory)
         else:
             logging_scope.enter_context(attached_exception_telemetry(run_logger, run_directory / TELEMETRY_FILENAME))
-            artifact_destination = _create_blob_storage_destination(output_root, run_directory)
-        async with DocumentAnalysisManager(ServiceLocatorDemo(pace_seconds)) as document_analysis_manager:
-            failed_work_items: list[str] = await _analyze_documents(
-                pages_by_document_name, document_analysis_manager, artifact_destination.artifact_sink, run_logger
+            artifact_destination = _create_blob_storage_destination(demo_run_request.output_root, run_directory)
+        async with DocumentAnalysisManager(ServiceLocatorDemo(demo_run_request.pace_seconds)) as document_analysis_manager:
+            analysis_outcome: AnalysisOutcome = await _analyze_documents(
+                pages_by_document_name, document_analysis_manager, artifact_destination.artifact_sink, run_logger, run_clock
             )
-    return DemoResult(run_directory=run_directory, artifact_directory=artifact_destination.artifact_directory, failed_work_items=failed_work_items)
+    return DemoResult(
+        run_directory=run_directory,
+        artifact_directory=artifact_destination.artifact_directory,
+        run_status=analysis_outcome.run_status,
+        failed_work_items=analysis_outcome.failed_work_items,
+    )
 
 
 def _default_output_root() -> Path:
@@ -243,15 +299,17 @@ def main() -> None:
     try:
         demo_result: DemoResult = asyncio.run(
             run_demo(
-                arguments.output,
-                fail_page=arguments.fail_page,
-                time_display=TimeDisplay(arguments.time),
-                host_profile=HostProfile(arguments.host),
+                DemoRunRequest(
+                    arguments.output,
+                    fail_page=arguments.fail_page,
+                    time_display=TimeDisplay(arguments.time),
+                    host_profile=HostProfile(arguments.host),
+                )
             ),
         )
     except InvalidFailPageError as invalid_fail_page_error:
         argument_parser.error(str(invalid_fail_page_error))
-    if demo_result.failed_work_items:
+    if demo_result.run_status is StepStatus.FAILED:
         sys.exit(1)
 
 

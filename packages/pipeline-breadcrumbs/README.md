@@ -16,6 +16,7 @@ for the reasoning.
 | `AttributeKey` | The names of the attributes every record carries. |
 | `ArtifactSinkError`, `ContextualExceptionProtocol` | Sink failures, and the shape an exception takes to receive step diagnostics. |
 | `InvalidDeclarationError` | A step, artifact kind, work item or run declared with a value the library refuses (a `ValueError`). |
+| `WorkItemNotOpenError` | A step opened, entered, skipped or emitted from outside its work item's `async with` block (a `RuntimeError`). |
 
 `pipeline_breadcrumbs.hosting` holds local file system helpers (`ArtifactSinkFileSystem`,
 `create_run_folder`, `attached_run_log`). `ArtifactSinkFileSystem` raises

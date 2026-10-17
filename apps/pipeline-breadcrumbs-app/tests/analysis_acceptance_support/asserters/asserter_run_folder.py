@@ -8,11 +8,13 @@ from breadcrumbs_acceptance_support.assertion_reports import format_assertion_re
 from breadcrumbs_acceptance_support.manifest_documents import ManifestDocument, WorkItemRecordDocument
 
 from analysis_acceptance_support.run_folder_reader import HostedRunTrail
+from pipeline_breadcrumbs import StepStatus
 from pipeline_breadcrumbs_app.telemetry import ExceptionTelemetry
 
 _TRACEBACK_HEADER: Final[str] = "Traceback (most recent call last)"
 _RAW_DETECTION_RESPONSE_FRAGMENT: Final[str] = "raw_detection_response"
 _RUN_ID_DIMENSION: Final[str] = "pipeline.run.id"
+_ARTIFACT_FILENAME_DIMENSION: Final[str] = "ArtifactFilename"
 _STEP_PATH_PATTERN: Final[re.Pattern[str]] = re.compile(r"_step_(\d\d(?:\.\d\d)*)_")
 
 
@@ -40,6 +42,13 @@ class ExpectedExceptionTelemetry:
     exception_type: str
     stack_trace_phrase: str
     custom_dimensions: Mapping[str, object]
+
+
+@dataclass(frozen=True)
+class ExpectedRunFailure:
+    run_status: StepStatus
+    failed_work_item_names: Sequence[str]
+    exception_telemetry: ExpectedExceptionTelemetry
 
 
 @dataclass(frozen=True)
@@ -258,6 +267,58 @@ class AsserterRunFolder:
             [f"expected one exception but telemetry received {len(actual_exception_telemetry_records)}"],
         )
         actual_exception_telemetry: ExceptionTelemetry = actual_exception_telemetry_records[0]
+        mismatches: list[str] = AsserterRunFolder._compare_exception_telemetry(expected_exception_telemetry, actual_exception_telemetry)
+        actual_run_id_dimension: object = actual_exception_telemetry.custom_dimensions.get(_RUN_ID_DIMENSION)
+        if actual_run_id_dimension != actual_manifest_run_id:
+            mismatches.append(f"run identity: telemetry carries {actual_run_id_dimension!r} but the manifest records run {actual_manifest_run_id!r}")
+        expected_dimension_count: int = len(expected_exception_telemetry.custom_dimensions)
+        assert not mismatches, format_assertion_report(
+            AsserterRunFolder.TELEMETRY_ASSERTION_FAILED_HEADER,
+            claim,
+            f"{actual_exception_telemetry.exception_type} in run {actual_manifest_run_id}, {expected_dimension_count} dimension(s) expected",
+            mismatches,
+        )
+
+    @staticmethod
+    def assert_run_failure_reported_once(
+        expected_run_failure: ExpectedRunFailure,
+        actual_run_status: StepStatus,
+        actual_failed_work_item_names: Sequence[str],
+        actual_exception_telemetry_records: Sequence[ExceptionTelemetry],
+    ) -> None:
+        """The run counts as failed, and telemetry receives the run's own failure, named by the artifact it lost, exactly once."""
+        expected_lost_artifact_filename: object = expected_run_failure.exception_telemetry.custom_dimensions.get(_ARTIFACT_FILENAME_DIMENSION)
+        actual_run_failure_telemetry_records: list[ExceptionTelemetry] = [
+            actual_exception_telemetry
+            for actual_exception_telemetry in actual_exception_telemetry_records
+            if actual_exception_telemetry.custom_dimensions.get(_ARTIFACT_FILENAME_DIMENSION) == expected_lost_artifact_filename
+        ]
+        mismatches: list[str] = []
+        if actual_run_status != expected_run_failure.run_status:
+            mismatches.append(f"run status: expected {expected_run_failure.run_status.value!r} but found {actual_run_status.value!r}")
+        if list(actual_failed_work_item_names) != list(expected_run_failure.failed_work_item_names):
+            mismatches.append(
+                f"failed work items: expected {list(expected_run_failure.failed_work_item_names)} but found {list(actual_failed_work_item_names)}"
+            )
+        if len(actual_run_failure_telemetry_records) == 1:
+            mismatches.extend(
+                AsserterRunFolder._compare_exception_telemetry(expected_run_failure.exception_telemetry, actual_run_failure_telemetry_records[0])
+            )
+        else:
+            mismatches.append(
+                f"failure to persist {expected_lost_artifact_filename!r}: expected once but found {len(actual_run_failure_telemetry_records)} time(s)"
+            )
+        assert not mismatches, format_assertion_report(
+            AsserterRunFolder.TELEMETRY_ASSERTION_FAILED_HEADER,
+            "A run that loses its manifest as it closes is reported as failed, and its failure reaches telemetry once, with its traceback.",
+            f"{len(actual_exception_telemetry_records)} exception(s) in telemetry",
+            mismatches,
+        )
+
+    @staticmethod
+    def _compare_exception_telemetry(
+        expected_exception_telemetry: ExpectedExceptionTelemetry, actual_exception_telemetry: ExceptionTelemetry
+    ) -> list[str]:
         mismatches: list[str] = []
         if actual_exception_telemetry.severity != expected_exception_telemetry.severity:
             mismatches.append(f"severity: expected {expected_exception_telemetry.severity!r} but found {actual_exception_telemetry.severity!r}")
@@ -273,16 +334,7 @@ class AsserterRunFolder:
             actual_value: object = actual_exception_telemetry.custom_dimensions.get(expected_name)
             if actual_value != expected_value:
                 mismatches.append(f"custom dimension {expected_name!r}: expected {expected_value!r} but found {actual_value!r}")
-        actual_run_id_dimension: object = actual_exception_telemetry.custom_dimensions.get(_RUN_ID_DIMENSION)
-        if actual_run_id_dimension != actual_manifest_run_id:
-            mismatches.append(f"run identity: telemetry carries {actual_run_id_dimension!r} but the manifest records run {actual_manifest_run_id!r}")
-        expected_dimension_count: int = len(expected_exception_telemetry.custom_dimensions)
-        assert not mismatches, format_assertion_report(
-            AsserterRunFolder.TELEMETRY_ASSERTION_FAILED_HEADER,
-            claim,
-            f"{actual_exception_telemetry.exception_type} in run {actual_manifest_run_id}, {expected_dimension_count} dimension(s) expected",
-            mismatches,
-        )
+        return mismatches
 
     @staticmethod
     def _compare_work_item(

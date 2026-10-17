@@ -12,12 +12,11 @@ from pipeline_breadcrumbs_app.document_analysis.engines.classification.score_rec
 from pipeline_breadcrumbs_app.document_analysis.engines.classification.section_scorer import SectionScorer
 from pipeline_breadcrumbs_app.document_analysis.gateways.gateway_model_service import GatewayModelService
 from pipeline_breadcrumbs_app.document_analysis.models import ClassificationPrompt, DetectedSection, ScoredSection
-from pipeline_breadcrumbs_app.document_analysis.simulated_work import SimulatedWork
 
 
 class SectionClassifier:
-    def __init__(self, gateway_model_service: GatewayModelService, simulated_work: SimulatedWork) -> None:
-        self._prompt_builder: PromptBuilder = PromptBuilder(simulated_work)
+    def __init__(self, gateway_model_service: GatewayModelService, simulated_work_seconds: float) -> None:
+        self._prompt_builder: PromptBuilder = PromptBuilder(simulated_work_seconds)
         self._section_scorer: SectionScorer = SectionScorer(gateway_model_service)
         self._score_reconciler: ScoreReconciler = ScoreReconciler(gateway_model_service)
 

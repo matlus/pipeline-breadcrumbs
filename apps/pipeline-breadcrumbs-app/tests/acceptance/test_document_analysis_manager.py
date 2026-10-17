@@ -647,6 +647,27 @@ class TestAnalyzeDocumentModelServiceFailures:
         AsserterException.assert_exception(expected_exception, actual_raised.value)
 
 
+# ==================== LIFECYCLE ====================
+
+
+@pytest.mark.acceptance
+class TestDocumentAnalysisManagerLifecycle:
+    async def test_DocumentAnalysisManager_WhenClosedAgainAfterItsAsyncWithBlock_ThenTheModelServiceConnectionIsReleasedOnce(self) -> None:
+        # Arrange
+        test_mediator_model_service: TestMediatorModelService = TestMediatorModelService()
+        document_analysis_manager: DocumentAnalysisManager = create_document_analysis_manager(test_mediator_model_service)
+        expected_closed_transport_count: int = 1
+
+        # Act
+        async with document_analysis_manager:
+            pass
+        await document_analysis_manager.close()
+        await document_analysis_manager.close()
+
+        # Assert
+        assert test_mediator_model_service.closed_transport_count == expected_closed_transport_count
+
+
 # ==================== CONFIGURATION ====================
 
 

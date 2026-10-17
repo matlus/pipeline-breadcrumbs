@@ -6,14 +6,33 @@ import logging
 from typing import Final, NoReturn, final, override
 
 import pytest
+from breadcrumbs_acceptance_support.asserters.asserter_artifacts import AsserterArtifacts
 from breadcrumbs_acceptance_support.asserters.asserter_exception import ANY_CONTEXTUAL_VALUE, AsserterException, ExpectedException
 from breadcrumbs_acceptance_support.asserters.asserter_log_record import AsserterLogRecord, ExpectedLogRecord
 from breadcrumbs_acceptance_support.asserters.asserter_step_boundaries import AsserterStepBoundaries, ExpectedStepBoundary
 from breadcrumbs_acceptance_support.clock_testing import ClockTesting
-from breadcrumbs_acceptance_support.data_generators import create_random_pipeline_name, create_random_work_item
+from breadcrumbs_acceptance_support.data_generators import (
+    create_random_failure_message,
+    create_random_pipeline_name,
+    create_random_skip_reason,
+    create_random_work_item,
+)
 from breadcrumbs_acceptance_support.exceptions_testing import DiagnosticTestingError, PlainTestingError
 
-from pipeline_breadcrumbs import Artifact, ArtifactKind, ArtifactSinkError, ArtifactSinkProtocol, AttributeKey, EventKind, PipelineRun, Step, WorkItem
+from pipeline_breadcrumbs import (
+    Artifact,
+    ArtifactKind,
+    ArtifactSinkError,
+    ArtifactSinkProtocol,
+    AttributeKey,
+    EventKind,
+    PipelineRun,
+    Step,
+    StepScope,
+    WorkItem,
+    WorkItemNotOpenError,
+    WorkItemScope,
+)
 from pipeline_breadcrumbs.testing import ArtifactSinkTesting, RecordCapture
 
 METADATA_AUDIT: Final[Step] = Step(2, "Metadata Audit")
@@ -45,7 +64,7 @@ class TestFailingStep:
         pipeline_name: str = create_random_pipeline_name()
         work_item: WorkItem = create_random_work_item()
         expected_elapsed_seconds: float = 1.25
-        expected_failure_message: str = "bad json"
+        expected_failure_message: str = create_random_failure_message()
         pipeline_run: PipelineRun = PipelineRun(
             pipeline_name=pipeline_name, artifact_sink=artifact_sink_testing, logger=run_logger, supplied_clock=clock_testing.clock
         )
@@ -78,7 +97,7 @@ class TestFailingStep:
         # Arrange
         pipeline_name: str = create_random_pipeline_name()
         work_item: WorkItem = create_random_work_item()
-        failure_message: str = "response was not json"
+        failure_message: str = create_random_failure_message()
         pipeline_run: PipelineRun = PipelineRun(pipeline_name=pipeline_name, artifact_sink=artifact_sink_testing, logger=run_logger)
         # The child step stamps first; the parent finds the stamp and leaves it alone.
         expected_exception: ExpectedException = ExpectedException(
@@ -114,7 +133,7 @@ class TestFailingStep:
             async with pipeline_run, pipeline_run.open_work_item(work_item) as work_item_scope, work_item_scope.step(METADATA_AUDIT):
                 raise plain_testing_error
 
-        # Assert - the very instance the step raised reaches the caller
+        # Assert
         assert actual_raised.value is plain_testing_error
 
 
@@ -157,7 +176,7 @@ class TestFailingSink:
     ) -> None:
         # Arrange
         pipeline_name: str = create_random_pipeline_name()
-        real_problem_message: str = "the real problem"
+        real_problem_message: str = create_random_failure_message()
         pipeline_run: PipelineRun = PipelineRun(pipeline_name=pipeline_name, artifact_sink=ArtifactSinkUnreachable(), logger=run_logger)
         expected_exception: ExpectedException = ExpectedException(
             PlainTestingError, message_phrases=[real_problem_message], note_phrases=["run manifest could not be persisted", MANIFEST_FILENAME]
@@ -191,6 +210,74 @@ class TestFailingSink:
         with pytest.raises(ArtifactSinkError) as actual_raised:
             async with pipeline_run:
                 pass
+
+        # Assert
+        AsserterException.assert_exception(expected_exception, actual_raised.value)
+
+
+@pytest.mark.acceptance
+class TestWorkItemScopeMisuse:
+    async def test_PipelineRun_WhenAStepIsOpenedOnAWorkItemThatWasNeverEntered_ThenTheCallIsRefusedAndTheRunStillPersistsItsManifest(
+        self, artifact_sink_testing: ArtifactSinkTesting, run_logger: logging.Logger
+    ) -> None:
+        # Arrange
+        pipeline_name: str = create_random_pipeline_name()
+        work_item: WorkItem = create_random_work_item()
+        pipeline_run: PipelineRun = PipelineRun(pipeline_name=pipeline_name, artifact_sink=artifact_sink_testing, logger=run_logger)
+        expected_exception: ExpectedException = ExpectedException(
+            WorkItemNotOpenError, message_phrases=[f"Work item '{work_item.name}' is not open", "Metadata Audit"]
+        )
+        expected_filenames: list[str] = [MANIFEST_FILENAME]
+
+        # Act
+        async with pipeline_run:
+            unentered_work_item_scope: WorkItemScope = pipeline_run.open_work_item(work_item)
+            with pytest.raises(WorkItemNotOpenError) as actual_raised:
+                unentered_work_item_scope.step(METADATA_AUDIT)
+
+        # Assert
+        AsserterException.assert_exception(expected_exception, actual_raised.value)
+        AsserterArtifacts.assert_exactly_these_filenames_in_order(expected_filenames, artifact_sink_testing.artifacts)
+
+    async def test_PipelineRun_WhenAStepIsSkippedOnAWorkItemThatHasClosed_ThenTheCallIsRefused(
+        self, artifact_sink_testing: ArtifactSinkTesting, run_logger: logging.Logger
+    ) -> None:
+        # Arrange
+        pipeline_name: str = create_random_pipeline_name()
+        work_item: WorkItem = create_random_work_item()
+        pipeline_run: PipelineRun = PipelineRun(pipeline_name=pipeline_name, artifact_sink=artifact_sink_testing, logger=run_logger)
+        expected_exception: ExpectedException = ExpectedException(
+            WorkItemNotOpenError, message_phrases=[f"Work item '{work_item.name}' is not open", "Metadata Audit"]
+        )
+
+        # Act
+        async with pipeline_run:
+            async with pipeline_run.open_work_item(work_item) as closed_work_item_scope:
+                pass
+            with pytest.raises(WorkItemNotOpenError) as actual_raised:
+                closed_work_item_scope.skipped(METADATA_AUDIT, create_random_skip_reason())
+
+        # Assert
+        AsserterException.assert_exception(expected_exception, actual_raised.value)
+
+    async def test_PipelineRun_WhenAStepIsEnteredAfterItsWorkItemHasClosed_ThenTheStepIsRefused(
+        self, artifact_sink_testing: ArtifactSinkTesting, run_logger: logging.Logger
+    ) -> None:
+        # Arrange
+        pipeline_name: str = create_random_pipeline_name()
+        work_item: WorkItem = create_random_work_item()
+        pipeline_run: PipelineRun = PipelineRun(pipeline_name=pipeline_name, artifact_sink=artifact_sink_testing, logger=run_logger)
+        expected_exception: ExpectedException = ExpectedException(
+            WorkItemNotOpenError, message_phrases=[f"Work item '{work_item.name}' is not open", "Metadata Audit"]
+        )
+
+        # Act
+        async with pipeline_run:
+            async with pipeline_run.open_work_item(work_item) as work_item_scope:
+                late_step_scope: StepScope = work_item_scope.step(METADATA_AUDIT)
+            with pytest.raises(WorkItemNotOpenError) as actual_raised:
+                async with late_step_scope:
+                    pass
 
         # Assert
         AsserterException.assert_exception(expected_exception, actual_raised.value)

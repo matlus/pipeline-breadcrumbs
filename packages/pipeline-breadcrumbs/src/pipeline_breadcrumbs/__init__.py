@@ -15,6 +15,7 @@ from pipeline_breadcrumbs.errors import ArtifactSinkError, ContextualDataDict, C
 from pipeline_breadcrumbs.formatting import format_byte_size, format_elapsed
 from pipeline_breadcrumbs.manifest import MANIFEST_KIND
 from pipeline_breadcrumbs.pipeline_run import DEFAULT_LOGGER_NAME, PipelineRun
+from pipeline_breadcrumbs.scope_errors import WorkItemNotOpenError
 from pipeline_breadcrumbs.scopes import StepHostProtocol, StepScope, WorkItemScope
 from pipeline_breadcrumbs.steps import Step, StepPath, StepStatus
 from pipeline_breadcrumbs.work_items import WorkItem
@@ -46,6 +47,7 @@ __all__ = [
     "StepStatus",
     "TimeDisplay",
     "WorkItem",
+    "WorkItemNotOpenError",
     "WorkItemScope",
     "format_byte_size",
     "format_elapsed",

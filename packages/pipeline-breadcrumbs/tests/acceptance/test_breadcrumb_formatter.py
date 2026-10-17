@@ -33,13 +33,15 @@ async def _run_one_step(clock_testing: ClockTesting, run_logger: logging.Logger,
     pipeline_run: PipelineRun = PipelineRun(
         pipeline_name=pipeline_name, artifact_sink=ArtifactSinkTesting(), logger=run_logger, supplied_clock=clock_testing.clock
     )
-    with contextlib.suppress(PlainTestingError):
-        async with pipeline_run, pipeline_run.open_work_item(work_item) as work_item_scope, work_item_scope.step(METADATA_AUDIT) as step_scope:
-            step_scope.info(PROGRESS_MESSAGE, pages=14)
-            clock_testing.advance(STEP_SECONDS)
-            step_scope.outcome(OUTCOME)
-            if fails:
-                raise PlainTestingError(FAILURE_MESSAGE)
+    # A host handles a work item's failure inside the run, so the run itself always closes without an exception.
+    async with pipeline_run:
+        with contextlib.suppress(PlainTestingError):
+            async with pipeline_run.open_work_item(work_item) as work_item_scope, work_item_scope.step(METADATA_AUDIT) as step_scope:
+                step_scope.info(PROGRESS_MESSAGE, pages=14)
+                clock_testing.advance(STEP_SECONDS)
+                step_scope.outcome(OUTCOME)
+                if fails:
+                    raise PlainTestingError(FAILURE_MESSAGE)
 
 
 def _retrieve_text(actual_texts: Iterable[str], marker: str) -> str:
@@ -85,7 +87,7 @@ class TestBanners:
     async def test_BreadcrumbFormatter_WhenARunFailedBecauseAWorkItemFailed_ThenTheBannerShowsTheWorkItemCounts(
         self, clock_testing: ClockTesting, run_logger: logging.Logger, record_capture: RecordCapture
     ) -> None:
-        # Arrange - the work item's exception is handled per item, so the run itself has no exception to name
+        # Arrange - the work item's exception is handled inside the run, so the run itself has no exception to name
         pipeline_name: str = create_random_pipeline_name()
         await _run_one_step(clock_testing, run_logger, pipeline_name, fails=True)
         breadcrumb_formatter: BreadcrumbFormatter = BreadcrumbFormatter()
