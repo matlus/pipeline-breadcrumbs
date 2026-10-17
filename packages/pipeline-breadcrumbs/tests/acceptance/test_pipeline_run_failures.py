@@ -22,7 +22,7 @@ from breadcrumbs_acceptance_support.exceptions_testing import DiagnosticTestingE
 from pipeline_breadcrumbs import (
     Artifact,
     ArtifactKind,
-    ArtifactSinkError,
+    ArtifactSinkException,
     ArtifactSinkProtocol,
     AttributeKey,
     EventKind,
@@ -30,7 +30,7 @@ from pipeline_breadcrumbs import (
     Step,
     StepScope,
     WorkItem,
-    WorkItemNotOpenError,
+    WorkItemNotOpenException,
     WorkItemScope,
 )
 from pipeline_breadcrumbs.testing import ArtifactSinkTesting, RecordCapture
@@ -125,7 +125,8 @@ class TestFailingStep:
         # Arrange
         pipeline_name: str = create_random_pipeline_name()
         work_item: WorkItem = create_random_work_item()
-        plain_testing_error: PlainTestingError = PlainTestingError("missing")
+        failure_message: str = create_random_failure_message()
+        plain_testing_error: PlainTestingError = PlainTestingError(failure_message)
         pipeline_run: PipelineRun = PipelineRun(pipeline_name=pipeline_name, artifact_sink=artifact_sink_testing, logger=run_logger)
 
         # Act
@@ -134,7 +135,14 @@ class TestFailingStep:
                 raise plain_testing_error
 
         # Assert
-        assert actual_raised.value is plain_testing_error
+        actual_untouched_state: tuple[bool, tuple[object, ...], dict[str, object]] = (
+            actual_raised.value is plain_testing_error,
+            actual_raised.value.args,
+            vars(actual_raised.value),
+        )
+        assert actual_untouched_state == (True, (failure_message,), {}), (
+            f"expected the very exception raised, args {(failure_message,)!r} and no added state, but found {actual_untouched_state!r}"
+        )
 
 
 @pytest.mark.acceptance
@@ -149,10 +157,10 @@ class TestFailingSink:
         expected_artifact_filename: str = f"{work_item.stem}_step_02_{expected_artifact_kind_key}.json"
         pipeline_run: PipelineRun = PipelineRun(pipeline_name=pipeline_name, artifact_sink=ArtifactSinkUnreachable(), logger=run_logger)
         expected_exception: ExpectedException = ExpectedException(
-            ArtifactSinkError,
+            ArtifactSinkException,
             message_phrases=[expected_artifact_filename],
             contextual_data_by_name={
-                "ExceptionType": "ArtifactSinkError",
+                "ExceptionType": "ArtifactSinkException",
                 "ArtifactKind": expected_artifact_kind_key,
                 "ArtifactFilename": expected_artifact_filename,
                 "ArtifactBytes": 2,
@@ -164,22 +172,36 @@ class TestFailingSink:
         )
 
         # Act
-        with pytest.raises(ArtifactSinkError) as actual_raised:
+        with pytest.raises(ArtifactSinkException) as actual_raised:
             async with pipeline_run, pipeline_run.open_work_item(work_item) as work_item_scope, work_item_scope.step(METADATA_AUDIT) as step_scope:
                 await step_scope.emit(PAGE_EVIDENCE, b"{}")
 
         # Assert
         ExceptionAsserter.assert_expected_and_actual_are_equal(expected_exception, actual_raised.value)
 
-    async def test_PipelineRun_WhenTheManifestCannotBeWrittenWhileTheRunIsFailing_ThenTheOriginalFailureIsNotHidden(
-        self, run_logger: logging.Logger
+    async def test_PipelineRun_WhenTheManifestCannotBeWrittenWhileTheRunIsFailing_ThenTheOriginalFailureIsNotHiddenAndTheOutageIsDiagnosable(
+        self, run_logger: logging.Logger, record_capture: RecordCapture
     ) -> None:
         # Arrange
         pipeline_name: str = create_random_pipeline_name()
         real_problem_message: str = create_random_failure_message()
         pipeline_run: PipelineRun = PipelineRun(pipeline_name=pipeline_name, artifact_sink=ArtifactSinkUnreachable(), logger=run_logger)
+        expected_lost_manifest_description: str = (
+            f"The run manifest could not be persisted either: The artifact sink failed to persist '{MANIFEST_FILENAME}' "
+            f"because of ConnectionError: {STORAGE_OUTAGE_MESSAGE}"
+        )
         expected_exception: ExpectedException = ExpectedException(
-            PlainTestingError, message_phrases=[real_problem_message], note_phrases=["run manifest could not be persisted", MANIFEST_FILENAME]
+            PlainTestingError, message_phrases=[real_problem_message], note_phrases=[expected_lost_manifest_description]
+        )
+        expected_lost_manifest_log_record: ExpectedLogRecord = ExpectedLogRecord(
+            message=expected_lost_manifest_description,
+            level=logging.ERROR,
+            attribute_value_by_key={
+                AttributeKey.ARTIFACT_FILENAME: MANIFEST_FILENAME,
+                AttributeKey.FAILURE_TYPE: "ConnectionError",
+                AttributeKey.FAILURE_MESSAGE: STORAGE_OUTAGE_MESSAGE,
+            },
+            carries_traceback=True,
         )
 
         # Act
@@ -187,18 +209,20 @@ class TestFailingSink:
             async with pipeline_run:
                 raise PlainTestingError(real_problem_message)
 
-        # Assert - the run's own failure, not the storage outage, reaches the caller, carrying the lost manifest as a note
+        # Assert - the run's own failure, not the storage outage, reaches the caller, carrying the lost manifest and its cause as a note;
+        # the outage itself is logged with its traceback as the last thing the run reports
         ExceptionAsserter.assert_expected_and_actual_are_equal(expected_exception, actual_raised.value)
+        LogRecordAsserter.assert_expected_and_actual_are_equal(expected_lost_manifest_log_record, record_capture.records[-1])
 
     async def test_PipelineRun_WhenTheManifestCannotBeWrittenAndNothingElseFailed_ThenTheOutageIsReported(self, run_logger: logging.Logger) -> None:
         # Arrange
         pipeline_name: str = create_random_pipeline_name()
         pipeline_run: PipelineRun = PipelineRun(pipeline_name=pipeline_name, artifact_sink=ArtifactSinkUnreachable(), logger=run_logger)
         expected_exception: ExpectedException = ExpectedException(
-            ArtifactSinkError,
+            ArtifactSinkException,
             message_phrases=[MANIFEST_FILENAME],
             contextual_data_by_name={
-                "ExceptionType": "ArtifactSinkError",
+                "ExceptionType": "ArtifactSinkException",
                 "ArtifactKind": "manifest",
                 "ArtifactFilename": MANIFEST_FILENAME,
                 "ArtifactBytes": ANY_CONTEXTUAL_VALUE,
@@ -207,7 +231,7 @@ class TestFailingSink:
         )
 
         # Act
-        with pytest.raises(ArtifactSinkError) as actual_raised:
+        with pytest.raises(ArtifactSinkException) as actual_raised:
             async with pipeline_run:
                 pass
 
@@ -225,14 +249,14 @@ class TestWorkItemScopeMisuse:
         work_item: WorkItem = create_random_work_item()
         pipeline_run: PipelineRun = PipelineRun(pipeline_name=pipeline_name, artifact_sink=artifact_sink_testing, logger=run_logger)
         expected_exception: ExpectedException = ExpectedException(
-            WorkItemNotOpenError, message_phrases=[f"Work item '{work_item.name}' is not open", "Metadata Audit"]
+            WorkItemNotOpenException, message_phrases=[f"Work item '{work_item.name}' is not open", "Metadata Audit"]
         )
         expected_filenames: list[str] = [MANIFEST_FILENAME]
 
         # Act
         async with pipeline_run:
             unentered_work_item_scope: WorkItemScope = pipeline_run.open_work_item(work_item)
-            with pytest.raises(WorkItemNotOpenError) as actual_raised:
+            with pytest.raises(WorkItemNotOpenException) as actual_raised:
                 unentered_work_item_scope.step(METADATA_AUDIT)
 
         # Assert
@@ -247,14 +271,14 @@ class TestWorkItemScopeMisuse:
         work_item: WorkItem = create_random_work_item()
         pipeline_run: PipelineRun = PipelineRun(pipeline_name=pipeline_name, artifact_sink=artifact_sink_testing, logger=run_logger)
         expected_exception: ExpectedException = ExpectedException(
-            WorkItemNotOpenError, message_phrases=[f"Work item '{work_item.name}' is not open", "Metadata Audit"]
+            WorkItemNotOpenException, message_phrases=[f"Work item '{work_item.name}' is not open", "Metadata Audit"]
         )
 
         # Act
         async with pipeline_run:
             async with pipeline_run.open_work_item(work_item) as closed_work_item_scope:
                 pass
-            with pytest.raises(WorkItemNotOpenError) as actual_raised:
+            with pytest.raises(WorkItemNotOpenException) as actual_raised:
                 closed_work_item_scope.skipped(METADATA_AUDIT, create_random_skip_reason())
 
         # Assert
@@ -268,14 +292,14 @@ class TestWorkItemScopeMisuse:
         work_item: WorkItem = create_random_work_item()
         pipeline_run: PipelineRun = PipelineRun(pipeline_name=pipeline_name, artifact_sink=artifact_sink_testing, logger=run_logger)
         expected_exception: ExpectedException = ExpectedException(
-            WorkItemNotOpenError, message_phrases=[f"Work item '{work_item.name}' is not open", "Metadata Audit"]
+            WorkItemNotOpenException, message_phrases=[f"Work item '{work_item.name}' is not open", "Metadata Audit"]
         )
 
         # Act
         async with pipeline_run:
             async with pipeline_run.open_work_item(work_item) as work_item_scope:
                 late_step_scope: StepScope = work_item_scope.step(METADATA_AUDIT)
-            with pytest.raises(WorkItemNotOpenError) as actual_raised:
+            with pytest.raises(WorkItemNotOpenException) as actual_raised:
                 async with late_step_scope:
                     pass
 
@@ -304,7 +328,7 @@ class TestRunSummary:
                 pass
             with pytest.raises(PlainTestingError):
                 async with pipeline_run.open_work_item(failing_work_item):
-                    raise PlainTestingError("boom")
+                    raise PlainTestingError(create_random_failure_message())
 
         # Assert
         LogRecordAsserter.assert_expected_and_actual_are_equal(expected_run_summary_log_record, record_capture.boundaries(EventKind.RUN)[-1])

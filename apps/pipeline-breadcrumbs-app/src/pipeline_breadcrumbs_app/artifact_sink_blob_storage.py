@@ -10,10 +10,13 @@ place, and the system never knows which implementation it was handed.
 import asyncio
 import unicodedata
 from pathlib import Path
-from typing import final, override
+from typing import Final, final, override
 
-from pipeline_breadcrumbs import Artifact, ArtifactSinkProtocol, RunArtifact, WorkItem
-from pipeline_breadcrumbs.hosting import WorkItemFolderCollisionError, safe_path_component
+from pipeline_breadcrumbs import MANIFEST_KIND, Artifact, ArtifactSinkProtocol, RunArtifact, WorkItem
+from pipeline_breadcrumbs.hosting import WorkItemFolderCollisionException, safe_path_component
+
+_MANIFEST_BLOB_NAME: Final[str] = f"{MANIFEST_KIND.key}.{MANIFEST_KIND.extension}"
+_RUN_CLAIMANT: Final[str] = "the run"
 
 
 @final
@@ -33,12 +36,14 @@ class ArtifactSinkBlobStorage(ArtifactSinkProtocol):
     Work item names must be unique within a run, because the blob prefix is named for the work item.
     Two items that map to the same prefix raise rather than overwrite each other's blobs, exactly as
     the file-system sink does. This stand-in writes to a local folder, so names that differ only by
-    case count as the same prefix.
+    case count as the same prefix. The run's own blobs sit beside the prefixes, so `manifest.json` and
+    every run artifact's name are claimed for the run, and a work item whose prefix would take one of
+    them raises too.
     """
 
     def __init__(self, run_blob_directory: Path) -> None:
         self._run_blob_directory: Path = run_blob_directory
-        self._work_item_id_by_prefix: dict[str, str] = {}
+        self._claimant_by_blob_name_key: dict[str, str] = {_blob_name_key(_MANIFEST_BLOB_NAME): _RUN_CLAIMANT}
 
     @override
     async def persist(self, artifact: Artifact) -> None:
@@ -47,22 +52,30 @@ class ArtifactSinkBlobStorage(ArtifactSinkProtocol):
 
     def _blob_path(self, artifact: Artifact) -> Path:
         if isinstance(artifact, RunArtifact):
-            return self._run_blob_directory / safe_path_component(artifact.filename)
-        return self._run_blob_directory / self._claim_prefix(artifact.work_item) / safe_path_component(artifact.filename)
+            return self._run_blob_directory / self._claim_blob_name(safe_path_component(artifact.filename), _RUN_CLAIMANT)
+        blob_prefix: str = self._claim_blob_name(safe_path_component(artifact.work_item.stem), _work_item_claimant(artifact.work_item))
+        return self._run_blob_directory / blob_prefix / safe_path_component(artifact.filename)
 
-    def _claim_prefix(self, work_item: WorkItem) -> str:
-        blob_prefix: str = safe_path_component(work_item.stem)
-        # A file name can reach the same folder in composed or decomposed Unicode form (macOS file systems
-        # store decomposed names), so the claim key is the NFC form, case-folded for case-insensitive folders.
-        owner_id: str = self._work_item_id_by_prefix.setdefault(unicodedata.normalize("NFC", blob_prefix).casefold(), work_item.id)
-        if owner_id != work_item.id:
-            raise WorkItemFolderCollisionError(
-                f"Work items '{owner_id}' and '{work_item.id}' both map to the blob prefix '{blob_prefix}'; "
-                "work item names must be unique within a run"
+    def _claim_blob_name(self, blob_name: str, claimant: str) -> str:
+        owner: str = self._claimant_by_blob_name_key.setdefault(_blob_name_key(blob_name), claimant)
+        if owner != claimant:
+            raise WorkItemFolderCollisionException(
+                f"Both {owner} and {claimant} map to the blob prefix '{blob_name}'; "
+                "work item names must be unique within a run and must not take the run's own blob names"
             )
-        return blob_prefix
+        return blob_name
 
     @staticmethod
     def _upload(blob_path: Path, content: bytes) -> None:
         blob_path.parent.mkdir(parents=True, exist_ok=True)
         blob_path.write_bytes(content)
+
+
+def _work_item_claimant(work_item: WorkItem) -> str:
+    return f"work item '{work_item.id}'"
+
+
+def _blob_name_key(blob_name: str) -> str:
+    # A file name can reach the same folder in composed or decomposed Unicode form (macOS file systems
+    # store decomposed names), so the claim key is the NFC form, case-folded for case-insensitive folders.
+    return unicodedata.normalize("NFC", blob_name).casefold()

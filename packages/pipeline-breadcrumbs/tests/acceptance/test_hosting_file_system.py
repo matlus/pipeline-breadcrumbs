@@ -12,7 +12,12 @@ from breadcrumbs_acceptance_support.asserters.asserter_artifacts import Artifact
 from breadcrumbs_acceptance_support.asserters.asserter_exception import ExceptionAsserter, ExpectedException
 from breadcrumbs_acceptance_support.asserters.asserter_rendered_text import ExpectedRenderedText, RenderedTextAsserter
 from breadcrumbs_acceptance_support.clock_testing import ClockTesting
-from breadcrumbs_acceptance_support.data_generators import create_random_discriminator, create_random_pipeline_name, create_random_work_item
+from breadcrumbs_acceptance_support.data_generators import (
+    create_random_discriminator,
+    create_random_pipeline_name,
+    create_random_progress_message,
+    create_random_work_item,
+)
 
 from pipeline_breadcrumbs import (
     ArtifactKind,
@@ -28,7 +33,7 @@ from pipeline_breadcrumbs import (
 )
 from pipeline_breadcrumbs.hosting import (
     ArtifactSinkFileSystem,
-    WorkItemFolderCollisionError,
+    WorkItemFolderCollisionException,
     attached_run_log,
     create_run_folder,
     safe_path_component,
@@ -40,6 +45,7 @@ RUN_LOG_FILENAME: Final[str] = "run.log"
 PAGE_IMAGE: Final[ArtifactKind] = ArtifactKind("page_image", "png", "image/png")
 PAGE_TEXT: Final[ArtifactKind] = ArtifactKind("page_text", "txt", "text/plain")
 MANIFEST: Final[ArtifactKind] = ArtifactKind("manifest", "json", "application/json")
+RUN_SETTINGS: Final[ArtifactKind] = ArtifactKind("run_settings", "json", "application/json")
 LOAD_PAGES: Final[Step] = Step(1, "Load Pages")
 READ_PAGES: Final[Step] = Step(2, "Read Pages")
 # ClockTesting's fixed time of day, as a run folder name renders it.
@@ -86,6 +92,17 @@ class TestSafePathComponent:
 
         # Act
         actual_component: str = safe_path_component("report. ")
+
+        # Assert
+        assert actual_component == expected_component
+
+    @pytest.mark.parametrize("device_name", ["CON", "nul", "COM0", "LPT9", "COM¹", "lpt³"])
+    def test_safe_path_component_WhenTheNameIsAWindowsDevice_ThenItIsPrefixedSoItNamesAFile(self, device_name: str) -> None:
+        # Arrange - Windows reads these as devices whatever the extension, including port 0 and the superscript digits
+        expected_component: str = f"_{device_name}.pdf"
+
+        # Act
+        actual_component: str = safe_path_component(f"{device_name}.pdf")
 
         # Assert
         assert actual_component == expected_component
@@ -162,6 +179,24 @@ class TestArtifactSinkFileSystem:
         # Assert
         assert _read_written_bytes(expected_path) == expected_content
 
+    async def test_ArtifactSinkFileSystem_WhenTheWorkItemHasAFileStem_ThenItsFolderAndFilenameAreTheNamesTheArtifactReports(
+        self, tmp_path: Path
+    ) -> None:
+        # Arrange - a model identifier such as `publisher/model-1.13` must not become a subfolder, nor lose its version
+        model_identifier: str = f"publisher-{secrets.token_hex(_RANDOM_SUFFIX_BYTES)}/model-1.13"
+        file_stem: str = safe_path_component(model_identifier)
+        work_item: WorkItem = WorkItem(id=model_identifier, name=model_identifier, file_stem=file_stem)
+        expected_content: bytes = secrets.token_bytes(_RANDOM_SUFFIX_BYTES)
+        artifact_sink_file_system: ArtifactSinkFileSystem = ArtifactSinkFileSystem(tmp_path)
+        step_artifact: StepArtifact = StepArtifact(PAGE_TEXT, expected_content, work_item, StepPath((1,)))
+        expected_path: Path = tmp_path / file_stem / step_artifact.filename
+
+        # Act
+        await artifact_sink_file_system.persist(step_artifact)
+
+        # Assert
+        assert _read_written_bytes(expected_path) == expected_content
+
     async def test_ArtifactSinkFileSystem_WhenARunArtifactArrives_ThenItSitsAtTheTop(self, tmp_path: Path) -> None:
         # Arrange
         expected_content: bytes = b"{}"
@@ -209,11 +244,11 @@ class TestArtifactSinkFileSystem:
         artifact_sink_file_system: ArtifactSinkFileSystem = ArtifactSinkFileSystem(tmp_path)
         await artifact_sink_file_system.persist(StepArtifact(PAGE_TEXT, b"first", first_work_item, StepPath((1,))))
         expected_exception: ExpectedException = ExpectedException(
-            WorkItemFolderCollisionError, message_phrases=[first_work_item.id, second_work_item.id, shared_stem, "must be unique within a run"]
+            WorkItemFolderCollisionException, message_phrases=[first_work_item.id, second_work_item.id, shared_stem, "must be unique within a run"]
         )
 
         # Act
-        with pytest.raises(WorkItemFolderCollisionError) as actual_raised:
+        with pytest.raises(WorkItemFolderCollisionException) as actual_raised:
             await artifact_sink_file_system.persist(StepArtifact(PAGE_TEXT, b"second", second_work_item, StepPath((1,))))
 
         # Assert
@@ -227,12 +262,49 @@ class TestArtifactSinkFileSystem:
         artifact_sink_file_system: ArtifactSinkFileSystem = ArtifactSinkFileSystem(tmp_path)
         await artifact_sink_file_system.persist(StepArtifact(PAGE_TEXT, b"first", first_work_item, StepPath((1,))))
         expected_exception: ExpectedException = ExpectedException(
-            WorkItemFolderCollisionError, message_phrases=[first_work_item.id, second_work_item.id, "must be unique within a run"]
+            WorkItemFolderCollisionException, message_phrases=[first_work_item.id, second_work_item.id, "must be unique within a run"]
         )
 
         # Act
-        with pytest.raises(WorkItemFolderCollisionError) as actual_raised:
+        with pytest.raises(WorkItemFolderCollisionException) as actual_raised:
             await artifact_sink_file_system.persist(StepArtifact(PAGE_TEXT, b"second", second_work_item, StepPath((1,))))
+
+        # Assert
+        ExceptionAsserter.assert_expected_and_actual_are_equal(expected_exception, actual_raised.value)
+
+    @pytest.mark.parametrize("run_entry_name", [MANIFEST_FILENAME, RUN_LOG_FILENAME, MANIFEST_FILENAME.upper()])
+    async def test_ArtifactSinkFileSystem_WhenAWorkItemsFolderWouldTakeARunEntryName_ThenItIsRefused(
+        self, tmp_path: Path, run_entry_name: str
+    ) -> None:
+        # Arrange - the stem drops only the last extension, so this work item's folder would be named like the run's own entry
+        work_item: WorkItem = create_random_work_item_with_stem(run_entry_name, "pdf")
+        artifact_sink_file_system: ArtifactSinkFileSystem = ArtifactSinkFileSystem(tmp_path)
+        expected_exception: ExpectedException = ExpectedException(
+            WorkItemFolderCollisionException, message_phrases=["the run", work_item.id, run_entry_name, "must not take the run's own entry names"]
+        )
+
+        # Act
+        with pytest.raises(WorkItemFolderCollisionException) as actual_raised:
+            await artifact_sink_file_system.persist(StepArtifact(PAGE_TEXT, b"page", work_item, StepPath((1,))))
+
+        # Assert
+        ExceptionAsserter.assert_expected_and_actual_are_equal(expected_exception, actual_raised.value)
+
+    async def test_ArtifactSinkFileSystem_WhenARunArtifactArrivesAfterAWorkItemTookItsName_ThenItIsRefusedInsteadOfOverwriting(
+        self, tmp_path: Path
+    ) -> None:
+        # Arrange
+        run_settings_filename: str = f"{RUN_SETTINGS.key}.{RUN_SETTINGS.extension}"
+        work_item: WorkItem = create_random_work_item_with_stem(run_settings_filename, "pdf")
+        artifact_sink_file_system: ArtifactSinkFileSystem = ArtifactSinkFileSystem(tmp_path)
+        await artifact_sink_file_system.persist(StepArtifact(PAGE_TEXT, b"page", work_item, StepPath((1,))))
+        expected_exception: ExpectedException = ExpectedException(
+            WorkItemFolderCollisionException, message_phrases=[work_item.id, "the run", run_settings_filename]
+        )
+
+        # Act
+        with pytest.raises(WorkItemFolderCollisionException) as actual_raised:
+            await artifact_sink_file_system.persist(RunArtifact(RUN_SETTINGS, b"{}"))
 
         # Assert
         ExceptionAsserter.assert_expected_and_actual_are_equal(expected_exception, actual_raised.value)
@@ -247,7 +319,7 @@ class TestAttachedRunLog:
         run_logger: logging.Logger = logging.getLogger("pipeline_breadcrumbs.acceptance_tests.hosting")
         run_logger.propagate = False
         expected_handler_count: int = len(run_logger.handlers)
-        progress_message: str = "Loading pages"
+        progress_message: str = create_random_progress_message()
         expected_run_log_rendered_text: ExpectedRenderedText = ExpectedRenderedText(
             contained_phrases=[
                 "STEP 1: Load Pages - STARTED",

@@ -23,8 +23,8 @@ from analysis_acceptance_support.asserters.asserter_run_folder import (
     RunFolderEntriesAsserter,
     RunOutcomeAsserter,
     StepOrderAsserter,
+    WorkItemContentsAsserter,
     WorkItemFilesAsserter,
-    WorkItemListingsAsserter,
 )
 from analysis_acceptance_support.asserters.asserter_shared_logger import SharedLoggerAsserter
 from analysis_acceptance_support.run_folder_reader import RunFolderReader
@@ -34,7 +34,7 @@ from breadcrumbs_acceptance_support.clock_testing import ClockTesting
 from pipeline_breadcrumbs import StepStatus, TimeDisplay
 from pipeline_breadcrumbs.testing import RecordCapture
 from pipeline_breadcrumbs_app.main import BLOB_CONTAINER_NAME, PIPELINE_NAME, DemoResult, DemoRunRequest, HostProfile, run_demo
-from pipeline_breadcrumbs_app.sample_documents import InvalidFailPageError
+from pipeline_breadcrumbs_app.sample_documents import InvalidFailPageException
 from pipeline_breadcrumbs_app.telemetry import ExceptionTelemetry
 
 NO_DELAY_SECONDS: Final[float] = 0.0
@@ -205,7 +205,9 @@ class TestDemoRunFailures:
             run_status="FAILED",
             failed_work_item_names=[CONTRACT_DOCUMENT_NAME],
             work_item_outcomes=[
-                ExpectedWorkItemOutcome(CONTRACT_DOCUMENT_NAME, "FAILED", {"1": "COMPLETE", "2": "FAILED"}, failure_phrase="ModelResponseParseError"),
+                ExpectedWorkItemOutcome(
+                    CONTRACT_DOCUMENT_NAME, "FAILED", {"1": "COMPLETE", "2": "FAILED"}, failure_phrase="ModelResponseParseException"
+                ),
                 # The failure did not stop the batch.
                 ExpectedWorkItemOutcome(LEASE_DOCUMENT_NAME, "COMPLETE", {**EVERY_STEP_COMPLETE, "3.3": "SKIPPED"}),
             ],
@@ -262,7 +264,7 @@ class TestDemoRunFailures:
             failed_work_item_names=[],
             exception_telemetry=ExpectedExceptionTelemetry(
                 severity="ERROR",
-                exception_type="ArtifactSinkError",
+                exception_type="ArtifactSinkException",
                 stack_trace_phrase="Traceback",
                 custom_dimensions={"pipeline.name": PIPELINE_NAME, "ArtifactKind": "manifest", "ArtifactFilename": MANIFEST_FILENAME},
             ),
@@ -291,12 +293,19 @@ class TestDemoRunFailures:
         # Arrange
         missing_page_number: int = 99
         expected_exception: ExpectedException = ExpectedException(
-            InvalidFailPageError, message_phrases=[f"Page {missing_page_number} does not exist", CONTRACT_DOCUMENT_NAME]
+            InvalidFailPageException,
+            message_phrases=[f"Page {missing_page_number} does not exist", CONTRACT_DOCUMENT_NAME],
+            contextual_data_by_name={
+                "ExceptionType": "InvalidFailPageException",
+                "DocumentName": CONTRACT_DOCUMENT_NAME,
+                "PageNumber": missing_page_number,
+                "PageCount": CONTRACT_PAGE_COUNT,
+            },
         )
         expected_entry_names: set[str] = set()
 
         # Act
-        with pytest.raises(InvalidFailPageError) as actual_raised:
+        with pytest.raises(InvalidFailPageException) as actual_raised:
             await run_demo(DemoRunRequest(tmp_path, fail_page=missing_page_number, time_display=TimeDisplay.NONE, pace_seconds=NO_DELAY_SECONDS))
 
         # Assert
@@ -340,16 +349,16 @@ class TestDemoHosts:
         )
 
         # Assert
-        actual_local_listing_by_folder_name: dict[str, list[str]] = {
-            folder_name: RunFolderReader.list_entry_names(actual_local_demo_result.artifact_directory / folder_name)
+        actual_local_content_by_filename_by_folder_name: dict[str, dict[str, bytes]] = {
+            folder_name: RunFolderReader.read_content_by_filename(actual_local_demo_result.artifact_directory / folder_name)
             for folder_name in RunFolderReader.list_folder_names(actual_local_demo_result.artifact_directory)
         }
-        actual_hosted_listing_by_folder_name: dict[str, list[str]] = {
-            folder_name: RunFolderReader.list_entry_names(actual_hosted_demo_result.artifact_directory / folder_name)
+        actual_hosted_content_by_filename_by_folder_name: dict[str, dict[str, bytes]] = {
+            folder_name: RunFolderReader.read_content_by_filename(actual_hosted_demo_result.artifact_directory / folder_name)
             for folder_name in RunFolderReader.list_folder_names(actual_hosted_demo_result.artifact_directory)
         }
-        WorkItemListingsAsserter.assert_expected_and_actual_are_equal(
-            expected_work_item_folder_names, actual_local_listing_by_folder_name, actual_hosted_listing_by_folder_name
+        WorkItemContentsAsserter.assert_expected_and_actual_are_equal(
+            expected_work_item_folder_names, actual_local_content_by_filename_by_folder_name, actual_hosted_content_by_filename_by_folder_name
         )
         RunFolderEntriesAsserter.assert_expected_and_actual_are_equal(
             expected_hosted_entry_names, RunFolderReader.list_entry_names(actual_hosted_demo_result.artifact_directory)
@@ -367,7 +376,6 @@ class TestDemoHosts:
                 f"{CONTRACT_FOLDER_NAME}/{CONTRACT_FOLDER_NAME}{FIRST_PAGE_TEXT_FILENAME_SUFFIX}",
                 f"{LEASE_FOLDER_NAME}/{LEASE_FOLDER_NAME}{FIRST_PAGE_TEXT_FILENAME_SUFFIX}",
             },
-            manifest_filename=MANIFEST_FILENAME,
         )
 
         # Act
@@ -398,7 +406,7 @@ class TestDemoHosts:
         # Arrange - one exception, even though the failing step and its work item each logged a warning breadcrumb
         expected_exception_telemetry: ExpectedExceptionTelemetry = ExpectedExceptionTelemetry(
             severity="ERROR",
-            exception_type="ModelResponseParseError",
+            exception_type="ModelResponseParseException",
             stack_trace_phrase="Traceback",
             custom_dimensions={
                 "pipeline.name": PIPELINE_NAME,

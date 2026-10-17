@@ -7,9 +7,9 @@ from typing import Any, Final, Self, TypedDict, cast, final
 import httpx
 
 from pipeline_breadcrumbs_app.document_analysis.exceptions import (
-    ModelServiceContractError,
-    ModelServiceRequestRejectedError,
-    ModelServiceUnavailableError,
+    ModelServiceContractException,
+    ModelServiceRequestRejectedException,
+    ModelServiceUnavailableException,
 )
 from pipeline_breadcrumbs_app.document_analysis.models import ClassificationPrompt
 
@@ -116,7 +116,7 @@ class GatewayModelService:
                 raise self._create_status_error(
                     operation_name, failed_status_code, "the failure detail could not be read in time"
                 ) from transport_error
-            raise ModelServiceUnavailableError(
+            raise ModelServiceUnavailableException(
                 operation_name, self._sanitize(f"{type(transport_error).__name__}: {transport_error}")
             ) from transport_error
         return self._extract_reply(operation_name, reply_envelope_bytes)
@@ -124,23 +124,23 @@ class GatewayModelService:
     @classmethod
     def _create_status_error(
         cls, operation_name: str, http_status_code: int, failure_detail: str
-    ) -> ModelServiceUnavailableError | ModelServiceRequestRejectedError:
+    ) -> ModelServiceUnavailableException | ModelServiceRequestRejectedException:
         # 429 and 5xx are the service's trouble and may pass; any other refusal will be refused again.
         if http_status_code == cls.HTTP_STATUS_TOO_MANY_REQUESTS or http_status_code >= cls.HTTP_STATUS_SERVER_ERROR_FLOOR:
-            return ModelServiceUnavailableError(operation_name, failure_detail, http_status_code)
-        return ModelServiceRequestRejectedError(operation_name, http_status_code, failure_detail)
+            return ModelServiceUnavailableException(operation_name, failure_detail, http_status_code)
+        return ModelServiceRequestRejectedException(operation_name, http_status_code, failure_detail)
 
     @classmethod
     def _extract_reply(cls, operation_name: str, reply_envelope_bytes: bytes) -> str:
         if len(reply_envelope_bytes) > cls.MAXIMUM_REPLY_ENVELOPE_BYTES:
-            raise ModelServiceContractError(operation_name, f"the response is larger than {cls.MAXIMUM_REPLY_ENVELOPE_BYTES} bytes")
+            raise ModelServiceContractException(operation_name, f"the response is larger than {cls.MAXIMUM_REPLY_ENVELOPE_BYTES} bytes")
         try:
             reply_envelope: Any = json.loads(reply_envelope_bytes)
         except (ValueError, RecursionError) as decode_error:
-            raise ModelServiceContractError(operation_name, f"the response is not JSON ({type(decode_error).__name__})") from decode_error
+            raise ModelServiceContractException(operation_name, f"the response is not JSON ({type(decode_error).__name__})") from decode_error
         reply: Any = cast("dict[str, Any]", reply_envelope).get(cls.REPLY_FIELD_NAME) if isinstance(reply_envelope, dict) else None
         if not isinstance(reply, str):
-            raise ModelServiceContractError(operation_name, f"the response is not a JSON object with a text '{cls.REPLY_FIELD_NAME}' field")
+            raise ModelServiceContractException(operation_name, f"the response is not a JSON object with a text '{cls.REPLY_FIELD_NAME}' field")
         return reply
 
     @classmethod

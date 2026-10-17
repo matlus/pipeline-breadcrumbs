@@ -5,7 +5,7 @@
 import pytest
 from breadcrumbs_acceptance_support.asserters.asserter_exception import ExceptionAsserter, ExpectedException
 
-from pipeline_breadcrumbs import InvalidDeclarationError, Step, StepPath
+from pipeline_breadcrumbs import InvalidDeclarationException, Step, StepPath
 
 
 @pytest.mark.acceptance
@@ -53,10 +53,12 @@ class TestStepDeclaration:
     @pytest.mark.parametrize("step_number", [0, -1, 100])
     def test_Step_WhenTheNumberIsOutsideOneToNinetyNine_ThenItIsRefused(self, step_number: int) -> None:
         # Arrange - the padded filename range is 1 to 99
-        expected_exception: ExpectedException = ExpectedException(InvalidDeclarationError, message_phrases=["between 1 and 99", f"got {step_number}"])
+        expected_exception: ExpectedException = ExpectedException(
+            InvalidDeclarationException, message_phrases=["between 1 and 99", f"got {step_number}"]
+        )
 
         # Act
-        with pytest.raises(InvalidDeclarationError) as actual_raised:
+        with pytest.raises(InvalidDeclarationException) as actual_raised:
             Step(step_number, "Load")
 
         # Assert
@@ -64,10 +66,10 @@ class TestStepDeclaration:
 
     def test_Step_WhenTheNameIsBlank_ThenItIsRefused(self) -> None:
         # Arrange
-        expected_exception: ExpectedException = ExpectedException(InvalidDeclarationError, message_phrases=["name must not be blank"])
+        expected_exception: ExpectedException = ExpectedException(InvalidDeclarationException, message_phrases=["name must not be blank"])
 
         # Act
-        with pytest.raises(InvalidDeclarationError) as actual_raised:
+        with pytest.raises(InvalidDeclarationException) as actual_raised:
             Step(1, "   ")
 
         # Assert
@@ -77,11 +79,11 @@ class TestStepDeclaration:
     def test_Step_WhenTheRequestedKeyIsMalformed_ThenItIsRefused(self, requested_key: str) -> None:
         # Arrange
         expected_exception: ExpectedException = ExpectedException(
-            InvalidDeclarationError, message_phrases=[requested_key, "lowercase letters and digits"]
+            InvalidDeclarationException, message_phrases=[requested_key, "lowercase letters and digits"]
         )
 
         # Act
-        with pytest.raises(InvalidDeclarationError) as actual_raised:
+        with pytest.raises(InvalidDeclarationException) as actual_raised:
             Step(1, "Load", requested_key=requested_key)
 
         # Assert
@@ -119,7 +121,7 @@ class TestStepPathComposition:
         actual_segments_sorted_as_text: list[str] = sorted(step_path.padded() for step_path in step_paths)
         actual_segments_in_path_order: list[str] = [step_path.padded() for step_path in sorted(step_paths)]
 
-        # Assert - sorting the text and sorting the paths agree, and both are the pipeline order
+        # Assert
         assert (actual_segments_sorted_as_text, actual_segments_in_path_order) == (expected_segments, expected_segments)
 
     def test_StepPath_WhenTwoPathsDifferInTheirLastNumber_ThenTheyOrderNumericallyNotAlphabetically(self) -> None:

@@ -1,47 +1,17 @@
-"""The system's exceptions.
+"""The system's exceptions, on the sample's one hierarchy.
 
-A real host brings its own hierarchy (the Meridian base exception, for instance). This
-minimal one has the same shape: a message, named contextual data, and `add_contextual_data`
-so the failing step can stamp its identity onto it. That shape is all the library asks for.
+Each derives from the business or the technical branch the package defines, so the application, the
+library and the system it calls share one root. The failing step stamps its identity onto any of them.
 """
 
-from abc import ABC
 from collections.abc import Iterable
 from typing import final
 
-from pipeline_breadcrumbs import ContextualDataDict
-
-
-class DocumentAnalysisError(Exception, ABC):
-    """A technical failure in the document analysis system, carrying named diagnostic data.
-
-    Like the host exception bases it mirrors, it accumulates contextual data as it propagates:
-    each boundary it crosses may add what that boundary knows.
-    """
-
-    def __init__(self, message: str, contextual_data_by_name: ContextualDataDict | None = None) -> None:
-        super().__init__(message)
-        self._message: str = message
-        self._contextual_data_by_name: ContextualDataDict = dict(contextual_data_by_name or {})
-
-    @property
-    def contextual_data_by_name(self) -> ContextualDataDict:
-        return {"ExceptionType": type(self).__name__, "Message": self._message, **self._contextual_data_by_name}
-
-    def add_contextual_data(self, contextual_data_by_name: ContextualDataDict) -> None:
-        self._contextual_data_by_name.update(contextual_data_by_name)
-
-
-class DocumentAnalysisBusinessError(DocumentAnalysisError, ABC):
-    """The caller can correct this: the request itself was wrong, and sending it again unchanged fails the same way."""
-
-
-class DocumentAnalysisTechnicalError(DocumentAnalysisError, ABC):
-    """An operator or a dependency owns this: the request was fine, and something the system relies on failed or is misconfigured."""
+from pipeline_breadcrumbs import ContextualDataDict, PipelineBreadcrumbsBusinessBaseException, PipelineBreadcrumbsTechnicalBaseException
 
 
 @final
-class DocumentValidationError(DocumentAnalysisBusinessError):
+class DocumentValidationException(PipelineBreadcrumbsBusinessBaseException):
     """The document handed to the system is not one it can analyze. Every problem found is reported at once."""
 
     def __init__(self, validation_problems: Iterable[str], contextual_data_by_name: ContextualDataDict) -> None:
@@ -49,7 +19,7 @@ class DocumentValidationError(DocumentAnalysisBusinessError):
 
 
 @final
-class ModelResponseParseError(DocumentAnalysisTechnicalError):
+class ModelResponseParseException(PipelineBreadcrumbsTechnicalBaseException):
     """The model returned something that is not the JSON the step asked for."""
 
     def __init__(self, page_number: int, reason: str) -> None:
@@ -57,7 +27,7 @@ class ModelResponseParseError(DocumentAnalysisTechnicalError):
 
 
 @final
-class ConfigurationSettingError(DocumentAnalysisTechnicalError):
+class ConfigurationSettingException(PipelineBreadcrumbsTechnicalBaseException):
     """A configuration setting is missing or malformed. Raised while the system is being built, before any work."""
 
     def __init__(self, message: str, environment_variable_name: str) -> None:
@@ -65,7 +35,7 @@ class ConfigurationSettingError(DocumentAnalysisTechnicalError):
 
 
 @final
-class ModelServiceUnavailableError(DocumentAnalysisTechnicalError):
+class ModelServiceUnavailableException(PipelineBreadcrumbsTechnicalBaseException):
     """The model service could not answer: it was unreachable, timed out, was busy, or failed on its side.
 
     A later attempt might succeed. The system does not retry; the step fails and its breadcrumbs show where.
@@ -80,7 +50,7 @@ class ModelServiceUnavailableError(DocumentAnalysisTechnicalError):
 
 
 @final
-class ModelServiceRequestRejectedError(DocumentAnalysisTechnicalError):
+class ModelServiceRequestRejectedException(PipelineBreadcrumbsTechnicalBaseException):
     """The model service refused the request itself. Sending it again would be refused again."""
 
     def __init__(self, operation_name: str, http_status_code: int, failure_detail: str) -> None:
@@ -91,11 +61,11 @@ class ModelServiceRequestRejectedError(DocumentAnalysisTechnicalError):
 
 
 @final
-class ModelServiceContractError(DocumentAnalysisTechnicalError):
+class ModelServiceContractException(PipelineBreadcrumbsTechnicalBaseException):
     """The model service answered successfully but not in the envelope its API promises.
 
     This is the service breaking its contract, not the model giving a bad answer: the model's own reply is
-    untrusted text that the processors check, and its faults are `ModelResponseParseError`.
+    untrusted text that the processors check, and its faults are `ModelResponseParseException`.
     """
 
     def __init__(self, operation_name: str, failure_detail: str) -> None:

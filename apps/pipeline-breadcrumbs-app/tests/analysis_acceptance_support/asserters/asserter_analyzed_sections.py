@@ -29,16 +29,12 @@ class AnalyzedSectionsAsserter:
                 for section_field in fields(ScoredSection)
                 if getattr(expected_scored_section, section_field.name) != getattr(actual_scored_section, section_field.name)
             )
-        mismatches.extend(
-            f"section {position}: missing {missing_scored_section}"
-            for position, missing_scored_section in enumerate(expected_scored_sections[len(actual_scored_sections) :], len(actual_scored_sections))
-        )
-        mismatches.extend(
-            f"section {position}: unexpected {unexpected_scored_section}"
-            for position, unexpected_scored_section in enumerate(
-                actual_scored_sections[len(expected_scored_sections) :], len(expected_scored_sections)
-            )
-        )
+        missing_scored_section: ScoredSection
+        for position, missing_scored_section in enumerate(expected_scored_sections[len(actual_scored_sections) :], len(actual_scored_sections)):
+            mismatches.append(f"section {position}: missing {missing_scored_section}")
+        unexpected_scored_section: ScoredSection
+        for position, unexpected_scored_section in enumerate(actual_scored_sections[len(expected_scored_sections) :], len(expected_scored_sections)):
+            mismatches.append(f"section {position}: unexpected {unexpected_scored_section}")
         assert not mismatches, format_assertion_report(
             AnalyzedSectionsAsserter.ANALYZED_SECTIONS_ASSERTION_FAILED_HEADER,
             "Each section carries the title, category and confidence the model gave its page, in page order.",

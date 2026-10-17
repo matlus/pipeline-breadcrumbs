@@ -18,6 +18,7 @@ from pipeline_breadcrumbs.artifacts import ArtifactKind, ArtifactRole
 from pipeline_breadcrumbs.steps import StepStatus
 
 MANIFEST_KIND: Final[ArtifactKind] = ArtifactKind("manifest", "json", "application/json", role=ArtifactRole.OUTPUT)
+MANIFEST_FILENAME: Final[str] = f"{MANIFEST_KIND.key}.{MANIFEST_KIND.extension}"
 
 _ELAPSED_SECONDS_DECIMALS: Final[int] = 3
 
@@ -47,6 +48,17 @@ class ArtifactRecord:
 
 @final
 @dataclass(frozen=True, slots=True)
+class RunArtifactRecord:
+    """An artifact that belongs to the run as a whole, such as the settings the run used."""
+
+    filename: str
+    artifact_type: str
+    role: str
+    byte_count: int
+
+
+@final
+@dataclass(frozen=True, slots=True)
 class WorkItemRecord:
     work_item_id: str
     work_item_name: str
@@ -68,6 +80,7 @@ class RunRecord:
     finished_at: str
     elapsed_seconds: float
     work_item_records: tuple[WorkItemRecord, ...]
+    run_artifact_records: tuple[RunArtifactRecord, ...]
 
 
 @final
@@ -154,12 +167,11 @@ def _apply_run_event(run_event: RunEvent, work_item_attempts: list[_WorkItemAtte
             attempt_index: int = latest_attempt_index_by_work_item_id[run_event.work_item_id]
             work_item_attempts[attempt_index] = _close_attempt(work_item_attempts[attempt_index], run_event)
         case StepRecorded():
-            work_item_attempt: _WorkItemAttempt = work_item_attempts[latest_attempt_index_by_work_item_id[run_event.work_item_id]]
-            work_item_attempt.step_record_by_step_instance_id[run_event.step_instance_id] = run_event.step_record
+            _record_step(work_item_attempts[latest_attempt_index_by_work_item_id[run_event.work_item_id]], run_event)
         case StepClosed():
             _close_step(work_item_attempts[latest_attempt_index_by_work_item_id[run_event.work_item_id]], run_event)
         case ArtifactRecorded():
-            work_item_attempts[latest_attempt_index_by_work_item_id[run_event.work_item_id]].artifact_records.append(run_event.artifact_record)
+            _record_artifact(work_item_attempts[latest_attempt_index_by_work_item_id[run_event.work_item_id]], run_event)
 
 
 def _open_attempt(work_item_opened: WorkItemOpened) -> _WorkItemAttempt:
@@ -187,6 +199,10 @@ def _close_attempt(work_item_attempt: _WorkItemAttempt, work_item_closed: WorkIt
     )
 
 
+def _record_step(work_item_attempt: _WorkItemAttempt, step_recorded: StepRecorded) -> None:
+    work_item_attempt.step_record_by_step_instance_id[step_recorded.step_instance_id] = step_recorded.step_record
+
+
 def _close_step(work_item_attempt: _WorkItemAttempt, step_closed: StepClosed) -> None:
     open_step_record: StepRecord = work_item_attempt.step_record_by_step_instance_id[step_closed.step_instance_id]
     work_item_attempt.step_record_by_step_instance_id[step_closed.step_instance_id] = replace(
@@ -196,6 +212,10 @@ def _close_step(work_item_attempt: _WorkItemAttempt, step_closed: StepClosed) ->
         outcome=step_closed.outcome,
         failure=step_closed.failure,
     )
+
+
+def _record_artifact(work_item_attempt: _WorkItemAttempt, artifact_recorded: ArtifactRecorded) -> None:
+    work_item_attempt.artifact_records.append(artifact_recorded.artifact_record)
 
 
 def _complete_attempt(work_item_attempt: _WorkItemAttempt) -> WorkItemRecord:
@@ -214,9 +234,13 @@ class RunRecorder:
         self._pipeline_name: str = pipeline_name
         self._run_id: str = run_id
         self._run_events: list[RunEvent] = []
+        self._run_artifact_records: list[RunArtifactRecord] = []
 
     def record_run_event(self, run_event: RunEvent) -> None:
         self._run_events.append(run_event)
+
+    def record_run_artifact(self, run_artifact_record: RunArtifactRecord) -> None:
+        self._run_artifact_records.append(run_artifact_record)
 
     def work_item_count(self) -> int:
         return len(build_work_item_records(self._run_events))
@@ -233,5 +257,6 @@ class RunRecorder:
             finished_at=finished_at.isoformat(),
             elapsed_seconds=round(elapsed_seconds, _ELAPSED_SECONDS_DECIMALS),
             work_item_records=build_work_item_records(self._run_events),
+            run_artifact_records=tuple(self._run_artifact_records),
         )
         return json.dumps(asdict(run_record), indent=2).encode("utf-8")

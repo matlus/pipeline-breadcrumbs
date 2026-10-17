@@ -48,12 +48,12 @@ from pipeline_breadcrumbs_app.document_analysis.configuration_providers.settings
 )
 from pipeline_breadcrumbs_app.document_analysis.document_analysis_manager import DocumentAnalysisManager
 from pipeline_breadcrumbs_app.document_analysis.exceptions import (
-    ConfigurationSettingError,
-    DocumentValidationError,
-    ModelResponseParseError,
-    ModelServiceContractError,
-    ModelServiceRequestRejectedError,
-    ModelServiceUnavailableError,
+    ConfigurationSettingException,
+    DocumentValidationException,
+    ModelResponseParseException,
+    ModelServiceContractException,
+    ModelServiceRequestRejectedException,
+    ModelServiceUnavailableException,
 )
 from pipeline_breadcrumbs_app.document_analysis.models import DocumentAnalysis, ScoredSection
 from pipeline_breadcrumbs_app.document_analysis.processors.section_detector import MAX_CONCURRENCY
@@ -96,18 +96,19 @@ DETECTION_STEP_CONTEXTUAL_DATA: Final[dict[str, object]] = {
 }
 
 
+def create_title_reply_by_page_number(section_titles: Sequence[str]) -> dict[int, str]:
+    return {page_number: create_title_reply(section_titles[page_number]) for page_number in range(len(section_titles))}
+
+
 def create_confident_test_mediator(section_titles: Sequence[str], category: str) -> TestMediatorModelService:
     return TestMediatorModelService(
-        detection_reply_by_page_number={page_number: create_title_reply(title) for page_number, title in enumerate(section_titles)},
+        detection_reply_by_page_number=create_title_reply_by_page_number(section_titles),
         score_reply_by_title={title: create_score_reply(category, CONFIDENT) for title in section_titles},
     )
 
 
 def create_pipeline_run(artifact_sink_testing: ArtifactSinkTesting, run_logger: logging.Logger) -> PipelineRun:
     return PipelineRun(pipeline_name=create_random_pipeline_name(), artifact_sink=artifact_sink_testing, logger=run_logger)
-
-
-# ==================== EXPECTED PATHS ====================
 
 
 @pytest.mark.acceptance
@@ -123,7 +124,7 @@ class TestAnalyzeDocumentExpectedPaths:
         document_analysis_manager: DocumentAnalysisManager = create_document_analysis_manager(test_mediator_model_service)
         pipeline_run: PipelineRun = create_pipeline_run(artifact_sink_testing, run_logger)
         expected_scored_sections: list[ScoredSection] = [
-            ScoredSection(page_number, title, category, CONFIDENT) for page_number, title in enumerate(section_titles)
+            ScoredSection(page_number, section_titles[page_number], category, CONFIDENT) for page_number in range(len(section_titles))
         ]
         expected_reconcile_request_count: int = 0
 
@@ -148,7 +149,7 @@ class TestAnalyzeDocumentExpectedPaths:
         confident_category: str = create_random_category()
         reconciled_category: str = create_random_category()
         test_mediator_model_service: TestMediatorModelService = TestMediatorModelService(
-            detection_reply_by_page_number={page_number: create_title_reply(title) for page_number, title in enumerate(section_titles)},
+            detection_reply_by_page_number=create_title_reply_by_page_number(section_titles),
             score_reply_by_title={
                 title: create_score_reply(confident_category, DOUBTFUL if title == doubtful_title else CONFIDENT) for title in section_titles
             },
@@ -188,7 +189,7 @@ class TestAnalyzeDocumentExpectedPaths:
         doubtful_title: str = section_titles[1]
         category: str = create_random_category()
         test_mediator_model_service: TestMediatorModelService = TestMediatorModelService(
-            detection_reply_by_page_number={page_number: create_title_reply(title) for page_number, title in enumerate(section_titles)},
+            detection_reply_by_page_number=create_title_reply_by_page_number(section_titles),
             score_reply_by_title={
                 title: create_score_reply(category, DOUBTFUL if title == doubtful_title else CONFIDENT) for title in section_titles
             },
@@ -197,11 +198,15 @@ class TestAnalyzeDocumentExpectedPaths:
         document_analysis_manager: DocumentAnalysisManager = create_document_analysis_manager(test_mediator_model_service)
         pipeline_run: PipelineRun = create_pipeline_run(artifact_sink_testing, run_logger)
         expected_section_detection_requests: list[SectionDetectionRequest] = [
-            {"page_number": page_number, "page_text": page_text} for page_number, page_text in enumerate(page_texts)
+            {"page_number": page_number, "page_text": page_texts[page_number]} for page_number in range(len(page_texts))
         ]
         expected_score_section_question_requests: list[SectionQuestionRequest] = [
-            {"page_number": page_number, "title": title, "text": f"Classify the section titled '{title}' on page {page_number} into one category."}
-            for page_number, title in enumerate(section_titles)
+            {
+                "page_number": page_number,
+                "title": section_titles[page_number],
+                "text": f"Classify the section titled '{section_titles[page_number]}' on page {page_number} into one category.",
+            }
+            for page_number in range(len(section_titles))
         ]
         expected_reconcile_section_question_requests: list[SectionQuestionRequest] = [
             {"page_number": 1, "title": doubtful_title, "text": f"Reconsider the section titled '{doubtful_title}'."}
@@ -280,9 +285,6 @@ class TestAnalyzeDocumentExpectedPaths:
         )
 
 
-# ==================== DOCUMENT VALIDATION ====================
-
-
 @pytest.mark.acceptance
 class TestAnalyzeDocumentValidation:
     async def test_analyze_document_WhenTheDocumentHasNoPages_ThenItIsRefusedBeforeAnyWorkOrArtifact(
@@ -294,16 +296,16 @@ class TestAnalyzeDocumentValidation:
         document_analysis_manager: DocumentAnalysisManager = create_document_analysis_manager(test_mediator_model_service)
         pipeline_run: PipelineRun = create_pipeline_run(artifact_sink_testing, run_logger)
         expected_exception: ExpectedException = ExpectedException(
-            DocumentValidationError,
+            DocumentValidationException,
             message_phrases=["cannot be analyzed", "the document has no pages"],
-            contextual_data_by_name={"ExceptionType": "DocumentValidationError", "PageCount": 0},
+            contextual_data_by_name={"ExceptionType": "DocumentValidationException", "PageCount": 0},
         )
         expected_step_boundaries: list[ExpectedStepBoundary] = []
         expected_model_service_request_count: int = 0
         expected_filenames: list[str] = [MANIFEST_FILENAME]
 
         # Act
-        with pytest.raises(DocumentValidationError) as actual_raised:
+        with pytest.raises(DocumentValidationException) as actual_raised:
             async with document_analysis_manager, pipeline_run, pipeline_run.open_work_item(work_item) as work_item_scope:
                 await document_analysis_manager.analyze_document(work_item_scope, [])
 
@@ -323,21 +325,18 @@ class TestAnalyzeDocumentValidation:
         pipeline_run: PipelineRun = create_pipeline_run(artifact_sink_testing, run_logger)
         pages_with_blanks: list[str] = ["", create_page_texts(section_titles)[1], "   "]
         expected_exception: ExpectedException = ExpectedException(
-            DocumentValidationError,
+            DocumentValidationException,
             message_phrases=["cannot be analyzed", "pages [0, 2] are blank"],
-            contextual_data_by_name={"ExceptionType": "DocumentValidationError", "PageCount": len(pages_with_blanks)},
+            contextual_data_by_name={"ExceptionType": "DocumentValidationException", "PageCount": len(pages_with_blanks)},
         )
 
         # Act
-        with pytest.raises(DocumentValidationError) as actual_raised:
+        with pytest.raises(DocumentValidationException) as actual_raised:
             async with document_analysis_manager, pipeline_run, pipeline_run.open_work_item(work_item) as work_item_scope:
                 await document_analysis_manager.analyze_document(work_item_scope, pages_with_blanks)
 
         # Assert
         ExceptionAsserter.assert_expected_and_actual_are_equal(expected_exception, actual_raised.value)
-
-
-# ==================== MODEL REPLY FAILURES ====================
 
 
 @pytest.mark.acceptance
@@ -352,18 +351,18 @@ class TestAnalyzeDocumentModelReplyFailures:
         malformed_reply: str = 'Sure! Here is the JSON you asked for: {"title": '
         test_mediator_model_service: TestMediatorModelService = TestMediatorModelService(
             detection_reply_by_page_number={
-                page_number: malformed_reply if page_number == malformed_page_number else create_title_reply(title)
-                for page_number, title in enumerate(section_titles)
+                page_number: malformed_reply if page_number == malformed_page_number else create_title_reply(section_titles[page_number])
+                for page_number in range(len(section_titles))
             },
         )
         document_analysis_manager: DocumentAnalysisManager = create_document_analysis_manager(test_mediator_model_service)
         pipeline_run: PipelineRun = create_pipeline_run(artifact_sink_testing, run_logger)
         stem: str = work_item.stem
         expected_exception: ExpectedException = ExpectedException(
-            ModelResponseParseError,
+            ModelResponseParseException,
             message_phrases=[f"model response for page {malformed_page_number}", "could not be parsed"],
             contextual_data_by_name={
-                "ExceptionType": "ModelResponseParseError",
+                "ExceptionType": "ModelResponseParseException",
                 "PageNumber": malformed_page_number,
                 **DETECTION_STEP_CONTEXTUAL_DATA,
             },
@@ -376,7 +375,7 @@ class TestAnalyzeDocumentModelReplyFailures:
         ]
 
         # Act
-        with pytest.raises(ModelResponseParseError) as actual_raised:
+        with pytest.raises(ModelResponseParseException) as actual_raised:
             async with document_analysis_manager, pipeline_run, pipeline_run.open_work_item(work_item) as work_item_scope:
                 await document_analysis_manager.analyze_document(work_item_scope, create_page_texts(section_titles))
 
@@ -403,17 +402,17 @@ class TestAnalyzeDocumentModelReplyFailures:
         document_analysis_manager: DocumentAnalysisManager = create_document_analysis_manager(test_mediator_model_service)
         pipeline_run: PipelineRun = create_pipeline_run(artifact_sink_testing, run_logger)
         expected_exception: ExpectedException = ExpectedException(
-            ModelResponseParseError,
+            ModelResponseParseException,
             message_phrases=[f"model response for page {first_malformed_page_number}"],
             contextual_data_by_name={
-                "ExceptionType": "ModelResponseParseError",
+                "ExceptionType": "ModelResponseParseException",
                 "PageNumber": first_malformed_page_number,
                 **DETECTION_STEP_CONTEXTUAL_DATA,
             },
         )
 
         # Act
-        with pytest.raises(ModelResponseParseError) as actual_raised:
+        with pytest.raises(ModelResponseParseException) as actual_raised:
             async with document_analysis_manager, pipeline_run, pipeline_run.open_work_item(work_item) as work_item_scope:
                 await document_analysis_manager.analyze_document(work_item_scope, create_page_texts(section_titles))
 
@@ -439,13 +438,13 @@ class TestAnalyzeDocumentModelReplyFailures:
         document_analysis_manager: DocumentAnalysisManager = create_document_analysis_manager(test_mediator_model_service)
         pipeline_run: PipelineRun = create_pipeline_run(artifact_sink_testing, run_logger)
         expected_exception: ExpectedException = ExpectedException(
-            ModelResponseParseError,
+            ModelResponseParseException,
             message_phrases=["model response for page 0", expected_reason_phrase],
-            contextual_data_by_name={"ExceptionType": "ModelResponseParseError", "PageNumber": 0, **DETECTION_STEP_CONTEXTUAL_DATA},
+            contextual_data_by_name={"ExceptionType": "ModelResponseParseException", "PageNumber": 0, **DETECTION_STEP_CONTEXTUAL_DATA},
         )
 
         # Act
-        with pytest.raises(ModelResponseParseError) as actual_raised:
+        with pytest.raises(ModelResponseParseException) as actual_raised:
             async with document_analysis_manager, pipeline_run, pipeline_run.open_work_item(work_item) as work_item_scope:
                 await document_analysis_manager.analyze_document(work_item_scope, create_page_texts(section_titles))
 
@@ -488,10 +487,10 @@ class TestAnalyzeDocumentModelReplyFailures:
         document_analysis_manager: DocumentAnalysisManager = create_document_analysis_manager(test_mediator_model_service)
         pipeline_run: PipelineRun = create_pipeline_run(artifact_sink_testing, run_logger)
         expected_exception: ExpectedException = ExpectedException(
-            ModelResponseParseError,
+            ModelResponseParseException,
             message_phrases=["model response for page 0", expected_reason_phrase],
             contextual_data_by_name={
-                "ExceptionType": "ModelResponseParseError",
+                "ExceptionType": "ModelResponseParseException",
                 "PageNumber": 0,
                 "FailedAtStepNumber": "3.2",
                 "FailedAtStepName": "Score Sections",
@@ -500,15 +499,12 @@ class TestAnalyzeDocumentModelReplyFailures:
         )
 
         # Act
-        with pytest.raises(ModelResponseParseError) as actual_raised:
+        with pytest.raises(ModelResponseParseException) as actual_raised:
             async with document_analysis_manager, pipeline_run, pipeline_run.open_work_item(work_item) as work_item_scope:
                 await document_analysis_manager.analyze_document(work_item_scope, create_page_texts(section_titles))
 
         # Assert
         ExceptionAsserter.assert_expected_and_actual_are_equal(expected_exception, actual_raised.value)
-
-
-# ==================== MODEL SERVICE FAILURES ====================
 
 
 @pytest.mark.acceptance
@@ -524,10 +520,10 @@ class TestAnalyzeDocumentModelServiceFailures:
         pipeline_run: PipelineRun = create_pipeline_run(artifact_sink_testing, run_logger)
         expected_failure_detail: str = "ConnectError: the model service is unreachable (simulated by TestMediatorModelService)"
         expected_exception: ExpectedException = ExpectedException(
-            ModelServiceUnavailableError,
+            ModelServiceUnavailableException,
             message_phrases=["model service could not answer", DETECT_SECTION_OPERATION, "ConnectError"],
             contextual_data_by_name={
-                "ExceptionType": "ModelServiceUnavailableError",
+                "ExceptionType": "ModelServiceUnavailableException",
                 "ModelService.Operation": DETECT_SECTION_OPERATION,
                 "ModelService.FailureDetail": expected_failure_detail,
                 **DETECTION_STEP_CONTEXTUAL_DATA,
@@ -535,7 +531,7 @@ class TestAnalyzeDocumentModelServiceFailures:
         )
 
         # Act
-        with pytest.raises(ModelServiceUnavailableError) as actual_raised:
+        with pytest.raises(ModelServiceUnavailableException) as actual_raised:
             async with document_analysis_manager, pipeline_run, pipeline_run.open_work_item(work_item) as work_item_scope:
                 await document_analysis_manager.analyze_document(work_item_scope, create_page_texts(section_titles))
 
@@ -556,10 +552,10 @@ class TestAnalyzeDocumentModelServiceFailures:
         document_analysis_manager: DocumentAnalysisManager = create_document_analysis_manager(test_mediator_model_service)
         pipeline_run: PipelineRun = create_pipeline_run(artifact_sink_testing, run_logger)
         expected_exception: ExpectedException = ExpectedException(
-            ModelServiceUnavailableError,
+            ModelServiceUnavailableException,
             message_phrases=["model service could not answer", service_failure_text],
             contextual_data_by_name={
-                "ExceptionType": "ModelServiceUnavailableError",
+                "ExceptionType": "ModelServiceUnavailableException",
                 "ModelService.Operation": DETECT_SECTION_OPERATION,
                 "ModelService.HttpStatusCode": HTTP_STATUS_SERVICE_UNAVAILABLE,
                 "ModelService.FailureDetail": service_failure_text,
@@ -568,7 +564,7 @@ class TestAnalyzeDocumentModelServiceFailures:
         )
 
         # Act
-        with pytest.raises(ModelServiceUnavailableError) as actual_raised:
+        with pytest.raises(ModelServiceUnavailableException) as actual_raised:
             async with document_analysis_manager, pipeline_run, pipeline_run.open_work_item(work_item) as work_item_scope:
                 await document_analysis_manager.analyze_document(work_item_scope, create_page_texts(section_titles))
 
@@ -588,10 +584,10 @@ class TestAnalyzeDocumentModelServiceFailures:
         document_analysis_manager: DocumentAnalysisManager = create_document_analysis_manager(test_mediator_model_service)
         pipeline_run: PipelineRun = create_pipeline_run(artifact_sink_testing, run_logger)
         expected_exception: ExpectedException = ExpectedException(
-            ModelServiceRequestRejectedError,
+            ModelServiceRequestRejectedException,
             message_phrases=["rejected", f"HTTP {HTTP_STATUS_BAD_REQUEST}", rejection_text],
             contextual_data_by_name={
-                "ExceptionType": "ModelServiceRequestRejectedError",
+                "ExceptionType": "ModelServiceRequestRejectedException",
                 "ModelService.Operation": DETECT_SECTION_OPERATION,
                 "ModelService.HttpStatusCode": HTTP_STATUS_BAD_REQUEST,
                 "ModelService.FailureDetail": rejection_text,
@@ -600,7 +596,7 @@ class TestAnalyzeDocumentModelServiceFailures:
         )
 
         # Act
-        with pytest.raises(ModelServiceRequestRejectedError) as actual_raised:
+        with pytest.raises(ModelServiceRequestRejectedException) as actual_raised:
             async with document_analysis_manager, pipeline_run, pipeline_run.open_work_item(work_item) as work_item_scope:
                 await document_analysis_manager.analyze_document(work_item_scope, create_page_texts(section_titles))
 
@@ -628,10 +624,10 @@ class TestAnalyzeDocumentModelServiceFailures:
         document_analysis_manager: DocumentAnalysisManager = create_document_analysis_manager(test_mediator_model_service)
         pipeline_run: PipelineRun = create_pipeline_run(artifact_sink_testing, run_logger)
         expected_exception: ExpectedException = ExpectedException(
-            ModelServiceContractError,
+            ModelServiceContractException,
             message_phrases=["unexpected shape", expected_reason_phrase],
             contextual_data_by_name={
-                "ExceptionType": "ModelServiceContractError",
+                "ExceptionType": "ModelServiceContractException",
                 "ModelService.Operation": DETECT_SECTION_OPERATION,
                 "ModelService.FailureDetail": expected_reason_phrase,
                 **DETECTION_STEP_CONTEXTUAL_DATA,
@@ -639,15 +635,12 @@ class TestAnalyzeDocumentModelServiceFailures:
         )
 
         # Act
-        with pytest.raises(ModelServiceContractError) as actual_raised:
+        with pytest.raises(ModelServiceContractException) as actual_raised:
             async with document_analysis_manager, pipeline_run, pipeline_run.open_work_item(work_item) as work_item_scope:
                 await document_analysis_manager.analyze_document(work_item_scope, create_page_texts(section_titles))
 
         # Assert
         ExceptionAsserter.assert_expected_and_actual_are_equal(expected_exception, actual_raised.value)
-
-
-# ==================== LIFECYCLE ====================
 
 
 @pytest.mark.acceptance
@@ -668,9 +661,6 @@ class TestDocumentAnalysisManagerLifecycle:
         assert test_mediator_model_service.closed_transport_count == expected_closed_transport_count
 
 
-# ==================== CONFIGURATION ====================
-
-
 @pytest.mark.acceptance
 class TestDocumentAnalysisManagerConfiguration:
     @pytest.mark.parametrize(
@@ -689,16 +679,16 @@ class TestDocumentAnalysisManagerConfiguration:
             TestMediatorModelService(), {MODEL_SERVICE_BASE_URL_VARIABLE_NAME: setting_value}
         )
         expected_exception: ExpectedException = ExpectedException(
-            ConfigurationSettingError,
+            ConfigurationSettingException,
             message_phrases=[MODEL_SERVICE_BASE_URL_VARIABLE_NAME, expected_reason_phrase],
             contextual_data_by_name={
-                "ExceptionType": "ConfigurationSettingError",
+                "ExceptionType": "ConfigurationSettingException",
                 "Configuration.EnvironmentVariableName": MODEL_SERVICE_BASE_URL_VARIABLE_NAME,
             },
         )
 
         # Act
-        with pytest.raises(ConfigurationSettingError) as actual_raised:
+        with pytest.raises(ConfigurationSettingException) as actual_raised:
             DocumentAnalysisManager(service_locator_testing)
 
         # Assert
@@ -720,16 +710,16 @@ class TestDocumentAnalysisManagerConfiguration:
             TestMediatorModelService(), {SIMULATED_WORK_SECONDS_VARIABLE_NAME: setting_value}
         )
         expected_exception: ExpectedException = ExpectedException(
-            ConfigurationSettingError,
+            ConfigurationSettingException,
             message_phrases=[SIMULATED_WORK_SECONDS_VARIABLE_NAME, "not a number of seconds of 0 or more"],
             contextual_data_by_name={
-                "ExceptionType": "ConfigurationSettingError",
+                "ExceptionType": "ConfigurationSettingException",
                 "Configuration.EnvironmentVariableName": SIMULATED_WORK_SECONDS_VARIABLE_NAME,
             },
         )
 
         # Act
-        with pytest.raises(ConfigurationSettingError) as actual_raised:
+        with pytest.raises(ConfigurationSettingException) as actual_raised:
             DocumentAnalysisManager(service_locator_testing)
 
         # Assert

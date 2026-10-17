@@ -9,8 +9,8 @@ from typing import Final
 import pytest
 from breadcrumbs_acceptance_support.asserters.asserter_exception import ExceptionAsserter, ExpectedException
 
-from pipeline_breadcrumbs import ArtifactKind, StepArtifact, StepPath, WorkItem
-from pipeline_breadcrumbs.hosting import WorkItemFolderCollisionError
+from pipeline_breadcrumbs import MANIFEST_KIND, ArtifactKind, StepArtifact, StepPath, WorkItem
+from pipeline_breadcrumbs.hosting import WorkItemFolderCollisionException
 from pipeline_breadcrumbs_app.artifact_sink_blob_storage import ArtifactSinkBlobStorage
 
 PAGE_TEXT: Final[ArtifactKind] = ArtifactKind("page_text", "txt", "text/plain")
@@ -39,11 +39,11 @@ class TestArtifactSinkBlobStorage:
         artifact_sink_blob_storage: ArtifactSinkBlobStorage = ArtifactSinkBlobStorage(tmp_path / create_random_run_name())
         await artifact_sink_blob_storage.persist(StepArtifact(PAGE_TEXT, secrets.token_bytes(8), first_work_item, StepPath((1,))))
         expected_exception: ExpectedException = ExpectedException(
-            WorkItemFolderCollisionError, message_phrases=[first_work_item.id, second_work_item.id, shared_stem, "must be unique within a run"]
+            WorkItemFolderCollisionException, message_phrases=[first_work_item.id, second_work_item.id, shared_stem, "must be unique within a run"]
         )
 
         # Act
-        with pytest.raises(WorkItemFolderCollisionError) as actual_raised:
+        with pytest.raises(WorkItemFolderCollisionException) as actual_raised:
             await artifact_sink_blob_storage.persist(StepArtifact(PAGE_TEXT, secrets.token_bytes(8), second_work_item, StepPath((1,))))
 
         # Assert
@@ -57,12 +57,28 @@ class TestArtifactSinkBlobStorage:
         artifact_sink_blob_storage: ArtifactSinkBlobStorage = ArtifactSinkBlobStorage(tmp_path / create_random_run_name())
         await artifact_sink_blob_storage.persist(StepArtifact(PAGE_TEXT, secrets.token_bytes(8), first_work_item, StepPath((1,))))
         expected_exception: ExpectedException = ExpectedException(
-            WorkItemFolderCollisionError, message_phrases=[first_work_item.id, second_work_item.id, "must be unique within a run"]
+            WorkItemFolderCollisionException, message_phrases=[first_work_item.id, second_work_item.id, "must be unique within a run"]
         )
 
         # Act
-        with pytest.raises(WorkItemFolderCollisionError) as actual_raised:
+        with pytest.raises(WorkItemFolderCollisionException) as actual_raised:
             await artifact_sink_blob_storage.persist(StepArtifact(PAGE_TEXT, secrets.token_bytes(8), second_work_item, StepPath((1,))))
+
+        # Assert
+        ExceptionAsserter.assert_expected_and_actual_are_equal(expected_exception, actual_raised.value)
+
+    async def test_ArtifactSinkBlobStorage_WhenAWorkItemsPrefixWouldTakeTheManifestsName_ThenItIsRefused(self, tmp_path: Path) -> None:
+        # Arrange - the stem drops only the last extension, so this work item's prefix would be named like the run's manifest blob
+        manifest_blob_name: str = f"{MANIFEST_KIND.key}.{MANIFEST_KIND.extension}"
+        work_item: WorkItem = create_random_work_item_with_stem(manifest_blob_name, "pdf")
+        artifact_sink_blob_storage: ArtifactSinkBlobStorage = ArtifactSinkBlobStorage(tmp_path / create_random_run_name())
+        expected_exception: ExpectedException = ExpectedException(
+            WorkItemFolderCollisionException, message_phrases=["the run", work_item.id, manifest_blob_name, "must not take the run's own blob names"]
+        )
+
+        # Act
+        with pytest.raises(WorkItemFolderCollisionException) as actual_raised:
+            await artifact_sink_blob_storage.persist(StepArtifact(PAGE_TEXT, secrets.token_bytes(8), work_item, StepPath((1,))))
 
         # Assert
         ExceptionAsserter.assert_expected_and_actual_are_equal(expected_exception, actual_raised.value)

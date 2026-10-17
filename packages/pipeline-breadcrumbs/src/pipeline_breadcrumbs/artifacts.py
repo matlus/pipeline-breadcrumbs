@@ -15,7 +15,7 @@ from dataclasses import dataclass
 from enum import StrEnum
 from typing import Final, Protocol, final
 
-from pipeline_breadcrumbs.declaration_errors import InvalidDeclarationError
+from pipeline_breadcrumbs.declaration_exceptions import InvalidDeclarationException
 from pipeline_breadcrumbs.steps import StepPath
 from pipeline_breadcrumbs.work_items import WorkItem
 
@@ -51,15 +51,15 @@ class ArtifactKind:
 
     def __post_init__(self) -> None:
         if not _KIND_KEY_PATTERN.fullmatch(self.key):
-            raise InvalidDeclarationError(f"Artifact kind key '{self.key}' must be lowercase words separated by single underscores")
+            raise InvalidDeclarationException(f"Artifact kind key '{self.key}' must be lowercase words separated by single underscores")
         if self.key in VAGUE_KIND_KEYS:
-            raise InvalidDeclarationError(
+            raise InvalidDeclarationException(
                 f"Artifact kind key '{self.key}' is too vague; name the kind for what the file holds, such as 'page_evidence'"
             )
         if not _EXTENSION_PATTERN.fullmatch(self.extension):
-            raise InvalidDeclarationError(f"Artifact extension '{self.extension}' must be lowercase letters and digits, without a dot")
+            raise InvalidDeclarationException(f"Artifact extension '{self.extension}' must be lowercase letters and digits, without a dot")
         if not self.content_type.strip():
-            raise InvalidDeclarationError("Artifact content type must not be blank")
+            raise InvalidDeclarationException(f"Artifact kind '{self.key}' must declare a non-blank content type")
 
 
 @final
@@ -75,9 +75,11 @@ class StepArtifact:
 
     def __post_init__(self) -> None:
         if self.step_path.depth == 0:
-            raise InvalidDeclarationError("A step artifact needs a non-empty step path")
+            raise InvalidDeclarationException(
+                f"Artifact kind '{self.artifact_kind.key}' for work item '{self.work_item.id}' needs a non-empty step path"
+            )
         if self.discriminator is not None and not _DISCRIMINATOR_PATTERN.fullmatch(self.discriminator):
-            raise InvalidDeclarationError(
+            raise InvalidDeclarationException(
                 f"Artifact discriminator '{self.discriminator}' may contain only letters, digits, dot, underscore and hyphen"
             )
 
@@ -145,7 +147,9 @@ class ArtifactSinkProtocol(Protocol):
     one. A step never calls the sink directly; it emits through a scope.
 
     `persist` raises whatever error is natural for the destination. The run wraps it in
-    `ArtifactSinkError` and keeps the artifact's identity on it.
+    `ArtifactSinkException` and keeps the artifact's identity on it. A business exception from
+    this library's hierarchy, such as `WorkItemFolderCollisionException`, passes through
+    unchanged, because the caller can correct it.
     """
 
     async def persist(self, artifact: Artifact) -> None: ...

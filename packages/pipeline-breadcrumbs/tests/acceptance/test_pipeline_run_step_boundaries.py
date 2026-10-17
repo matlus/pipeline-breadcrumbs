@@ -22,7 +22,7 @@ from breadcrumbs_acceptance_support.data_generators import (
     create_random_work_item,
 )
 
-from pipeline_breadcrumbs import ArtifactKind, AttributeKey, EventKind, InvalidDeclarationError, PipelineRun, Step, WorkItem
+from pipeline_breadcrumbs import ArtifactKind, AttributeKey, EventKind, InvalidDeclarationException, PipelineRun, Step, WorkItem
 from pipeline_breadcrumbs.testing import ArtifactSinkTesting, RecordCapture
 
 MANIFEST_FILENAME: Final[str] = "manifest.json"
@@ -36,7 +36,13 @@ _RANDOM_SUFFIX_BYTES: Final[int] = 4
 
 
 def _retrieve_record(actual_log_records: Iterable[logging.LogRecord], expected_message: str) -> logging.LogRecord:
-    return next(actual_log_record for actual_log_record in actual_log_records if actual_log_record.getMessage() == expected_message)
+    actual_log_records_in_order: list[logging.LogRecord] = list(actual_log_records)
+    actual_log_record: logging.LogRecord | None = next(
+        (actual_log_record for actual_log_record in actual_log_records_in_order if actual_log_record.getMessage() == expected_message), None
+    )
+    actual_messages: list[str] = [logged_record.getMessage() for logged_record in actual_log_records_in_order]
+    assert actual_log_record is not None, f"no record was logged with the message {expected_message!r}; the messages were {actual_messages!r}"
+    return actual_log_record
 
 
 @pytest.mark.acceptance
@@ -245,11 +251,11 @@ class TestProgressLinesAndAttributes:
         pipeline_name: str = create_random_pipeline_name()
         shadowing_attribute_name: str = "name"
         expected_exception: ExpectedException = ExpectedException(
-            InvalidDeclarationError, message_phrases=["reserved logging attribute names", shadowing_attribute_name]
+            InvalidDeclarationException, message_phrases=["reserved logging attribute names", shadowing_attribute_name]
         )
 
         # Act
-        with pytest.raises(InvalidDeclarationError) as actual_raised:
+        with pytest.raises(InvalidDeclarationException) as actual_raised:
             PipelineRun(pipeline_name=pipeline_name, artifact_sink=artifact_sink_testing, attributes={shadowing_attribute_name: "x"})
 
         # Assert
@@ -258,10 +264,10 @@ class TestProgressLinesAndAttributes:
     def test_PipelineRun_WhenTheNameIsBlank_ThenTheRunIsRefused(self, artifact_sink_testing: ArtifactSinkTesting) -> None:
         # Arrange
         blank_pipeline_name: str = " "
-        expected_exception: ExpectedException = ExpectedException(InvalidDeclarationError, message_phrases=["needs a name"])
+        expected_exception: ExpectedException = ExpectedException(InvalidDeclarationException, message_phrases=["needs a name"])
 
         # Act
-        with pytest.raises(InvalidDeclarationError) as actual_raised:
+        with pytest.raises(InvalidDeclarationException) as actual_raised:
             PipelineRun(pipeline_name=blank_pipeline_name, artifact_sink=artifact_sink_testing)
 
         # Assert

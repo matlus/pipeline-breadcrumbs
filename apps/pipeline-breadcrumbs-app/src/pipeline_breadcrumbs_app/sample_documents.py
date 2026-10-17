@@ -3,6 +3,7 @@
 from collections.abc import Mapping
 from typing import Final, final
 
+from pipeline_breadcrumbs import PipelineBreadcrumbsBusinessBaseException
 from pipeline_breadcrumbs_app.model_service_simulator import MALFORMED_REPLY_MARKER
 
 SAMPLE_DOCUMENTS: Final[dict[str, list[str]]] = {
@@ -21,8 +22,14 @@ SAMPLE_DOCUMENTS: Final[dict[str, list[str]]] = {
 
 
 @final
-class InvalidFailPageError(ValueError):
-    """The page asked to fail does not exist in the document."""
+class InvalidFailPageException(PipelineBreadcrumbsBusinessBaseException):
+    """The page asked to fail does not exist in the document. Whoever ran the demo chose it, and can choose another."""
+
+    def __init__(self, document_name: str, page_number: int, page_count: int) -> None:
+        super().__init__(
+            f"Page {page_number} does not exist in '{document_name}', which has {page_count} page(s)",
+            {"DocumentName": document_name, "PageNumber": page_number, "PageCount": page_count},
+        )
 
 
 def with_malformed_reply(pages_by_document_name: Mapping[str, list[str]], document_name: str, page_number: int) -> dict[str, list[str]]:
@@ -33,7 +40,7 @@ def with_malformed_reply(pages_by_document_name: Mapping[str, list[str]], docume
     """
     page_count: int = len(pages_by_document_name.get(document_name, []))
     if not 0 <= page_number < page_count:
-        raise InvalidFailPageError(f"Page {page_number} does not exist in '{document_name}', which has {page_count} page(s)")
+        raise InvalidFailPageException(document_name, page_number, page_count)
     marked_pages_by_document_name: dict[str, list[str]] = {}
     source_document_name: str
     source_pages: list[str]

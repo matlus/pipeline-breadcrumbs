@@ -8,10 +8,11 @@ import logging
 from collections.abc import Mapping
 from typing import final
 
+from pipeline_breadcrumbs.artifact_sink_exceptions import ArtifactSinkException
 from pipeline_breadcrumbs.artifacts import Artifact, ArtifactSinkProtocol
 from pipeline_breadcrumbs.attributes import AttributeBag, AttributeValue
 from pipeline_breadcrumbs.clock import Clock
-from pipeline_breadcrumbs.errors import ArtifactSinkError
+from pipeline_breadcrumbs.exceptions import PipelineBreadcrumbsBusinessBaseException
 from pipeline_breadcrumbs.manifest import RunRecorder
 
 
@@ -34,12 +35,16 @@ class RunContext:
         self._artifact_sink: ArtifactSinkProtocol = artifact_sink
         self._base_attributes: Mapping[str, AttributeValue] = base_attributes
 
-    def log(self, level: int, message: str, attributes: Mapping[str, AttributeValue]) -> None:
+    def log(self, level: int, message: str, attributes: Mapping[str, AttributeValue], *, exception: BaseException | None = None) -> None:
+        """`exception`, when given, travels with the record so a handler can render its traceback."""
         merged_attributes: AttributeBag = {**self._base_attributes, **attributes}
-        self.logger.log(level, message, extra=merged_attributes)
+        self.logger.log(level, message, exc_info=exception, extra=merged_attributes)
 
     async def persist(self, artifact: Artifact) -> None:
         try:
             await self._artifact_sink.persist(artifact)
+        except PipelineBreadcrumbsBusinessBaseException:
+            # The caller can correct it, such as two work items named alike; reporting it as a storage failure would hide that.
+            raise
         except Exception as error:
-            raise ArtifactSinkError(artifact) from error
+            raise ArtifactSinkException(artifact) from error

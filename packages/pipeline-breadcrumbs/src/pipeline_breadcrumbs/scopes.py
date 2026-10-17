@@ -7,7 +7,8 @@ item and the step number that every step used to receive separately, and it is n
 stored on a long-lived object.
 
 A scope holds only what its own lifetime needs: when it was entered, whether a work item is
-still open, and, for a step, the outcome the step reports. What happened is handed to the run recorder as immutable events.
+still open, and, for a step, whether it was already entered and the outcome the step reports.
+What happened is handed to the run recorder as immutable events.
 """
 
 import logging
@@ -18,7 +19,7 @@ from uuid import uuid4
 
 from pipeline_breadcrumbs.artifacts import ArtifactKind, StepArtifact
 from pipeline_breadcrumbs.attributes import AttributeBag, AttributeKey, AttributeValue, EventKind, detail_key
-from pipeline_breadcrumbs.errors import (
+from pipeline_breadcrumbs.exceptions import (
     FAILED_AT_STEP_KEY_KEY,
     FAILED_AT_STEP_NAME_KEY,
     FAILED_AT_STEP_NUMBER_KEY,
@@ -27,7 +28,7 @@ from pipeline_breadcrumbs.errors import (
 from pipeline_breadcrumbs.formatting import format_byte_size, format_elapsed
 from pipeline_breadcrumbs.manifest import ArtifactRecord, ArtifactRecorded, StepClosed, StepRecord, StepRecorded, WorkItemClosed, WorkItemOpened
 from pipeline_breadcrumbs.run_context import RunContext
-from pipeline_breadcrumbs.scope_errors import WorkItemNotOpenError
+from pipeline_breadcrumbs.scope_exceptions import StepAlreadyEnteredException, WorkItemNotOpenException
 from pipeline_breadcrumbs.steps import Step, StepPath, StepStatus
 from pipeline_breadcrumbs.work_items import WorkItem
 
@@ -106,7 +107,7 @@ class WorkItemScope:
     def require_open(self, step: Step) -> None:
         """Refuse `step` when this work item is not open: every step on it, at any depth, runs inside its `async with` block."""
         if not self._is_open:
-            raise WorkItemNotOpenError(
+            raise WorkItemNotOpenException(
                 f"Work item '{self._work_item.name}' is not open; enter it with `async with` before using step {step.step_number} {step.name}"
             )
 
@@ -206,6 +207,7 @@ class StepScope:
         self._started: float = 0.0
         self._outcome_message: str | None = None
         self._outcome_fields: AttributeBag = {}
+        self._was_entered: bool = False
 
     @property
     def step_path(self) -> StepPath:
@@ -217,10 +219,19 @@ class StepScope:
 
     async def __aenter__(self) -> Self:
         self._work_item_scope.require_open(self._step)
+        self._require_first_entry()
         self._started = self._run_context.clock.monotonic()
         self._record_opened()
         self._log_started()
         return self
+
+    def _require_first_entry(self) -> None:
+        # One scope is one opening of the step: a second entry would overwrite the first opening's record.
+        if self._was_entered:
+            raise StepAlreadyEnteredException(
+                f"Step {self._step_path} {self._step.name} was already entered; call step(...) again for each opening of a step"
+            )
+        self._was_entered = True
 
     def _record_opened(self) -> None:
         self._run_context.run_recorder.record_run_event(
