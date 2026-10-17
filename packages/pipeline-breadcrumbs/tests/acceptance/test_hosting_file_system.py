@@ -8,6 +8,7 @@ from pathlib import Path
 from typing import Final
 
 import pytest
+from breadcrumbs_acceptance_support.asserters.asserter_artifacts import AsserterArtifacts
 from breadcrumbs_acceptance_support.asserters.asserter_exception import AsserterException, ExpectedException
 from breadcrumbs_acceptance_support.asserters.asserter_rendered_text import AsserterRenderedText, ExpectedRenderedText
 from breadcrumbs_acceptance_support.clock_testing import ClockTesting
@@ -269,37 +270,43 @@ class TestAttachedRunLog:
         assert len(run_logger.handlers) == expected_handler_count
 
 
-async def _run_two_steps_into(artifact_sink: ArtifactSinkProtocol, pipeline_name: str, work_item: WorkItem, run_logger: logging.Logger) -> None:
-    pipeline_run: PipelineRun = PipelineRun(pipeline_name=pipeline_name, artifact_sink=artifact_sink, logger=run_logger)
-    async with pipeline_run, pipeline_run.open_work_item(work_item) as work_item_scope:
-        async with work_item_scope.step(LOAD_PAGES) as load_scope:
-            await load_scope.emit(PAGE_TEXT, b"page one", discriminator="page_0000")
-        async with work_item_scope.step(READ_PAGES) as read_scope:
-            await read_scope.emit(PAGE_IMAGE, b"image", discriminator="page_0000")
-            await read_scope.emit(PAGE_TEXT, b"page two", discriminator="page_0001")
+def _list_file_paths(folder: Path) -> list[str]:
+    """Every file under the folder, as its path from the folder with forward slashes, in alphabetical order."""
+    return sorted(entry.relative_to(folder).as_posix() for entry in folder.rglob("*") if entry.is_file())
 
 
 @pytest.mark.acceptance
 class TestArtifactSinkSwapping:
-    async def test_PipelineRun_WhenTheSameRunUsesTheFileSystemSinkOrTheTestingSink_ThenTheArtifactFilenamesAreTheSameInTheSameOrder(
+    async def test_PipelineRun_WhenTheSameRunUsesTheFileSystemSinkOrTheTestingSink_ThenBothReceiveTheSameArtifactsInStepOrder(
         self, tmp_path: Path, run_logger: logging.Logger
     ) -> None:
-        # Arrange
+        # Arrange - the testing sink receives the step artifacts in step order and the manifest last; the file
+        # system holds the same files, the work item's folder listing alphabetically in that same step order
         pipeline_name: str = create_random_pipeline_name()
         work_item: WorkItem = create_random_work_item()
+        discriminator: str = create_random_discriminator()
+        artifact_sink_file_system: ArtifactSinkFileSystem = ArtifactSinkFileSystem(tmp_path)
         artifact_sink_testing: ArtifactSinkTesting = ArtifactSinkTesting()
-        expected_step_artifact_count: int = 3
+        expected_step_filenames: list[str] = [
+            f"{work_item.stem}_step_01_page_text_{discriminator}.txt",
+            f"{work_item.stem}_step_02_page_image_{discriminator}.png",
+        ]
+        expected_received_filenames: list[str] = [*expected_step_filenames, MANIFEST_FILENAME]
+        expected_work_item_folder: str = safe_path_component(work_item.stem)
+        expected_file_paths: list[str] = sorted(
+            [MANIFEST_FILENAME, *(f"{expected_work_item_folder}/{expected_step_filename}" for expected_step_filename in expected_step_filenames)]
+        )
 
         # Act
-        await _run_two_steps_into(ArtifactSinkFileSystem(tmp_path), pipeline_name, work_item, run_logger)
-        await _run_two_steps_into(artifact_sink_testing, pipeline_name, work_item, run_logger)
+        artifact_sink: ArtifactSinkProtocol
+        for artifact_sink in (artifact_sink_file_system, artifact_sink_testing):
+            pipeline_run: PipelineRun = PipelineRun(pipeline_name=pipeline_name, artifact_sink=artifact_sink, logger=run_logger)
+            async with pipeline_run, pipeline_run.open_work_item(work_item) as work_item_scope:
+                async with work_item_scope.step(LOAD_PAGES) as load_pages_step_scope:
+                    await load_pages_step_scope.emit(PAGE_TEXT, secrets.token_bytes(8), discriminator=discriminator)
+                async with work_item_scope.step(READ_PAGES) as read_pages_step_scope:
+                    await read_pages_step_scope.emit(PAGE_IMAGE, secrets.token_bytes(8), discriminator=discriminator)
 
-        # Assert - a work item's folder lists alphabetically in step order, which is also the order the testing sink received them
-        actual_received_step_filenames: list[str] = [
-            actual_filename for actual_filename in artifact_sink_testing.filenames() if actual_filename != MANIFEST_FILENAME
-        ]
-        actual_file_system_step_filenames: list[str] = _list_entry_names(tmp_path / safe_path_component(work_item.stem))
-        assert actual_file_system_step_filenames == actual_received_step_filenames
-        assert len(actual_received_step_filenames) == expected_step_artifact_count
-        assert (tmp_path / MANIFEST_FILENAME).exists()
-        assert artifact_sink_testing.filenames()[-1] == MANIFEST_FILENAME
+        # Assert
+        AsserterArtifacts.assert_exactly_these_filenames_in_order(expected_received_filenames, artifact_sink_testing.artifacts)
+        assert _list_file_paths(tmp_path) == expected_file_paths

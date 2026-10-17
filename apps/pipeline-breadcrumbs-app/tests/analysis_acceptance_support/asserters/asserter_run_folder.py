@@ -54,6 +54,7 @@ class AsserterRunFolder:
     RAW_REPLIES_ASSERTION_FAILED_HEADER: Final[str] = "RAW REPLIES ASSERTION FAILED"
     DISTINCT_RUN_FOLDERS_ASSERTION_FAILED_HEADER: Final[str] = "DISTINCT RUN FOLDERS ASSERTION FAILED"
     WORK_ITEM_LISTINGS_ASSERTION_FAILED_HEADER: Final[str] = "WORK ITEM LISTINGS ASSERTION FAILED"
+    BLOB_NAMES_ASSERTION_FAILED_HEADER: Final[str] = "BLOB NAMES ASSERTION FAILED"
     FAILURE_LOG_ASSERTION_FAILED_HEADER: Final[str] = "FAILURE LOG ASSERTION FAILED"
     TELEMETRY_ASSERTION_FAILED_HEADER: Final[str] = "TELEMETRY ASSERTION FAILED"
 
@@ -184,6 +185,41 @@ class AsserterRunFolder:
             AsserterRunFolder.WORK_ITEM_LISTINGS_ASSERTION_FAILED_HEADER,
             "Where the application runs never changes the artifacts each work item leaves behind.",
             f"{len(expected_work_item_folder_names)} work item folder(s) compared",
+            mismatches,
+        )
+
+    @staticmethod
+    def assert_blobs_named_by_run(
+        *,
+        expected_container: Path,
+        expected_blob_names_within_run: AbstractSet[str],
+        expected_manifest_filename: str,
+        actual_run_directory: Path,
+        actual_artifact_directory: Path,
+        actual_blob_names: Sequence[str],
+        actual_run_directory_entry_names: Sequence[str],
+    ) -> None:
+        """A hosted run's artifacts are blobs named `<run name>/...`; its own run folder keeps none of them."""
+        run_name: str = actual_run_directory.name
+        mismatches: list[str] = []
+        if actual_artifact_directory != expected_container / run_name:
+            mismatches.append(f"artifact directory: expected {expected_container / run_name} but found {actual_artifact_directory}")
+        mismatches.extend(
+            f"blob {actual_blob_name!r} is not named under the run {run_name!r}"
+            for actual_blob_name in actual_blob_names
+            if not actual_blob_name.startswith(f"{run_name}/")
+        )
+        mismatches.extend(
+            f"missing blob {run_name}/{expected_blob_name}"
+            for expected_blob_name in sorted(expected_blob_names_within_run)
+            if f"{run_name}/{expected_blob_name}" not in actual_blob_names
+        )
+        if expected_manifest_filename in actual_run_directory_entry_names:
+            mismatches.append(f"the run folder {actual_run_directory} holds a {expected_manifest_filename}; it belongs in the container")
+        assert not mismatches, format_assertion_report(
+            AsserterRunFolder.BLOB_NAMES_ASSERTION_FAILED_HEADER,
+            "A container holds many runs, so the run's name leads every blob name and the run folder keeps no artifacts.",
+            f"{len(actual_blob_names)} blob(s) checked, {len(expected_blob_names_within_run)} expected blob(s)",
             mismatches,
         )
 

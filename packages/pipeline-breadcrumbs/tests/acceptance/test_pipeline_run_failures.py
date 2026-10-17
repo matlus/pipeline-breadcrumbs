@@ -26,8 +26,6 @@ MANIFEST_FILENAME: Final[str] = "manifest.json"
 
 @final
 class ArtifactSinkUnreachable(ArtifactSinkProtocol):
-    """A sink whose destination is down: every `persist` raises the destination's own error."""
-
     @override
     async def persist(self, artifact: Artifact) -> None:
         raise ConnectionError(STORAGE_OUTAGE_MESSAGE)

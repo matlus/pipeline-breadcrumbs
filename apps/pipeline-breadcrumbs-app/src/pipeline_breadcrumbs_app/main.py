@@ -94,17 +94,14 @@ class ArtifactDestination:
     """The sink the application chose, and the folder its artifacts land in."""
 
     artifact_sink: ArtifactSinkProtocol
-    directory: Path
+    artifact_directory: Path
 
 
-def _create_artifact_destination(host_profile: HostProfile, output_root: Path, run_directory: Path) -> ArtifactDestination:
-    """The application's choice of artifact sink. The system only ever sees `ArtifactSinkProtocol`.
+def _create_file_system_destination(run_directory: Path) -> ArtifactDestination:
+    return ArtifactDestination(ArtifactSinkFileSystem(run_directory), run_directory)
 
-    Every profile persists every artifact: they are the record of what each step did, and they are what a
-    later run could start from. Only where they go differs.
-    """
-    if host_profile is HostProfile.LOCAL:
-        return ArtifactDestination(ArtifactSinkFileSystem(run_directory), run_directory)
+
+def _create_blob_storage_destination(output_root: Path, run_directory: Path) -> ArtifactDestination:
     artifact_sink_blob_storage: ArtifactSinkBlobStorage = ArtifactSinkBlobStorage(output_root / BLOB_CONTAINER_NAME, run_directory.name)
     return ArtifactDestination(artifact_sink_blob_storage, artifact_sink_blob_storage.run_directory)
 
@@ -211,16 +208,20 @@ async def run_demo(
     breadcrumb_formatter: BreadcrumbFormatter = BreadcrumbFormatter(time_display=time_display)
     with ExitStack() as logging_scope:
         run_logger: logging.Logger = logger if logger is not None else logging_scope.enter_context(_console_logger(breadcrumb_formatter))
+        # The profile chooses both where log lines go and where artifacts go. Every profile persists every
+        # artifact: they are the record of what each step did, and what a later run could start from.
+        artifact_destination: ArtifactDestination
         if host_profile is HostProfile.LOCAL:
             logging_scope.enter_context(attached_run_log(run_logger, run_directory, breadcrumb_formatter))
+            artifact_destination = _create_file_system_destination(run_directory)
         else:
             logging_scope.enter_context(attached_exception_telemetry(run_logger, run_directory / TELEMETRY_FILENAME))
-        artifact_destination: ArtifactDestination = _create_artifact_destination(host_profile, output_root, run_directory)
+            artifact_destination = _create_blob_storage_destination(output_root, run_directory)
         async with DocumentAnalysisManager(ServiceLocatorDemo(pace_seconds)) as document_analysis_manager:
             failed_work_items: list[str] = await _analyze_documents(
                 pages_by_document_name, document_analysis_manager, artifact_destination.artifact_sink, run_logger
             )
-    return DemoResult(run_directory=run_directory, artifact_directory=artifact_destination.directory, failed_work_items=failed_work_items)
+    return DemoResult(run_directory=run_directory, artifact_directory=artifact_destination.artifact_directory, failed_work_items=failed_work_items)
 
 
 def _default_output_root() -> Path:

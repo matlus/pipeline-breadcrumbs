@@ -8,11 +8,12 @@ place, and the system never knows which implementation it was handed.
 """
 
 import asyncio
+import unicodedata
 from pathlib import Path
 from typing import final, override
 
-from pipeline_breadcrumbs import Artifact, ArtifactSinkProtocol, RunArtifact
-from pipeline_breadcrumbs.hosting import safe_path_component
+from pipeline_breadcrumbs import Artifact, ArtifactSinkProtocol, RunArtifact, WorkItem
+from pipeline_breadcrumbs.hosting import WorkItemFolderCollisionError, safe_path_component
 
 
 @final
@@ -27,11 +28,17 @@ class ArtifactSinkBlobStorage(ArtifactSinkProtocol):
 
     A container holds many runs, so the run name leads every blob name. The sink owns the container
     it uploads to, which is state a bare function would have had to capture in a closure.
+
+    Work item names must be unique within a run, because the blob prefix is named for the work item.
+    Two items that map to the same prefix raise rather than overwrite each other's blobs, exactly as
+    the file-system sink does. This stand-in writes to a local folder, so names that differ only by
+    case count as the same prefix.
     """
 
     def __init__(self, container_directory: Path, run_name: str) -> None:
         self._container_directory: Path = container_directory
         self._run_name: str = safe_path_component(run_name)
+        self._work_item_id_by_prefix: dict[str, str] = {}
 
     @property
     def run_directory(self) -> Path:
@@ -46,7 +53,17 @@ class ArtifactSinkBlobStorage(ArtifactSinkProtocol):
     def _blob_path(self, artifact: Artifact) -> Path:
         if isinstance(artifact, RunArtifact):
             return self.run_directory / safe_path_component(artifact.filename)
-        return self.run_directory / safe_path_component(artifact.work_item.stem) / safe_path_component(artifact.filename)
+        return self.run_directory / self._claim_prefix(artifact.work_item) / safe_path_component(artifact.filename)
+
+    def _claim_prefix(self, work_item: WorkItem) -> str:
+        blob_prefix: str = safe_path_component(work_item.stem)
+        owner_id: str = self._work_item_id_by_prefix.setdefault(unicodedata.normalize("NFC", blob_prefix).casefold(), work_item.id)
+        if owner_id != work_item.id:
+            raise WorkItemFolderCollisionError(
+                f"Work items '{owner_id}' and '{work_item.id}' both map to the blob prefix '{blob_prefix}'; "
+                "work item names must be unique within a run"
+            )
+        return blob_prefix
 
     @staticmethod
     def _upload(blob_path: Path, content: bytes) -> None:

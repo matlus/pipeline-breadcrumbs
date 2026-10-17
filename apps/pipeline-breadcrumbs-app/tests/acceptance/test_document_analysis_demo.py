@@ -31,6 +31,8 @@ CONTRACT_FOLDER_NAME: Final[str] = "Contract 12"
 LEASE_DOCUMENT_NAME: Final[str] = "Lease 4.pdf"
 LEASE_FOLDER_NAME: Final[str] = "Lease 4"
 MANIFEST_FILENAME: Final[str] = "manifest.json"
+# Step 1 writes each page's text, so every document's first page leaves this file.
+FIRST_PAGE_TEXT_FILENAME_SUFFIX: Final[str] = "_step_01_page_text_page_0000.txt"
 RUN_LOG_FILENAME: Final[str] = "run.log"
 REPORT_HEADING: Final[str] = "# Section analysis"
 RECONCILED_SCORES_FRAGMENT: Final[str] = "reconciled_scores"
@@ -294,22 +296,29 @@ class TestDemoHosts:
     async def test_run_demo_WhenRunHosted_ThenTheArtifactsAreUploadedAsBlobsNamedByRunAndWorkItemWithTheManifestAmongThem(
         self, tmp_path: Path
     ) -> None:
-        # Arrange - a container holds many runs, so the run's name leads every blob name
+        # Arrange - the manifest sits directly under the run; a work item's blobs sit under its own name
         expected_container: Path = tmp_path / BLOB_CONTAINER_NAME
+        expected_blob_names_within_run: set[str] = {
+            MANIFEST_FILENAME,
+            f"{CONTRACT_FOLDER_NAME}/{CONTRACT_FOLDER_NAME}{FIRST_PAGE_TEXT_FILENAME_SUFFIX}",
+            f"{LEASE_FOLDER_NAME}/{LEASE_FOLDER_NAME}{FIRST_PAGE_TEXT_FILENAME_SUFFIX}",
+        }
 
         # Act
         actual_demo_result: DemoResult = await run_demo(
             tmp_path, host_profile=HostProfile.HOSTED, time_display=TimeDisplay.NONE, pace_seconds=NO_DELAY_SECONDS
         )
 
-        # Assert - the manifest sits directly under the run, and the run folder itself keeps no artifacts
-        expected_run_name: str = actual_demo_result.run_directory.name
-        actual_blob_names: list[str] = RunFolderReader.list_blob_names(expected_container)
-        assert all(actual_blob_name.startswith(f"{expected_run_name}/") for actual_blob_name in actual_blob_names)
-        assert f"{expected_run_name}/{MANIFEST_FILENAME}" in actual_blob_names
-        assert f"{expected_run_name}/{CONTRACT_FOLDER_NAME}/{CONTRACT_FOLDER_NAME}_step_01_page_text_page_0000.txt" in actual_blob_names
-        assert actual_demo_result.artifact_directory == expected_container / expected_run_name
-        assert not (actual_demo_result.run_directory / MANIFEST_FILENAME).exists()
+        # Assert
+        AsserterRunFolder.assert_blobs_named_by_run(
+            expected_container=expected_container,
+            expected_blob_names_within_run=expected_blob_names_within_run,
+            expected_manifest_filename=MANIFEST_FILENAME,
+            actual_run_directory=actual_demo_result.run_directory,
+            actual_artifact_directory=actual_demo_result.artifact_directory,
+            actual_blob_names=RunFolderReader.list_blob_names(expected_container),
+            actual_run_directory_entry_names=RunFolderReader.list_entry_names(actual_demo_result.run_directory),
+        )
 
     async def test_run_demo_WhenRunHostedWithoutAFailure_ThenNothingIsSentToTelemetry(self, tmp_path: Path) -> None:
         # Arrange - the step started, step complete and timing lines are informational; they never reach telemetry
