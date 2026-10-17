@@ -3,9 +3,9 @@
 # plays it: open a run, open a work item, hand that scope to the system. The system is built the way
 # an application builds it, from a service locator; only the wire to the model service is swapped
 # (TestMediatorModelService, through ServiceLocatorTesting). The gateway, the configuration provider,
-# the processors, the parsing, the library's scopes and the artifact callback all run for real. The
+# the processors, the parsing, the library's scopes and the artifact sink all run for real. The
 # observations are what the system returned or raised, what the gateway put on the wire, the artifacts
-# handed to the callback, and the breadcrumbs it logged.
+# handed to the sink, and the breadcrumbs it logged.
 
 import logging
 from collections.abc import Sequence
@@ -104,7 +104,7 @@ def create_confident_test_mediator(section_titles: Sequence[str], category: str)
 
 
 def create_pipeline_run(artifact_sink_testing: ArtifactSinkTesting, run_logger: logging.Logger) -> PipelineRun:
-    return PipelineRun(pipeline_name=create_random_pipeline_name(), sink=artifact_sink_testing, logger=run_logger)
+    return PipelineRun(pipeline_name=create_random_pipeline_name(), artifact_sink=artifact_sink_testing, logger=run_logger)
 
 
 # ==================== EXPECTED PATHS ====================

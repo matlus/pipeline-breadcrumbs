@@ -3,7 +3,7 @@
 # storage outage is its own exception, and a lost manifest never hides the failure that ended the run.
 
 import logging
-from typing import Final, NoReturn
+from typing import Final, NoReturn, final, override
 
 import pytest
 from breadcrumbs_acceptance_support.asserters.asserter_exception import ANY_CONTEXTUAL_VALUE, AsserterException, ExpectedException
@@ -13,7 +13,7 @@ from breadcrumbs_acceptance_support.clock_testing import ClockTesting
 from breadcrumbs_acceptance_support.data_generators import create_random_pipeline_name, create_random_work_item
 from breadcrumbs_acceptance_support.exceptions_testing import DiagnosticTestingError, PlainTestingError
 
-from pipeline_breadcrumbs import Artifact, ArtifactKind, ArtifactSinkError, AttributeKey, EventKind, PipelineRun, Step, WorkItem
+from pipeline_breadcrumbs import Artifact, ArtifactKind, ArtifactSinkError, ArtifactSinkProtocol, AttributeKey, EventKind, PipelineRun, Step, WorkItem
 from pipeline_breadcrumbs.testing import ArtifactSinkTesting, RecordCapture
 
 METADATA_AUDIT: Final[Step] = Step(2, "Metadata Audit")
@@ -24,8 +24,11 @@ STORAGE_OUTAGE_MESSAGE: Final[str] = "blob storage unreachable"
 MANIFEST_FILENAME: Final[str] = "manifest.json"
 
 
-async def _sink_that_cannot_store(artifact: Artifact) -> None:
-    raise ConnectionError(STORAGE_OUTAGE_MESSAGE)
+@final
+class ArtifactSinkUnreachable(ArtifactSinkProtocol):
+    @override
+    async def persist(self, artifact: Artifact) -> None:
+        raise ConnectionError(STORAGE_OUTAGE_MESSAGE)
 
 
 def _advance_then_fail(clock_testing: ClockTesting, elapsed_seconds: float, failure_message: str) -> NoReturn:
@@ -44,7 +47,7 @@ class TestFailingStep:
         expected_elapsed_seconds: float = 1.25
         expected_failure_message: str = "bad json"
         pipeline_run: PipelineRun = PipelineRun(
-            pipeline_name=pipeline_name, sink=artifact_sink_testing, logger=run_logger, supplied_clock=clock_testing.clock
+            pipeline_name=pipeline_name, artifact_sink=artifact_sink_testing, logger=run_logger, supplied_clock=clock_testing.clock
         )
         expected_exception: ExpectedException = ExpectedException(PlainTestingError, message_phrases=[expected_failure_message])
         expected_step_number: str = "2"
@@ -76,7 +79,7 @@ class TestFailingStep:
         pipeline_name: str = create_random_pipeline_name()
         work_item: WorkItem = create_random_work_item()
         failure_message: str = "response was not json"
-        pipeline_run: PipelineRun = PipelineRun(pipeline_name=pipeline_name, sink=artifact_sink_testing, logger=run_logger)
+        pipeline_run: PipelineRun = PipelineRun(pipeline_name=pipeline_name, artifact_sink=artifact_sink_testing, logger=run_logger)
         # The child step stamps first; the parent finds the stamp and leaves it alone.
         expected_exception: ExpectedException = ExpectedException(
             DiagnosticTestingError,
@@ -104,7 +107,7 @@ class TestFailingStep:
         pipeline_name: str = create_random_pipeline_name()
         work_item: WorkItem = create_random_work_item()
         plain_testing_error: PlainTestingError = PlainTestingError("missing")
-        pipeline_run: PipelineRun = PipelineRun(pipeline_name=pipeline_name, sink=artifact_sink_testing, logger=run_logger)
+        pipeline_run: PipelineRun = PipelineRun(pipeline_name=pipeline_name, artifact_sink=artifact_sink_testing, logger=run_logger)
 
         # Act
         with pytest.raises(PlainTestingError) as actual_raised:
@@ -125,7 +128,7 @@ class TestFailingSink:
         work_item: WorkItem = create_random_work_item()
         expected_artifact_kind_key: str = PAGE_EVIDENCE.key
         expected_artifact_filename: str = f"{work_item.stem}_step_02_{expected_artifact_kind_key}.json"
-        pipeline_run: PipelineRun = PipelineRun(pipeline_name=pipeline_name, sink=_sink_that_cannot_store, logger=run_logger)
+        pipeline_run: PipelineRun = PipelineRun(pipeline_name=pipeline_name, artifact_sink=ArtifactSinkUnreachable(), logger=run_logger)
         expected_exception: ExpectedException = ExpectedException(
             ArtifactSinkError,
             message_phrases=[expected_artifact_filename],
@@ -155,7 +158,7 @@ class TestFailingSink:
         # Arrange
         pipeline_name: str = create_random_pipeline_name()
         real_problem_message: str = "the real problem"
-        pipeline_run: PipelineRun = PipelineRun(pipeline_name=pipeline_name, sink=_sink_that_cannot_store, logger=run_logger)
+        pipeline_run: PipelineRun = PipelineRun(pipeline_name=pipeline_name, artifact_sink=ArtifactSinkUnreachable(), logger=run_logger)
         expected_exception: ExpectedException = ExpectedException(
             PlainTestingError, message_phrases=[real_problem_message], note_phrases=["run manifest could not be persisted", MANIFEST_FILENAME]
         )
@@ -171,7 +174,7 @@ class TestFailingSink:
     async def test_PipelineRun_WhenTheManifestCannotBeWrittenAndNothingElseFailed_ThenTheOutageIsReported(self, run_logger: logging.Logger) -> None:
         # Arrange
         pipeline_name: str = create_random_pipeline_name()
-        pipeline_run: PipelineRun = PipelineRun(pipeline_name=pipeline_name, sink=_sink_that_cannot_store, logger=run_logger)
+        pipeline_run: PipelineRun = PipelineRun(pipeline_name=pipeline_name, artifact_sink=ArtifactSinkUnreachable(), logger=run_logger)
         expected_exception: ExpectedException = ExpectedException(
             ArtifactSinkError,
             message_phrases=[MANIFEST_FILENAME],
@@ -202,7 +205,7 @@ class TestRunSummary:
         pipeline_name: str = create_random_pipeline_name()
         healthy_work_item: WorkItem = create_random_work_item()
         failing_work_item: WorkItem = create_random_work_item()
-        pipeline_run: PipelineRun = PipelineRun(pipeline_name=pipeline_name, sink=artifact_sink_testing, logger=run_logger)
+        pipeline_run: PipelineRun = PipelineRun(pipeline_name=pipeline_name, artifact_sink=artifact_sink_testing, logger=run_logger)
         expected_run_summary_log_record: ExpectedLogRecord = ExpectedLogRecord(
             level=logging.WARNING,
             attribute_value_by_key={AttributeKey.OUTCOME: "2 work item(s): 1 complete, 1 failed", AttributeKey.STATUS: "FAILED"},

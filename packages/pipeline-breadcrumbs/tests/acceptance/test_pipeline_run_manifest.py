@@ -38,7 +38,7 @@ class TestRunManifest:
         expected_step_outcome: str = "Loaded 1 page"
         discriminator: str = create_random_discriminator()
         pipeline_run: PipelineRun = PipelineRun(
-            pipeline_name=pipeline_name, sink=artifact_sink_testing, logger=run_logger, supplied_clock=clock_testing.clock
+            pipeline_name=pipeline_name, artifact_sink=artifact_sink_testing, logger=run_logger, supplied_clock=clock_testing.clock
         )
         expected_manifest: ExpectedManifest = ExpectedManifest(
             pipeline_name=pipeline_name,
@@ -79,7 +79,7 @@ class TestRunManifest:
         work_item: WorkItem = create_random_work_item()
         pipeline_name: str = create_random_pipeline_name()
         pipeline_run: PipelineRun = PipelineRun(
-            pipeline_name=pipeline_name, sink=artifact_sink_testing, logger=run_logger, supplied_clock=clock_testing.clock
+            pipeline_name=pipeline_name, artifact_sink=artifact_sink_testing, logger=run_logger, supplied_clock=clock_testing.clock
         )
         expected_report_filename: str = f"{work_item.stem}_step_01_final_report.md"
         expected_manifest: ExpectedManifest = ExpectedManifest(
@@ -115,7 +115,7 @@ class TestRunManifest:
         expected_failure: str = f"PlainTestingError: {failure_message}"
         pipeline_name: str = create_random_pipeline_name()
         pipeline_run: PipelineRun = PipelineRun(
-            pipeline_name=pipeline_name, sink=artifact_sink_testing, logger=run_logger, supplied_clock=clock_testing.clock
+            pipeline_name=pipeline_name, artifact_sink=artifact_sink_testing, logger=run_logger, supplied_clock=clock_testing.clock
         )
         expected_manifest: ExpectedManifest = ExpectedManifest(
             pipeline_name=pipeline_name,
@@ -156,7 +156,7 @@ class TestRunManifest:
         skip_reason: str = "nothing to reconcile"
         pipeline_name: str = create_random_pipeline_name()
         pipeline_run: PipelineRun = PipelineRun(
-            pipeline_name=pipeline_name, sink=artifact_sink_testing, logger=run_logger, supplied_clock=clock_testing.clock
+            pipeline_name=pipeline_name, artifact_sink=artifact_sink_testing, logger=run_logger, supplied_clock=clock_testing.clock
         )
         expected_manifest: ExpectedManifest = ExpectedManifest(
             pipeline_name=pipeline_name,
@@ -191,7 +191,7 @@ class TestRunManifest:
         expected_first_attempt_failure: str = f"PlainTestingError: {first_attempt_failure_message}"
         pipeline_name: str = create_random_pipeline_name()
         pipeline_run: PipelineRun = PipelineRun(
-            pipeline_name=pipeline_name, sink=artifact_sink_testing, logger=run_logger, supplied_clock=clock_testing.clock
+            pipeline_name=pipeline_name, artifact_sink=artifact_sink_testing, logger=run_logger, supplied_clock=clock_testing.clock
         )
         expected_manifest: ExpectedManifest = ExpectedManifest(
             pipeline_name=pipeline_name,
@@ -233,7 +233,7 @@ class TestRunManifest:
         expected_page_failure: str = f"PlainTestingError: {page_failure_message}"
         pipeline_name: str = create_random_pipeline_name()
         pipeline_run: PipelineRun = PipelineRun(
-            pipeline_name=pipeline_name, sink=artifact_sink_testing, logger=run_logger, supplied_clock=clock_testing.clock
+            pipeline_name=pipeline_name, artifact_sink=artifact_sink_testing, logger=run_logger, supplied_clock=clock_testing.clock
         )
         expected_manifest: ExpectedManifest = ExpectedManifest(
             pipeline_name=pipeline_name,
@@ -275,7 +275,7 @@ class TestRunManifest:
         work_item: WorkItem = create_random_work_item()
         pipeline_name: str = create_random_pipeline_name()
         pipeline_run: PipelineRun = PipelineRun(
-            pipeline_name=pipeline_name, sink=artifact_sink_testing, logger=run_logger, supplied_clock=clock_testing.clock
+            pipeline_name=pipeline_name, artifact_sink=artifact_sink_testing, logger=run_logger, supplied_clock=clock_testing.clock
         )
         expected_manifest: ExpectedManifest = ExpectedManifest(
             pipeline_name=pipeline_name,

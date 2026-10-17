@@ -9,7 +9,7 @@ This library answers it with two outputs from one source.
 1. **Step-numbered progress logs.** Every step announces itself, reports counts as it
    works, and closes with its elapsed time and outcome.
 2. **Artifacts.** Each step can hand a self-describing file, an interim capture or a real
-   output, to a callback the host controls.
+   output, to an artifact sink the host chooses.
 
 Together they leave an ordered trail on disk after every run. A person, or a coding
 assistant, reads the trail, finds the first step whose output went wrong, and fixes it.
@@ -23,6 +23,7 @@ included, receives them. It also means the log reads as an ordered, step-numbere
 ```python
 DETECT_SECTIONS = Step(2, "Detect Sections")
 PAGE_EVIDENCE = ArtifactKind("page_evidence", "json", "application/json")
+
 
 async def analyze(step_host: StepHostProtocol, pages: list[str]) -> None:
     async with step_host.step(DETECT_SECTIONS) as step_scope:
@@ -88,7 +89,7 @@ distro you would use anyway:
 ```python
 from azure.monitor.opentelemetry import configure_azure_monitor
 
-configure_azure_monitor(logger_name="my_pipeline")   # the logger tree the pipeline logs through
+configure_azure_monitor(logger_name="my_pipeline")  # the logger tree the pipeline logs through
 logger = logging.getLogger("my_pipeline")
 ```
 
@@ -107,7 +108,8 @@ and every record carries them.
 The demo separates the application from the system it calls, the way a production codebase does.
 
 ```
-main.py                           the application: chooses the callback, the logger and the service locator, calls the system
+main.py                           the application: chooses the artifact sink, the logger and the service locator, calls the system
+artifact_sink_blob_storage.py     a stand-in for blob storage: an ArtifactSinkProtocol implementation
 service_locator_demo.py           the demo's service locator: the real system, wired to the simulated model service
 model_service_simulator.py        answers the model service's HTTP API in-process, so the demo runs offline
 document_analysis/                the system
@@ -130,7 +132,7 @@ document_analysis/                the system
   gateways/                       the model service gateway: builds each request, checks each response, translates failures
 ```
 
-`main.py` is not the system. It builds the artifact callback and the logger, builds the manager
+`main.py` is not the system. It builds the artifact sink and the logger, builds the manager
 from a service locator, opens a `PipelineRun`, opens one work item per document, and hands that
 scope to the manager. The
 manager and the processors never see a path or a handler. Each processor opens its own step on
@@ -156,9 +158,11 @@ uv run pipeline_breadcrumbs_app --host hosted        # exceptions only go to tel
 The failing run exits with code 1, leaves the malformed reply on disk beside the replies
 that parsed, and still completes the second document.
 
-Where the application runs is its own choice, made in its artifact callback and its log handlers.
-The callback persists every artifact in both: artifacts are the record of what each step did, and
-what a later run could start from. The system shares one logger and passes every informational line
+Where the application runs is its own choice, made in the artifact sink it hands in and the log
+handlers it attaches. A local run uses `ArtifactSinkFileSystem`; a hosted run uses
+`ArtifactSinkBlobStorage`, a stand-in for a storage container. Both implement `ArtifactSinkProtocol`
+and persist every artifact: artifacts are the record of what each step did, and what a later run
+could start from. The system shares one logger and passes every informational line
 to it; the application decides who listens. A local run writes a `run.log` beside the artifacts. A
 hosted run leaves informational lines to the platform's process logs (the console here) and sends only
 exceptions to telemetry, as a stand-in for Application Insights (`telemetry.jsonl`). The system
@@ -168,7 +172,7 @@ runs identically in both.
 
 The tests are acceptance tests: each one runs through a system's public entry point
 (`PipelineRun` for the library, `DocumentAnalysisManager` and `run_demo` for the demo) and
-asserts on what the system returned, the artifacts it handed to the callback and the
+asserts on what the system returned, the artifacts it handed to the sink and the
 breadcrumbs it logged. The demo's tests build the system through `ServiceLocatorTesting`, which
 swaps only the HTTP transport for a Test Mediator, so the gateway, the configuration provider and
 every processor run for real.

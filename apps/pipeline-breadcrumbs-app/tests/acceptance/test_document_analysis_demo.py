@@ -1,4 +1,4 @@
-# Acceptance tests for the demo application as a whole: `run_demo` builds the callback, the logger and
+# Acceptance tests for the demo application as a whole: `run_demo` builds the artifact sink, the logger and
 # the system (through ServiceLocatorDemo), runs it over the sample documents and returns where the trail
 # landed. The observations are the files and the log the run left behind, read the way an engineer
 # would. The model service is the demo's in-process simulator, with no delay.
@@ -11,6 +11,7 @@ import pytest
 from analysis_acceptance_support.asserters.asserter_run_folder import (
     AsserterRunFolder,
     ExpectedExceptionTelemetry,
+    ExpectedHostedBlobs,
     ExpectedRunOutcome,
     ExpectedWorkItemOutcome,
 )
@@ -20,7 +21,7 @@ from breadcrumbs_acceptance_support.asserters.asserter_exception import Asserter
 
 from pipeline_breadcrumbs import TimeDisplay
 from pipeline_breadcrumbs.testing import RecordCapture
-from pipeline_breadcrumbs_app.main import PIPELINE_NAME, DemoResult, HostProfile, run_demo
+from pipeline_breadcrumbs_app.main import BLOB_CONTAINER_NAME, PIPELINE_NAME, DemoResult, HostProfile, run_demo
 from pipeline_breadcrumbs_app.sample_documents import InvalidFailPageError
 from pipeline_breadcrumbs_app.telemetry import ExceptionTelemetry
 
@@ -31,6 +32,8 @@ CONTRACT_FOLDER_NAME: Final[str] = "Contract 12"
 LEASE_DOCUMENT_NAME: Final[str] = "Lease 4.pdf"
 LEASE_FOLDER_NAME: Final[str] = "Lease 4"
 MANIFEST_FILENAME: Final[str] = "manifest.json"
+# Step 1 writes each page's text, so every document's first page leaves this file.
+FIRST_PAGE_TEXT_FILENAME_SUFFIX: Final[str] = "_step_01_page_text_page_0000.txt"
 RUN_LOG_FILENAME: Final[str] = "run.log"
 REPORT_HEADING: Final[str] = "# Section analysis"
 RECONCILED_SCORES_FRAGMENT: Final[str] = "reconciled_scores"
@@ -277,18 +280,44 @@ class TestDemoHosts:
 
         # Assert
         actual_local_listing_by_folder_name: dict[str, list[str]] = {
-            folder_name: RunFolderReader.list_entry_names(actual_local_demo_result.run_directory / folder_name)
-            for folder_name in RunFolderReader.list_folder_names(actual_local_demo_result.run_directory)
+            folder_name: RunFolderReader.list_entry_names(actual_local_demo_result.artifact_directory / folder_name)
+            for folder_name in RunFolderReader.list_folder_names(actual_local_demo_result.artifact_directory)
         }
         actual_hosted_listing_by_folder_name: dict[str, list[str]] = {
-            folder_name: RunFolderReader.list_entry_names(actual_hosted_demo_result.run_directory / folder_name)
-            for folder_name in RunFolderReader.list_folder_names(actual_hosted_demo_result.run_directory)
+            folder_name: RunFolderReader.list_entry_names(actual_hosted_demo_result.artifact_directory / folder_name)
+            for folder_name in RunFolderReader.list_folder_names(actual_hosted_demo_result.artifact_directory)
         }
         AsserterRunFolder.assert_same_work_item_listings(
             expected_work_item_folder_names, actual_local_listing_by_folder_name, actual_hosted_listing_by_folder_name
         )
         AsserterRunFolder.assert_exactly_these_entries(
-            expected_hosted_entry_names, RunFolderReader.list_entry_names(actual_hosted_demo_result.run_directory)
+            expected_hosted_entry_names, RunFolderReader.list_entry_names(actual_hosted_demo_result.artifact_directory)
+        )
+
+    async def test_run_demo_WhenRunHosted_ThenTheArtifactsAreUploadedAsBlobsNamedByRunAndWorkItemWithTheManifestAmongThem(
+        self, tmp_path: Path
+    ) -> None:
+        # Arrange - the manifest sits directly under the run; a work item's blobs sit under its own name
+        expected_container: Path = tmp_path / BLOB_CONTAINER_NAME
+        expected_hosted_blobs: ExpectedHostedBlobs = ExpectedHostedBlobs(
+            container=expected_container,
+            blob_names_within_run={
+                MANIFEST_FILENAME,
+                f"{CONTRACT_FOLDER_NAME}/{CONTRACT_FOLDER_NAME}{FIRST_PAGE_TEXT_FILENAME_SUFFIX}",
+                f"{LEASE_FOLDER_NAME}/{LEASE_FOLDER_NAME}{FIRST_PAGE_TEXT_FILENAME_SUFFIX}",
+            },
+            manifest_filename=MANIFEST_FILENAME,
+        )
+
+        # Act
+        actual_demo_result: DemoResult = await run_demo(
+            tmp_path, host_profile=HostProfile.HOSTED, time_display=TimeDisplay.NONE, pace_seconds=NO_DELAY_SECONDS
+        )
+
+        # Assert
+        AsserterRunFolder.assert_blobs_named_by_run(
+            expected_hosted_blobs,
+            RunFolderReader.read_hosted_run_trail(expected_container, actual_demo_result.run_directory, actual_demo_result.artifact_directory),
         )
 
     async def test_run_demo_WhenRunHostedWithoutAFailure_ThenNothingIsSentToTelemetry(self, tmp_path: Path) -> None:
@@ -329,7 +358,7 @@ class TestDemoHosts:
         )
 
         # Assert
-        actual_manifest_run_id: str = RunFolderReader.read_manifest(actual_demo_result.run_directory)["run_id"]
+        actual_manifest_run_id: str = RunFolderReader.read_manifest(actual_demo_result.artifact_directory)["run_id"]
         AsserterRunFolder.assert_single_exception_telemetry(
             expected_exception_telemetry, RunFolderReader.read_exception_telemetry(actual_demo_result.run_directory), actual_manifest_run_id
         )

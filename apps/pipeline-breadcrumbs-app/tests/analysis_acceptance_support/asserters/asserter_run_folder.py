@@ -7,6 +7,7 @@ from typing import Final
 from breadcrumbs_acceptance_support.assertion_reports import format_assertion_report
 from breadcrumbs_acceptance_support.manifest_documents import ManifestDocument, WorkItemRecordDocument
 
+from analysis_acceptance_support.run_folder_reader import HostedRunTrail
 from pipeline_breadcrumbs_app.telemetry import ExceptionTelemetry
 
 _TRACEBACK_HEADER: Final[str] = "Traceback (most recent call last)"
@@ -41,6 +42,13 @@ class ExpectedExceptionTelemetry:
     custom_dimensions: Mapping[str, object]
 
 
+@dataclass(frozen=True)
+class ExpectedHostedBlobs:
+    container: Path
+    blob_names_within_run: AbstractSet[str]
+    manifest_filename: str
+
+
 class AsserterRunFolder:
     """Compares what a demo run left behind, as the test gathered it, with what an engineer investigating the run should find.
 
@@ -54,6 +62,7 @@ class AsserterRunFolder:
     RAW_REPLIES_ASSERTION_FAILED_HEADER: Final[str] = "RAW REPLIES ASSERTION FAILED"
     DISTINCT_RUN_FOLDERS_ASSERTION_FAILED_HEADER: Final[str] = "DISTINCT RUN FOLDERS ASSERTION FAILED"
     WORK_ITEM_LISTINGS_ASSERTION_FAILED_HEADER: Final[str] = "WORK ITEM LISTINGS ASSERTION FAILED"
+    BLOB_NAMES_ASSERTION_FAILED_HEADER: Final[str] = "BLOB NAMES ASSERTION FAILED"
     FAILURE_LOG_ASSERTION_FAILED_HEADER: Final[str] = "FAILURE LOG ASSERTION FAILED"
     TELEMETRY_ASSERTION_FAILED_HEADER: Final[str] = "TELEMETRY ASSERTION FAILED"
 
@@ -184,6 +193,36 @@ class AsserterRunFolder:
             AsserterRunFolder.WORK_ITEM_LISTINGS_ASSERTION_FAILED_HEADER,
             "Where the application runs never changes the artifacts each work item leaves behind.",
             f"{len(expected_work_item_folder_names)} work item folder(s) compared",
+            mismatches,
+        )
+
+    @staticmethod
+    def assert_blobs_named_by_run(expected_hosted_blobs: ExpectedHostedBlobs, actual_hosted_run_trail: HostedRunTrail) -> None:
+        """A hosted run's artifacts are blobs named `<run name>/...`; its own run folder keeps none of them."""
+        run_name: str = actual_hosted_run_trail.run_directory.name
+        expected_artifact_directory: Path = expected_hosted_blobs.container / run_name
+        mismatches: list[str] = []
+        if actual_hosted_run_trail.artifact_directory != expected_artifact_directory:
+            mismatches.append(f"artifact directory: expected {expected_artifact_directory} but found {actual_hosted_run_trail.artifact_directory}")
+        mismatches.extend(
+            f"blob {actual_blob_name!r} is not named under the run {run_name!r}"
+            for actual_blob_name in actual_hosted_run_trail.blob_names
+            if not actual_blob_name.startswith(f"{run_name}/")
+        )
+        mismatches.extend(
+            f"missing blob {run_name}/{expected_blob_name}"
+            for expected_blob_name in sorted(expected_hosted_blobs.blob_names_within_run)
+            if f"{run_name}/{expected_blob_name}" not in actual_hosted_run_trail.blob_names
+        )
+        if expected_hosted_blobs.manifest_filename in actual_hosted_run_trail.run_directory_entry_names:
+            mismatches.append(
+                f"the run folder {actual_hosted_run_trail.run_directory} holds a {expected_hosted_blobs.manifest_filename}, "
+                "which belongs in the container"
+            )
+        assert not mismatches, format_assertion_report(
+            AsserterRunFolder.BLOB_NAMES_ASSERTION_FAILED_HEADER,
+            "A container holds many runs, so the run's name leads every blob name and the run folder keeps no artifacts.",
+            f"{len(actual_hosted_run_trail.blob_names)} blob(s) checked, {len(expected_hosted_blobs.blob_names_within_run)} expected blob(s)",
             mismatches,
         )
 

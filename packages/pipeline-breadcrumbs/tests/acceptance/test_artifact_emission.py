@@ -35,7 +35,7 @@ class TestEmit:
         work_item: WorkItem = create_random_work_item()
         expected_content: bytes = b'{"ok": true}'
         discriminator: str = create_random_discriminator()
-        pipeline_run: PipelineRun = PipelineRun(pipeline_name=pipeline_name, sink=artifact_sink_testing, logger=run_logger)
+        pipeline_run: PipelineRun = PipelineRun(pipeline_name=pipeline_name, artifact_sink=artifact_sink_testing, logger=run_logger)
         expected_filename: str = f"{work_item.stem}_step_02_page_evidence_{discriminator}.json"
         expected_emit_log_record: ExpectedLogRecord = ExpectedLogRecord(
             message=f"Emitted artifact: {expected_filename} (12 B)",
@@ -60,7 +60,7 @@ class TestEmit:
         pipeline_name: str = create_random_pipeline_name()
         work_item: WorkItem = create_random_work_item()
         emitted_content: bytes = b"{}"
-        pipeline_run: PipelineRun = PipelineRun(pipeline_name=pipeline_name, sink=artifact_sink_testing, logger=run_logger)
+        pipeline_run: PipelineRun = PipelineRun(pipeline_name=pipeline_name, artifact_sink=artifact_sink_testing, logger=run_logger)
         expected_description: tuple[str, str, bytes] = (PAGE_EVIDENCE.key, PAGE_EVIDENCE.content_type, emitted_content)
 
         # Act
@@ -79,7 +79,7 @@ class TestEmit:
         # Arrange
         pipeline_name: str = create_random_pipeline_name()
         work_item: WorkItem = create_random_work_item()
-        pipeline_run: PipelineRun = PipelineRun(pipeline_name=pipeline_name, sink=artifact_sink_testing, logger=run_logger)
+        pipeline_run: PipelineRun = PipelineRun(pipeline_name=pipeline_name, artifact_sink=artifact_sink_testing, logger=run_logger)
         expected_filenames_in_pipeline_order: list[str] = [
             f"{work_item.stem}_step_{step_number:02d}_page_evidence.json" for step_number in (1, 2, 9, 10, 11)
         ]
@@ -103,7 +103,7 @@ class TestEmit:
         # Arrange
         pipeline_name: str = create_random_pipeline_name()
         work_item: WorkItem = create_random_work_item()
-        pipeline_run: PipelineRun = PipelineRun(pipeline_name=pipeline_name, sink=artifact_sink_testing, logger=run_logger)
+        pipeline_run: PipelineRun = PipelineRun(pipeline_name=pipeline_name, artifact_sink=artifact_sink_testing, logger=run_logger)
         expected_exception: ExpectedException = ExpectedException(
             InvalidDeclarationError, message_phrases=["discriminator", "letters, digits, dot, underscore and hyphen"]
         )
@@ -218,7 +218,7 @@ class TestRunLevelArtifact:
     ) -> None:
         # Arrange
         pipeline_name: str = create_random_pipeline_name()
-        pipeline_run: PipelineRun = PipelineRun(pipeline_name=pipeline_name, sink=artifact_sink_testing, logger=run_logger)
+        pipeline_run: PipelineRun = PipelineRun(pipeline_name=pipeline_name, artifact_sink=artifact_sink_testing, logger=run_logger)
         expected_filenames: list[str] = [MANIFEST_FILENAME]
 
         # Act

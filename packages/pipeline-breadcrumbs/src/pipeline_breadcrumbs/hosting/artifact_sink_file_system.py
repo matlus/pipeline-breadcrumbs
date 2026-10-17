@@ -3,9 +3,9 @@
 import asyncio
 import unicodedata
 from pathlib import Path
-from typing import final
+from typing import final, override
 
-from pipeline_breadcrumbs.artifacts import Artifact, RunArtifact
+from pipeline_breadcrumbs.artifacts import Artifact, ArtifactSinkProtocol, RunArtifact
 from pipeline_breadcrumbs.hosting.paths import safe_path_component
 from pipeline_breadcrumbs.work_items import WorkItem
 
@@ -16,7 +16,7 @@ class WorkItemFolderCollisionError(ValueError):
 
 
 @final
-class ArtifactSinkFileSystem:
+class ArtifactSinkFileSystem(ArtifactSinkProtocol):
     """Writes each artifact under the run directory, in a folder per work item.
 
     ```
@@ -42,7 +42,8 @@ class ArtifactSinkFileSystem:
         self._run_directory: Path = run_directory
         self._work_item_id_by_folder: dict[str, str] = {}
 
-    async def __call__(self, artifact: Artifact) -> None:
+    @override
+    async def persist(self, artifact: Artifact) -> None:
         target: Path = self._target_path(artifact)
         await asyncio.to_thread(self._write, target, artifact.content)
 
@@ -53,6 +54,8 @@ class ArtifactSinkFileSystem:
 
     def _claim_folder(self, work_item: WorkItem) -> str:
         folder_name: str = safe_path_component(work_item.stem)
+        # A file name can reach the same folder in composed or decomposed Unicode form (macOS file systems
+        # store decomposed names), so the claim key is the NFC form, case-folded for case-insensitive folders.
         owner_id: str = self._work_item_id_by_folder.setdefault(unicodedata.normalize("NFC", folder_name).casefold(), work_item.id)
         if owner_id != work_item.id:
             raise WorkItemFolderCollisionError(

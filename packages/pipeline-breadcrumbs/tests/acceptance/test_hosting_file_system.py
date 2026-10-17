@@ -8,6 +8,7 @@ from pathlib import Path
 from typing import Final
 
 import pytest
+from breadcrumbs_acceptance_support.asserters.asserter_artifacts import AsserterArtifacts
 from breadcrumbs_acceptance_support.asserters.asserter_exception import AsserterException, ExpectedException
 from breadcrumbs_acceptance_support.asserters.asserter_rendered_text import AsserterRenderedText, ExpectedRenderedText
 from breadcrumbs_acceptance_support.clock_testing import ClockTesting
@@ -15,6 +16,7 @@ from breadcrumbs_acceptance_support.data_generators import create_random_discrim
 
 from pipeline_breadcrumbs import (
     ArtifactKind,
+    ArtifactSinkProtocol,
     BreadcrumbFormatter,
     PipelineRun,
     RunArtifact,
@@ -31,6 +33,7 @@ from pipeline_breadcrumbs.hosting import (
     create_run_folder,
     safe_path_component,
 )
+from pipeline_breadcrumbs.testing import ArtifactSinkTesting
 
 MANIFEST_FILENAME: Final[str] = "manifest.json"
 RUN_LOG_FILENAME: Final[str] = "run.log"
@@ -38,6 +41,7 @@ PAGE_IMAGE: Final[ArtifactKind] = ArtifactKind("page_image", "png", "image/png")
 PAGE_TEXT: Final[ArtifactKind] = ArtifactKind("page_text", "txt", "text/plain")
 MANIFEST: Final[ArtifactKind] = ArtifactKind("manifest", "json", "application/json")
 LOAD_PAGES: Final[Step] = Step(1, "Load Pages")
+READ_PAGES: Final[Step] = Step(2, "Read Pages")
 # ClockTesting's fixed time of day, as a run folder name renders it.
 CLOCK_TESTING_FOLDER_TIMESTAMP: Final[str] = "20261003_140322"
 CLOCK_TESTING_FOLDER_TIMESTAMP_ONE_MINUTE_LATER: Final[str] = "20261003_140422"
@@ -153,7 +157,7 @@ class TestArtifactSinkFileSystem:
         expected_path: Path = tmp_path / work_item.stem / f"{work_item.stem}_step_01_page_text_{discriminator}.txt"
 
         # Act
-        await artifact_sink_file_system(StepArtifact(PAGE_TEXT, expected_content, work_item, StepPath((1,)), discriminator=discriminator))
+        await artifact_sink_file_system.persist(StepArtifact(PAGE_TEXT, expected_content, work_item, StepPath((1,)), discriminator=discriminator))
 
         # Assert
         assert _read_written_bytes(expected_path) == expected_content
@@ -164,7 +168,7 @@ class TestArtifactSinkFileSystem:
         artifact_sink_file_system: ArtifactSinkFileSystem = ArtifactSinkFileSystem(tmp_path)
 
         # Act
-        await artifact_sink_file_system(RunArtifact(MANIFEST, expected_content))
+        await artifact_sink_file_system.persist(RunArtifact(MANIFEST, expected_content))
 
         # Assert
         assert (tmp_path / MANIFEST_FILENAME).read_bytes() == expected_content
@@ -185,10 +189,10 @@ class TestArtifactSinkFileSystem:
         ]
 
         # Act
-        await artifact_sink_file_system(StepArtifact(PAGE_TEXT, b"c", work_item, StepPath((10,))))
-        await artifact_sink_file_system(StepArtifact(PAGE_IMAGE, b"a", work_item, StepPath((2, 9))))
-        await artifact_sink_file_system(StepArtifact(PAGE_TEXT, b"b", work_item, StepPath((2, 10))))
-        await artifact_sink_file_system(StepArtifact(PAGE_IMAGE, b"d", work_item, StepPath((1,))))
+        await artifact_sink_file_system.persist(StepArtifact(PAGE_TEXT, b"c", work_item, StepPath((10,))))
+        await artifact_sink_file_system.persist(StepArtifact(PAGE_IMAGE, b"a", work_item, StepPath((2, 9))))
+        await artifact_sink_file_system.persist(StepArtifact(PAGE_TEXT, b"b", work_item, StepPath((2, 10))))
+        await artifact_sink_file_system.persist(StepArtifact(PAGE_IMAGE, b"d", work_item, StepPath((1,))))
 
         # Assert
         actual_entries: list[tuple[str, bool]] = [
@@ -203,14 +207,14 @@ class TestArtifactSinkFileSystem:
         first_work_item: WorkItem = create_random_work_item_with_stem(shared_stem, "pdf")
         second_work_item: WorkItem = create_random_work_item_with_stem(shared_stem, "docx")
         artifact_sink_file_system: ArtifactSinkFileSystem = ArtifactSinkFileSystem(tmp_path)
-        await artifact_sink_file_system(StepArtifact(PAGE_TEXT, b"first", first_work_item, StepPath((1,))))
+        await artifact_sink_file_system.persist(StepArtifact(PAGE_TEXT, b"first", first_work_item, StepPath((1,))))
         expected_exception: ExpectedException = ExpectedException(
             WorkItemFolderCollisionError, message_phrases=[first_work_item.id, second_work_item.id, shared_stem, "must be unique within a run"]
         )
 
         # Act
         with pytest.raises(WorkItemFolderCollisionError) as actual_raised:
-            await artifact_sink_file_system(StepArtifact(PAGE_TEXT, b"second", second_work_item, StepPath((1,))))
+            await artifact_sink_file_system.persist(StepArtifact(PAGE_TEXT, b"second", second_work_item, StepPath((1,))))
 
         # Assert
         AsserterException.assert_exception(expected_exception, actual_raised.value)
@@ -221,14 +225,14 @@ class TestArtifactSinkFileSystem:
         first_work_item: WorkItem = create_random_work_item_with_stem(shared_stem, "pdf")
         second_work_item: WorkItem = create_random_work_item_with_stem(shared_stem.upper(), "pdf")
         artifact_sink_file_system: ArtifactSinkFileSystem = ArtifactSinkFileSystem(tmp_path)
-        await artifact_sink_file_system(StepArtifact(PAGE_TEXT, b"first", first_work_item, StepPath((1,))))
+        await artifact_sink_file_system.persist(StepArtifact(PAGE_TEXT, b"first", first_work_item, StepPath((1,))))
         expected_exception: ExpectedException = ExpectedException(
             WorkItemFolderCollisionError, message_phrases=[first_work_item.id, second_work_item.id, "must be unique within a run"]
         )
 
         # Act
         with pytest.raises(WorkItemFolderCollisionError) as actual_raised:
-            await artifact_sink_file_system(StepArtifact(PAGE_TEXT, b"second", second_work_item, StepPath((1,))))
+            await artifact_sink_file_system.persist(StepArtifact(PAGE_TEXT, b"second", second_work_item, StepPath((1,))))
 
         # Assert
         AsserterException.assert_exception(expected_exception, actual_raised.value)
@@ -255,7 +259,7 @@ class TestAttachedRunLog:
 
         # Act
         with attached_run_log(run_logger, tmp_path, BreadcrumbFormatter(time_display=TimeDisplay.NONE)):
-            pipeline_run: PipelineRun = PipelineRun(pipeline_name=pipeline_name, sink=ArtifactSinkFileSystem(tmp_path), logger=run_logger)
+            pipeline_run: PipelineRun = PipelineRun(pipeline_name=pipeline_name, artifact_sink=ArtifactSinkFileSystem(tmp_path), logger=run_logger)
             async with pipeline_run, pipeline_run.open_work_item(work_item) as work_item_scope, work_item_scope.step(LOAD_PAGES) as step_scope:
                 step_scope.info(progress_message, count=3)
                 await step_scope.emit(PAGE_TEXT, b"hello")
@@ -264,3 +268,44 @@ class TestAttachedRunLog:
         AsserterRenderedText.assert_text(expected_run_log_rendered_text, _read_written_text(tmp_path / RUN_LOG_FILENAME))
         assert _list_entry_names(tmp_path) == expected_entry_names
         assert len(run_logger.handlers) == expected_handler_count
+
+
+def _list_file_paths(folder: Path) -> list[str]:
+    return sorted(entry.relative_to(folder).as_posix() for entry in folder.rglob("*") if entry.is_file())
+
+
+@pytest.mark.acceptance
+class TestArtifactSinkSwapping:
+    async def test_PipelineRun_WhenTheSameRunUsesTheFileSystemSinkOrTheTestingSink_ThenBothReceiveTheSameArtifactsInStepOrder(
+        self, tmp_path: Path, run_logger: logging.Logger
+    ) -> None:
+        # Arrange - the testing sink receives the step artifacts in step order and the manifest last; the file
+        # system holds the same files, the work item's folder listing alphabetically in that same step order
+        pipeline_name: str = create_random_pipeline_name()
+        work_item: WorkItem = create_random_work_item()
+        discriminator: str = create_random_discriminator()
+        artifact_sink_file_system: ArtifactSinkFileSystem = ArtifactSinkFileSystem(tmp_path)
+        artifact_sink_testing: ArtifactSinkTesting = ArtifactSinkTesting()
+        expected_step_filenames: list[str] = [
+            f"{work_item.stem}_step_01_page_text_{discriminator}.txt",
+            f"{work_item.stem}_step_02_page_image_{discriminator}.png",
+        ]
+        expected_received_filenames: list[str] = [*expected_step_filenames, MANIFEST_FILENAME]
+        expected_work_item_folder: str = safe_path_component(work_item.stem)
+        expected_file_paths: list[str] = sorted(
+            [MANIFEST_FILENAME, *(f"{expected_work_item_folder}/{expected_step_filename}" for expected_step_filename in expected_step_filenames)]
+        )
+
+        # Act
+        artifact_sink: ArtifactSinkProtocol
+        for artifact_sink in (artifact_sink_file_system, artifact_sink_testing):
+            pipeline_run: PipelineRun = PipelineRun(pipeline_name=pipeline_name, artifact_sink=artifact_sink, logger=run_logger)
+            async with pipeline_run, pipeline_run.open_work_item(work_item) as work_item_scope:
+                async with work_item_scope.step(LOAD_PAGES) as load_pages_step_scope:
+                    await load_pages_step_scope.emit(PAGE_TEXT, secrets.token_bytes(8), discriminator=discriminator)
+                async with work_item_scope.step(READ_PAGES) as read_pages_step_scope:
+                    await read_pages_step_scope.emit(PAGE_IMAGE, secrets.token_bytes(8), discriminator=discriminator)
+
+        # Assert
+        AsserterArtifacts.assert_exactly_these_filenames_in_order(expected_received_filenames, artifact_sink_testing.artifacts)
+        assert _list_file_paths(tmp_path) == expected_file_paths
