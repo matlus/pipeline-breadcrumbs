@@ -27,7 +27,13 @@ class ReportAssembler:
     def _render_analysis_report(scored_sections: Iterable[ScoredSection]) -> str:
         report_lines: list[str] = ["# Section analysis", ""]
         report_lines.extend(
-            f"- Page {scored_section.page_number}: {scored_section.title} ({scored_section.category}, confidence {scored_section.confidence:.2f})"
+            f"- Page {scored_section.page_number}: {_one_line(scored_section.title)} "
+            f"({_one_line(scored_section.category)}, confidence {scored_section.confidence:.2f})"
             for scored_section in scored_sections
         )
         return "\n".join(report_lines) + "\n"
+
+
+def _one_line(model_text: str) -> str:
+    # Titles and categories come from the model, so a stray newline must not break the report's one-line-per-section shape.
+    return " ".join(model_text.split())

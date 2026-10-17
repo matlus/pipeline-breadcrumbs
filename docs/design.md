@@ -585,7 +585,9 @@ exception that has `contextual_data_by_name` and `add_contextual_data` takes par
 
 The policy is the one the Meridian reference uses. Steps leave breadcrumbs and do not log tracebacks.
 The exception is logged once, at the application's outer boundary, with its traceback and every named
-fact it carries.
+fact it carries. The demo's boundary tells the two branches apart: a technical failure (the model service,
+the sink) is an error with its traceback, and a document the system refuses is a warning that lists every
+problem, with no traceback, because nothing in the system failed.
 
 ### Testing
 
@@ -745,12 +747,13 @@ document_analysis/                the system
   processors/
     page_loader.py                step 1, non-model work that takes time
     section_detector.py           step 2, a model processor fanning out across pages
-    section_classifier.py         step 3, a sub-orchestrator over three more processors:
-      classification/
-        prompt_builder.py             3.1, non-model work
-        section_scorer.py             3.2, a model processor
-        score_reconciler.py           3.3, a conditional model processor
     report_assembler.py           step 4, non-model work that produces the real output
+  engines/
+    section_classifier.py         step 3, a sub-orchestrator over three more processors:
+    classification/
+      prompt_builder.py             3.1, non-model work
+      section_scorer.py             3.2, a model processor
+      score_reconciler.py           3.3, a conditional model processor
   gateways/                       the model service gateway: builds each request, checks each response, translates failures
   service_locators/               creates what a host or a test swaps: the configuration source and the HTTP transport
   configuration_providers/        reads and validates the settings once, when the system is built

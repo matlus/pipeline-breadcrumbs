@@ -22,6 +22,10 @@ class StepStatus(StrEnum):
     SKIPPED = "SKIPPED"
 
 
+def _derive_key(display_name: str) -> str:
+    return _NON_KEY_CHARACTERS.sub("_", display_name.lower()).strip("_")
+
+
 @final
 @dataclass(frozen=True, slots=True)
 class Step:
@@ -47,10 +51,12 @@ class Step:
             raise InvalidDeclarationError(f"Step number must be between 1 and {MAX_STEP_NUMBER}, got {self.step_number}")
         display_name: str = self.name.strip()
         if not display_name:
-            raise InvalidDeclarationError("Step name must not be blank")
-        resolved_key: str = requested_key if requested_key is not None else _NON_KEY_CHARACTERS.sub("_", display_name.lower()).strip("_")
+            raise InvalidDeclarationError(f"Step {self.step_number} name must not be blank")
+        resolved_key: str = requested_key if requested_key is not None else _derive_key(display_name)
         if not _KEY_PATTERN.fullmatch(resolved_key):
-            raise InvalidDeclarationError(f"Step key '{resolved_key}' must be lowercase letters and digits separated by single underscores")
+            raise InvalidDeclarationError(
+                f"Step {self.step_number} '{display_name}' key '{resolved_key}' must be lowercase letters and digits separated by single underscores"
+            )
         object.__setattr__(self, "name", display_name)
         object.__setattr__(self, "key", resolved_key)
 

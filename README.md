@@ -120,12 +120,13 @@ document_analysis/                the system
   processors/
     page_loader.py                step 1, non-model work that takes time
     section_detector.py           step 2, a model processor fanning out across pages
-    section_classifier.py         step 3, a sub-orchestrator over three more processors:
-      classification/
-        prompt_builder.py             3.1, non-model work
-        section_scorer.py             3.2, a model processor
-        score_reconciler.py           3.3, a conditional model processor
     report_assembler.py           step 4, non-model work that produces the real output
+  engines/
+    section_classifier.py         step 3, a sub-orchestrator over three more processors:
+    classification/
+      prompt_builder.py             3.1, non-model work
+      section_scorer.py             3.2, a model processor
+      score_reconciler.py           3.3, a conditional model processor
   gateways/                       the model service gateway: builds each request, checks each response, translates failures
 ```
 

@@ -35,12 +35,14 @@ class AsserterStepBoundaries:
         ):
             mismatches.extend(AsserterStepBoundaries._compare_boundary(position, expected_step_boundary, actual_step_boundary))
         mismatches.extend(
-            f"missing boundary {position}: step {missing_boundary.step_number} {missing_boundary.step_status}"
-            for position, missing_boundary in enumerate(expected_step_boundaries[len(actual_step_boundaries) :], start=len(actual_step_boundaries))
+            f"missing boundary {position}: step {missing_expected_step_boundary.step_number} {missing_expected_step_boundary.step_status}"
+            for position, missing_expected_step_boundary in enumerate(
+                expected_step_boundaries[len(actual_step_boundaries) :], start=len(actual_step_boundaries)
+            )
         )
         mismatches.extend(
-            f"unexpected boundary {position}: step {unexpected_boundary.step_number} {unexpected_boundary.step_status}"
-            for position, unexpected_boundary in enumerate(
+            f"unexpected boundary {position}: step {unexpected_actual_step_boundary.step_number} {unexpected_actual_step_boundary.step_status}"
+            for position, unexpected_actual_step_boundary in enumerate(
                 actual_step_boundaries[len(expected_step_boundaries) :], start=len(expected_step_boundaries)
             )
         )

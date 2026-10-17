@@ -10,12 +10,11 @@ import pytest
 from breadcrumbs_acceptance_support.asserters.asserter_artifacts import AsserterArtifacts
 from breadcrumbs_acceptance_support.asserters.asserter_exception import AsserterException, ExpectedException
 from breadcrumbs_acceptance_support.asserters.asserter_log_record import AsserterLogRecord, ExpectedLogRecord
-from breadcrumbs_acceptance_support.data_generators import create_random_work_item
+from breadcrumbs_acceptance_support.data_generators import create_random_discriminator, create_random_pipeline_name, create_random_work_item
 
 from pipeline_breadcrumbs import ArtifactKind, ArtifactRole, AttributeKey, InvalidDeclarationError, PipelineRun, Step, StepArtifact, WorkItem
 from pipeline_breadcrumbs.testing import ArtifactSinkTesting, RecordCapture
 
-PIPELINE_NAME: Final[str] = "demo"
 MANIFEST_FILENAME: Final[str] = "manifest.json"
 METADATA_AUDIT: Final[Step] = Step(2, "Metadata Audit")
 PAGE_EVIDENCE: Final[ArtifactKind] = ArtifactKind("page_evidence", "json", "application/json")
@@ -32,10 +31,11 @@ class TestEmit:
         self, artifact_sink_testing: ArtifactSinkTesting, run_logger: logging.Logger, record_capture: RecordCapture
     ) -> None:
         # Arrange
+        pipeline_name: str = create_random_pipeline_name()
         work_item: WorkItem = create_random_work_item()
         expected_content: bytes = b'{"ok": true}'
-        discriminator: str = "page_0003"
-        pipeline_run: PipelineRun = PipelineRun(pipeline_name=PIPELINE_NAME, sink=artifact_sink_testing, logger=run_logger)
+        discriminator: str = create_random_discriminator()
+        pipeline_run: PipelineRun = PipelineRun(pipeline_name=pipeline_name, sink=artifact_sink_testing, logger=run_logger)
         expected_filename: str = f"{work_item.stem}_step_02_page_evidence_{discriminator}.json"
         expected_emit_log_record: ExpectedLogRecord = ExpectedLogRecord(
             message=f"Emitted artifact: {expected_filename} (12 B)",
@@ -57,9 +57,10 @@ class TestEmit:
         self, artifact_sink_testing: ArtifactSinkTesting, run_logger: logging.Logger
     ) -> None:
         # Arrange - the sink can persist it blindly: what it holds, its media type and its bytes travel with it
+        pipeline_name: str = create_random_pipeline_name()
         work_item: WorkItem = create_random_work_item()
         emitted_content: bytes = b"{}"
-        pipeline_run: PipelineRun = PipelineRun(pipeline_name=PIPELINE_NAME, sink=artifact_sink_testing, logger=run_logger)
+        pipeline_run: PipelineRun = PipelineRun(pipeline_name=pipeline_name, sink=artifact_sink_testing, logger=run_logger)
         expected_description: tuple[str, str, bytes] = (PAGE_EVIDENCE.key, PAGE_EVIDENCE.content_type, emitted_content)
 
         # Act
@@ -76,8 +77,9 @@ class TestEmit:
         self, artifact_sink_testing: ArtifactSinkTesting, run_logger: logging.Logger
     ) -> None:
         # Arrange
+        pipeline_name: str = create_random_pipeline_name()
         work_item: WorkItem = create_random_work_item()
-        pipeline_run: PipelineRun = PipelineRun(pipeline_name=PIPELINE_NAME, sink=artifact_sink_testing, logger=run_logger)
+        pipeline_run: PipelineRun = PipelineRun(pipeline_name=pipeline_name, sink=artifact_sink_testing, logger=run_logger)
         expected_filenames_in_pipeline_order: list[str] = [
             f"{work_item.stem}_step_{step_number:02d}_page_evidence.json" for step_number in (1, 2, 9, 10, 11)
         ]
@@ -99,8 +101,9 @@ class TestEmit:
         self, unsafe_discriminator: str, artifact_sink_testing: ArtifactSinkTesting, run_logger: logging.Logger
     ) -> None:
         # Arrange
+        pipeline_name: str = create_random_pipeline_name()
         work_item: WorkItem = create_random_work_item()
-        pipeline_run: PipelineRun = PipelineRun(pipeline_name=PIPELINE_NAME, sink=artifact_sink_testing, logger=run_logger)
+        pipeline_run: PipelineRun = PipelineRun(pipeline_name=pipeline_name, sink=artifact_sink_testing, logger=run_logger)
         expected_exception: ExpectedException = ExpectedException(
             InvalidDeclarationError, message_phrases=["discriminator", "letters, digits, dot, underscore and hyphen"]
         )
@@ -154,13 +157,13 @@ class TestArtifactKindDeclaration:
 
     def test_ArtifactKind_WhenNoRoleIsGiven_ThenTheArtifactIsInterim(self) -> None:
         # Arrange
-        expected_role: ArtifactRole = ArtifactRole.INTERIM
+        expected_artifact_role: ArtifactRole = ArtifactRole.INTERIM
 
         # Act
         actual_artifact_kind: ArtifactKind = ArtifactKind("page_evidence", "json", "application/json")
 
         # Assert
-        assert actual_artifact_kind.role is expected_role
+        assert actual_artifact_kind.role is expected_artifact_role
 
 
 @pytest.mark.acceptance
@@ -214,7 +217,8 @@ class TestRunLevelArtifact:
         self, artifact_sink_testing: ArtifactSinkTesting, run_logger: logging.Logger
     ) -> None:
         # Arrange
-        pipeline_run: PipelineRun = PipelineRun(pipeline_name=PIPELINE_NAME, sink=artifact_sink_testing, logger=run_logger)
+        pipeline_name: str = create_random_pipeline_name()
+        pipeline_run: PipelineRun = PipelineRun(pipeline_name=pipeline_name, sink=artifact_sink_testing, logger=run_logger)
         expected_filenames: list[str] = [MANIFEST_FILENAME]
 
         # Act

@@ -96,6 +96,7 @@ class GatewayModelService:
     async def _ask(
         self, operation_name: str, resource_path: str, request_resource: SectionDetectionRequestResource | SectionQuestionRequestResource
     ) -> str:
+        failed_status_code: int | None = None
         try:
             # HTTPX's read timeout applies per read; bound the whole call too, so a slowly dribbling body cannot stretch it.
             async with (
@@ -105,10 +106,16 @@ class GatewayModelService:
                 ) as model_service_response,
             ):
                 if not model_service_response.is_success:
+                    failed_status_code = model_service_response.status_code
                     failure_detail: str = await self._read_failure_detail(model_service_response)
                     raise self._create_status_error(operation_name, model_service_response.status_code, failure_detail)
                 reply_envelope_bytes: bytes = await self._read_bounded(model_service_response, self.MAXIMUM_REPLY_ENVELOPE_BYTES + 1)
         except (httpx.TransportError, OSError, TimeoutError) as transport_error:
+            if failed_status_code is not None:
+                # The service already answered with a failure status; running out of time reading its detail must not hide that answer.
+                raise self._create_status_error(
+                    operation_name, failed_status_code, "the failure detail could not be read in time"
+                ) from transport_error
             raise ModelServiceUnavailableError(
                 operation_name, self._sanitize(f"{type(transport_error).__name__}: {transport_error}")
             ) from transport_error

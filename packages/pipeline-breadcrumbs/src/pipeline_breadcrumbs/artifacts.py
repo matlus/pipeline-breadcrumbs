@@ -92,6 +92,11 @@ class StepArtifact:
         return self.artifact_kind.content_type
 
     @property
+    def filename_suffix(self) -> str:
+        """The extension with its dot, such as `.json`, for a sink that stores by type."""
+        return f".{self.artifact_kind.extension}"
+
+    @property
     def filename(self) -> str:
         """For example `Contract 12_step_02.03_metadata_audit_page_0003.json`.
 
@@ -118,6 +123,11 @@ class RunArtifact:
     @property
     def content_type(self) -> str:
         return self.artifact_kind.content_type
+
+    @property
+    def filename_suffix(self) -> str:
+        """The extension with its dot, such as `.json`, for a sink that stores by type."""
+        return f".{self.artifact_kind.extension}"
 
     @property
     def filename(self) -> str:

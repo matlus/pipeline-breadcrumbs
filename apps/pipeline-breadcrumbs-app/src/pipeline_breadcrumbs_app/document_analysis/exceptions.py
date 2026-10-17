@@ -6,6 +6,7 @@ so the failing step can stamp its identity onto it. That shape is all the librar
 """
 
 from abc import ABC
+from collections.abc import Iterable
 from typing import final
 
 from pipeline_breadcrumbs import ContextualDataDict
@@ -30,9 +31,6 @@ class DocumentAnalysisError(Exception, ABC):
     def add_contextual_data(self, contextual_data_by_name: ContextualDataDict) -> None:
         self._contextual_data_by_name.update(contextual_data_by_name)
 
-    def describe(self) -> str:
-        return "\n".join(f"  {name}: {value}" for name, value in self.contextual_data_by_name.items())
-
 
 class DocumentAnalysisBusinessError(DocumentAnalysisError, ABC):
     """The caller can correct this: the request itself was wrong, and sending it again unchanged fails the same way."""
@@ -46,7 +44,7 @@ class DocumentAnalysisTechnicalError(DocumentAnalysisError, ABC):
 class DocumentValidationError(DocumentAnalysisBusinessError):
     """The document handed to the system is not one it can analyze. Every problem found is reported at once."""
 
-    def __init__(self, validation_problems: list[str], contextual_data_by_name: ContextualDataDict | None = None) -> None:
+    def __init__(self, validation_problems: Iterable[str], contextual_data_by_name: ContextualDataDict) -> None:
         super().__init__(f"The document cannot be analyzed: {'; '.join(validation_problems)}", contextual_data_by_name)
 
 

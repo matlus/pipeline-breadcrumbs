@@ -124,7 +124,7 @@ type RunEvent = WorkItemOpened | WorkItemClosed | StepRecorded | StepClosed | Ar
 
 @dataclass(frozen=True, slots=True)
 class _WorkItemAttempt:
-    """One opening of a work item while the fold is under way: its record so far, its steps by instance, and its artifacts."""
+    """One opening of a work item while the fold is under way."""
 
     work_item_record: WorkItemRecord
     step_record_by_step_instance_id: dict[str, StepRecord]

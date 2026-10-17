@@ -8,6 +8,7 @@
 # handed to the callback, and the breadcrumbs it logged.
 
 import logging
+from collections.abc import Sequence
 from typing import Final
 
 import pytest
@@ -25,16 +26,16 @@ from analysis_acceptance_support.mediator_model_service import (
     HTTP_STATUS_BAD_REQUEST,
     HTTP_STATUS_OK,
     HTTP_STATUS_SERVICE_UNAVAILABLE,
-    CapturedSectionDetectionRequest,
-    CapturedSectionRequest,
     ScriptedModelServiceResponse,
+    SectionDetectionRequest,
+    SectionQuestionRequest,
     TestMediatorModelService,
 )
 from analysis_acceptance_support.service_locator_testing import ServiceLocatorTesting, create_document_analysis_manager
 from breadcrumbs_acceptance_support.asserters.asserter_artifacts import AsserterArtifacts
 from breadcrumbs_acceptance_support.asserters.asserter_exception import AsserterException, ExpectedException
 from breadcrumbs_acceptance_support.asserters.asserter_step_boundaries import AsserterStepBoundaries, ExpectedStepBoundary
-from breadcrumbs_acceptance_support.data_generators import create_random_work_item
+from breadcrumbs_acceptance_support.data_generators import create_random_pipeline_name, create_random_work_item
 
 from pipeline_breadcrumbs import PipelineRun, WorkItem
 from pipeline_breadcrumbs.testing import ArtifactSinkTesting, RecordCapture
@@ -57,7 +58,6 @@ from pipeline_breadcrumbs_app.document_analysis.exceptions import (
 from pipeline_breadcrumbs_app.document_analysis.models import DocumentAnalysis, ScoredSection
 from pipeline_breadcrumbs_app.document_analysis.processors.section_detector import MAX_CONCURRENCY
 
-PIPELINE_NAME: Final[str] = "document-analysis-test"
 CONFIDENT: Final[float] = 0.92
 DOUBTFUL: Final[float] = 0.55
 RECONCILED: Final[float] = 0.81
@@ -96,7 +96,7 @@ DETECTION_STEP_CONTEXTUAL_DATA: Final[dict[str, object]] = {
 }
 
 
-def create_confident_test_mediator(section_titles: list[str], category: str) -> TestMediatorModelService:
+def create_confident_test_mediator(section_titles: Sequence[str], category: str) -> TestMediatorModelService:
     return TestMediatorModelService(
         detection_reply_by_page_number={page_number: create_title_reply(title) for page_number, title in enumerate(section_titles)},
         score_reply_by_title={title: create_score_reply(category, CONFIDENT) for title in section_titles},
@@ -104,7 +104,7 @@ def create_confident_test_mediator(section_titles: list[str], category: str) -> 
 
 
 def create_pipeline_run(artifact_sink_testing: ArtifactSinkTesting, run_logger: logging.Logger) -> PipelineRun:
-    return PipelineRun(pipeline_name=PIPELINE_NAME, sink=artifact_sink_testing, logger=run_logger)
+    return PipelineRun(pipeline_name=create_random_pipeline_name(), sink=artifact_sink_testing, logger=run_logger)
 
 
 # ==================== EXPECTED PATHS ====================
@@ -136,7 +136,7 @@ class TestAnalyzeDocumentExpectedPaths:
         # Assert
         AsserterAnalyzedSections.assert_exactly_these_sections(expected_scored_sections, actual_document_analysis.scored_sections)
         AsserterStepBoundaries.assert_exactly_these_step_boundaries(CONFIDENT_RUN_STEP_BOUNDARIES, record_capture.records)
-        assert len(test_mediator_model_service.captured_reconcile_requests) == expected_reconcile_request_count
+        assert len(test_mediator_model_service.captured_reconcile_section_question_requests) == expected_reconcile_request_count
 
     async def test_analyze_document_WhenOneScoreIsDoubtful_ThenTheModelIsAskedAgainAndTheReconciledScoreIsReturned(
         self, artifact_sink_testing: ArtifactSinkTesting, run_logger: logging.Logger, record_capture: RecordCapture
@@ -196,14 +196,14 @@ class TestAnalyzeDocumentExpectedPaths:
         )
         document_analysis_manager: DocumentAnalysisManager = create_document_analysis_manager(test_mediator_model_service)
         pipeline_run: PipelineRun = create_pipeline_run(artifact_sink_testing, run_logger)
-        expected_detection_requests: list[CapturedSectionDetectionRequest] = [
+        expected_section_detection_requests: list[SectionDetectionRequest] = [
             {"page_number": page_number, "page_text": page_text} for page_number, page_text in enumerate(page_texts)
         ]
-        expected_score_requests: list[CapturedSectionRequest] = [
+        expected_score_section_question_requests: list[SectionQuestionRequest] = [
             {"page_number": page_number, "title": title, "text": f"Classify the section titled '{title}' on page {page_number} into one category."}
             for page_number, title in enumerate(section_titles)
         ]
-        expected_reconcile_requests: list[CapturedSectionRequest] = [
+        expected_reconcile_section_question_requests: list[SectionQuestionRequest] = [
             {"page_number": 1, "title": doubtful_title, "text": f"Reconsider the section titled '{doubtful_title}'."}
         ]
 
@@ -213,12 +213,12 @@ class TestAnalyzeDocumentExpectedPaths:
 
         # Assert
         AsserterModelServiceRequests.assert_requests(
-            expected_detection_requests,
-            expected_score_requests,
-            expected_reconcile_requests,
-            test_mediator_model_service.captured_detection_requests,
-            test_mediator_model_service.captured_score_requests,
-            test_mediator_model_service.captured_reconcile_requests,
+            expected_section_detection_requests,
+            expected_score_section_question_requests,
+            expected_reconcile_section_question_requests,
+            test_mediator_model_service.captured_section_detection_requests,
+            test_mediator_model_service.captured_score_section_question_requests,
+            test_mediator_model_service.captured_reconcile_section_question_requests,
         )
 
     async def test_analyze_document_WhenTheDocumentIsAnalyzed_ThenEveryArtifactLandsInPipelineOrderWithTheReportAsTheOnlyOutput(
@@ -275,7 +275,7 @@ class TestAnalyzeDocumentExpectedPaths:
         AsserterModelServiceRequests.assert_detection_concurrency(
             expected_page_numbers,
             MAX_CONCURRENCY,
-            test_mediator_model_service.captured_detection_requests,
+            test_mediator_model_service.captured_section_detection_requests,
             test_mediator_model_service.maximum_concurrent_detection_count,
         )
 
@@ -310,7 +310,7 @@ class TestAnalyzeDocumentValidation:
         # Assert - nothing ran: no step, no model question, only the run's own manifest
         AsserterException.assert_exception(expected_exception, actual_raised.value)
         AsserterStepBoundaries.assert_exactly_these_step_boundaries(expected_step_boundaries, record_capture.records)
-        assert test_mediator_model_service.captured_request_count == expected_model_service_request_count
+        assert test_mediator_model_service.captured_model_service_request_count == expected_model_service_request_count
         AsserterArtifacts.assert_exactly_these_filenames_in_order(expected_filenames, artifact_sink_testing.artifacts)
 
     async def test_analyze_document_WhenSeveralPagesAreBlank_ThenOneErrorNamesAllOfThem(

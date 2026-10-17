@@ -14,13 +14,14 @@ from breadcrumbs_acceptance_support.asserters.asserter_manifest import (
     ExpectedManifestWorkItem,
 )
 from breadcrumbs_acceptance_support.clock_testing import ClockTesting
-from breadcrumbs_acceptance_support.data_generators import create_random_work_item
+from breadcrumbs_acceptance_support.data_generators import create_random_discriminator, create_random_pipeline_name, create_random_work_item
 from breadcrumbs_acceptance_support.exceptions_testing import PlainTestingError
 
 from pipeline_breadcrumbs import ArtifactKind, ArtifactRole, PipelineRun, Step, WorkItem, WorkItemScope
 from pipeline_breadcrumbs.testing import ArtifactSinkTesting
 
 LOAD_PAGES: Final[Step] = Step(1, "Load Pages")
+LOAD_PAGES_STEP_PATH: Final[str] = str(LOAD_PAGES.step_number)
 DETECT_SECTIONS: Final[Step] = Step(2, "Detect Sections")
 PAGE_TEXT: Final[ArtifactKind] = ArtifactKind("page_text", "txt", "text/plain")
 FINAL_REPORT: Final[ArtifactKind] = ArtifactKind("final_report", "md", "text/markdown", role=ArtifactRole.OUTPUT)
@@ -33,8 +34,9 @@ class TestRunManifest:
     ) -> None:
         # Arrange
         work_item: WorkItem = create_random_work_item()
-        pipeline_name: str = "demo"
+        pipeline_name: str = create_random_pipeline_name()
         expected_step_outcome: str = "Loaded 1 page"
+        discriminator: str = create_random_discriminator()
         pipeline_run: PipelineRun = PipelineRun(
             pipeline_name=pipeline_name, sink=artifact_sink_testing, logger=run_logger, supplied_clock=clock_testing.clock
         )
@@ -43,15 +45,15 @@ class TestRunManifest:
             run_id=pipeline_run.run_id,
             run_status="COMPLETE",
             elapsed_seconds=4.0,
-            work_item_records=[
+            manifest_work_items=[
                 ExpectedManifestWorkItem(
                     name=work_item.name,
                     work_item_status="COMPLETE",
-                    step_records=[
-                        ExpectedManifestStep("1", "COMPLETE", elapsed_seconds=1.5, outcome=expected_step_outcome),
+                    manifest_steps=[
+                        ExpectedManifestStep(LOAD_PAGES_STEP_PATH, "COMPLETE", elapsed_seconds=1.5, outcome=expected_step_outcome),
                         ExpectedManifestStep("2", "COMPLETE", elapsed_seconds=2.0),
                     ],
-                    artifact_filenames=[f"{work_item.stem}_step_01_page_text_page_0000.txt"],
+                    artifact_filenames=[f"{work_item.stem}_step_01_page_text_{discriminator}.txt"],
                 )
             ],
         )
@@ -61,7 +63,7 @@ class TestRunManifest:
             async with pipeline_run.open_work_item(work_item) as work_item_scope:
                 async with work_item_scope.step(LOAD_PAGES) as step_scope:
                     clock_testing.advance(1.5)
-                    await step_scope.emit(PAGE_TEXT, b"hello", discriminator="page_0000")
+                    await step_scope.emit(PAGE_TEXT, b"hello", discriminator=discriminator)
                     step_scope.outcome(expected_step_outcome)
                 async with work_item_scope.step(DETECT_SECTIONS):
                     clock_testing.advance(2.0)
@@ -75,7 +77,7 @@ class TestRunManifest:
     ) -> None:
         # Arrange
         work_item: WorkItem = create_random_work_item()
-        pipeline_name: str = "demo"
+        pipeline_name: str = create_random_pipeline_name()
         pipeline_run: PipelineRun = PipelineRun(
             pipeline_name=pipeline_name, sink=artifact_sink_testing, logger=run_logger, supplied_clock=clock_testing.clock
         )
@@ -85,11 +87,11 @@ class TestRunManifest:
             run_id=pipeline_run.run_id,
             run_status="COMPLETE",
             elapsed_seconds=0.0,
-            work_item_records=[
+            manifest_work_items=[
                 ExpectedManifestWorkItem(
                     name=work_item.name,
                     work_item_status="COMPLETE",
-                    step_records=[ExpectedManifestStep("1", "COMPLETE")],
+                    manifest_steps=[ExpectedManifestStep(LOAD_PAGES_STEP_PATH, "COMPLETE")],
                     artifact_filenames=[expected_report_filename],
                     artifact_role_by_filename={expected_report_filename: ArtifactRole.OUTPUT.value},
                 )
@@ -111,7 +113,7 @@ class TestRunManifest:
         healthy_work_item: WorkItem = create_random_work_item()
         failure_message: str = "unreadable"
         expected_failure: str = f"PlainTestingError: {failure_message}"
-        pipeline_name: str = "demo"
+        pipeline_name: str = create_random_pipeline_name()
         pipeline_run: PipelineRun = PipelineRun(
             pipeline_name=pipeline_name, sink=artifact_sink_testing, logger=run_logger, supplied_clock=clock_testing.clock
         )
@@ -120,17 +122,17 @@ class TestRunManifest:
             run_id=pipeline_run.run_id,
             run_status="FAILED",
             elapsed_seconds=0.0,
-            work_item_records=[
+            manifest_work_items=[
                 ExpectedManifestWorkItem(
                     name=failing_work_item.name,
                     work_item_status="FAILED",
                     failure=expected_failure,
-                    step_records=[ExpectedManifestStep("1", "FAILED", failure=expected_failure)],
+                    manifest_steps=[ExpectedManifestStep(LOAD_PAGES_STEP_PATH, "FAILED", failure=expected_failure)],
                 ),
                 ExpectedManifestWorkItem(
                     name=healthy_work_item.name,
                     work_item_status="COMPLETE",
-                    step_records=[ExpectedManifestStep("1", "COMPLETE")],
+                    manifest_steps=[ExpectedManifestStep(LOAD_PAGES_STEP_PATH, "COMPLETE")],
                 ),
             ],
         )
@@ -152,7 +154,7 @@ class TestRunManifest:
         # Arrange
         work_item: WorkItem = create_random_work_item()
         skip_reason: str = "nothing to reconcile"
-        pipeline_name: str = "demo"
+        pipeline_name: str = create_random_pipeline_name()
         pipeline_run: PipelineRun = PipelineRun(
             pipeline_name=pipeline_name, sink=artifact_sink_testing, logger=run_logger, supplied_clock=clock_testing.clock
         )
@@ -161,12 +163,12 @@ class TestRunManifest:
             run_id=pipeline_run.run_id,
             run_status="COMPLETE",
             elapsed_seconds=0.0,
-            work_item_records=[
+            manifest_work_items=[
                 ExpectedManifestWorkItem(
                     name=work_item.name,
                     work_item_status="COMPLETE",
-                    step_records=[
-                        ExpectedManifestStep("1", "COMPLETE"),
+                    manifest_steps=[
+                        ExpectedManifestStep(LOAD_PAGES_STEP_PATH, "COMPLETE"),
                         ExpectedManifestStep("1.2", "SKIPPED", outcome=skip_reason),
                     ],
                 )
@@ -187,7 +189,7 @@ class TestRunManifest:
         work_item: WorkItem = create_random_work_item()
         first_attempt_failure_message: str = "first attempt"
         expected_first_attempt_failure: str = f"PlainTestingError: {first_attempt_failure_message}"
-        pipeline_name: str = "demo"
+        pipeline_name: str = create_random_pipeline_name()
         pipeline_run: PipelineRun = PipelineRun(
             pipeline_name=pipeline_name, sink=artifact_sink_testing, logger=run_logger, supplied_clock=clock_testing.clock
         )
@@ -196,17 +198,17 @@ class TestRunManifest:
             run_id=pipeline_run.run_id,
             run_status="FAILED",
             elapsed_seconds=0.0,
-            work_item_records=[
+            manifest_work_items=[
                 ExpectedManifestWorkItem(
                     name=work_item.name,
                     work_item_status="FAILED",
                     failure=expected_first_attempt_failure,
-                    step_records=[ExpectedManifestStep("1", "FAILED", failure=expected_first_attempt_failure)],
+                    manifest_steps=[ExpectedManifestStep(LOAD_PAGES_STEP_PATH, "FAILED", failure=expected_first_attempt_failure)],
                 ),
                 ExpectedManifestWorkItem(
                     name=work_item.name,
                     work_item_status="COMPLETE",
-                    step_records=[ExpectedManifestStep("1", "COMPLETE")],
+                    manifest_steps=[ExpectedManifestStep(LOAD_PAGES_STEP_PATH, "COMPLETE")],
                 ),
             ],
         )
@@ -229,7 +231,7 @@ class TestRunManifest:
         work_item: WorkItem = create_random_work_item()
         page_failure_message: str = "page 1 is unreadable"
         expected_page_failure: str = f"PlainTestingError: {page_failure_message}"
-        pipeline_name: str = "demo"
+        pipeline_name: str = create_random_pipeline_name()
         pipeline_run: PipelineRun = PipelineRun(
             pipeline_name=pipeline_name, sink=artifact_sink_testing, logger=run_logger, supplied_clock=clock_testing.clock
         )
@@ -238,14 +240,14 @@ class TestRunManifest:
             run_id=pipeline_run.run_id,
             run_status="FAILED",
             elapsed_seconds=0.0,
-            work_item_records=[
+            manifest_work_items=[
                 ExpectedManifestWorkItem(
                     name=work_item.name,
                     work_item_status="FAILED",
                     failure=expected_page_failure,
-                    step_records=[
-                        ExpectedManifestStep("1", "COMPLETE"),
-                        ExpectedManifestStep("1", "FAILED", failure=expected_page_failure),
+                    manifest_steps=[
+                        ExpectedManifestStep(LOAD_PAGES_STEP_PATH, "COMPLETE"),
+                        ExpectedManifestStep(LOAD_PAGES_STEP_PATH, "FAILED", failure=expected_page_failure),
                     ],
                 )
             ],
@@ -271,7 +273,7 @@ class TestRunManifest:
     ) -> None:
         # Arrange
         work_item: WorkItem = create_random_work_item()
-        pipeline_name: str = "demo"
+        pipeline_name: str = create_random_pipeline_name()
         pipeline_run: PipelineRun = PipelineRun(
             pipeline_name=pipeline_name, sink=artifact_sink_testing, logger=run_logger, supplied_clock=clock_testing.clock
         )
@@ -280,11 +282,13 @@ class TestRunManifest:
             run_id=pipeline_run.run_id,
             run_status="COMPLETE",
             elapsed_seconds=0.0,
-            work_item_records=[
+            manifest_work_items=[
                 ExpectedManifestWorkItem(
                     name=work_item.name,
                     work_item_status="COMPLETE",
-                    step_records=[ExpectedManifestStep("1", "COMPLETE", outcome=f"page {page_number}") for page_number in range(3)],
+                    manifest_steps=[
+                        ExpectedManifestStep(LOAD_PAGES_STEP_PATH, "COMPLETE", outcome=f"page {page_number}") for page_number in range(3)
+                    ],
                 )
             ],
         )

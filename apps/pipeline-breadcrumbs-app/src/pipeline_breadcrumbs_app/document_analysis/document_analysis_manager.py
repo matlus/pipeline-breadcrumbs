@@ -18,14 +18,13 @@ from pipeline_breadcrumbs import StepHostProtocol
 from pipeline_breadcrumbs_app.document_analysis.configuration_providers.configuration_provider import ConfigurationProvider
 from pipeline_breadcrumbs_app.document_analysis.configuration_providers.settings_models.model_service_settings import ModelServiceSettings
 from pipeline_breadcrumbs_app.document_analysis.configuration_providers.settings_models.simulated_work_settings import SimulatedWorkSettings
+from pipeline_breadcrumbs_app.document_analysis.engines.section_classifier import SectionClassifier
 from pipeline_breadcrumbs_app.document_analysis.gateways.gateway_model_service import GatewayModelService
 from pipeline_breadcrumbs_app.document_analysis.models import DetectedSection, DocumentAnalysis, ScoredSection
 from pipeline_breadcrumbs_app.document_analysis.processors.page_loader import PageLoader
 from pipeline_breadcrumbs_app.document_analysis.processors.report_assembler import ReportAssembler
-from pipeline_breadcrumbs_app.document_analysis.processors.section_classifier import SectionClassifier
 from pipeline_breadcrumbs_app.document_analysis.processors.section_detector import SectionDetector
 from pipeline_breadcrumbs_app.document_analysis.service_locators.service_locator_base import ServiceLocatorBase
-from pipeline_breadcrumbs_app.document_analysis.service_locators.service_locator_production import ServiceLocatorProduction
 from pipeline_breadcrumbs_app.document_analysis.simulated_work import SimulatedWork
 from pipeline_breadcrumbs_app.document_analysis.validators.document_analysis_validator import DocumentAnalysisValidator
 
@@ -33,9 +32,7 @@ from pipeline_breadcrumbs_app.document_analysis.validators.document_analysis_val
 class DocumentAnalysisManager:
     """Owns the model service gateway for its lifetime. Use `async with`, or call `close()`; both are safe."""
 
-    def __init__(self, service_locator: ServiceLocatorBase | None = None) -> None:
-        if service_locator is None:
-            service_locator = ServiceLocatorProduction()
+    def __init__(self, service_locator: ServiceLocatorBase) -> None:
         # Configuration is read before anything that owns a resource is built: a configuration failure part way
         # through would otherwise leave a constructed gateway that nothing ever closes.
         configuration_provider: ConfigurationProvider = service_locator.get_configuration_provider()

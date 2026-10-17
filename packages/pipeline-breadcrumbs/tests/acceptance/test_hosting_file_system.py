@@ -11,7 +11,7 @@ import pytest
 from breadcrumbs_acceptance_support.asserters.asserter_exception import AsserterException, ExpectedException
 from breadcrumbs_acceptance_support.asserters.asserter_rendered_text import AsserterRenderedText, ExpectedRenderedText
 from breadcrumbs_acceptance_support.clock_testing import ClockTesting
-from breadcrumbs_acceptance_support.data_generators import create_random_work_item
+from breadcrumbs_acceptance_support.data_generators import create_random_discriminator, create_random_pipeline_name, create_random_work_item
 
 from pipeline_breadcrumbs import (
     ArtifactKind,
@@ -32,7 +32,6 @@ from pipeline_breadcrumbs.hosting import (
     safe_path_component,
 )
 
-PIPELINE_NAME: Final[str] = "demo"
 MANIFEST_FILENAME: Final[str] = "manifest.json"
 RUN_LOG_FILENAME: Final[str] = "run.log"
 PAGE_IMAGE: Final[ArtifactKind] = ArtifactKind("page_image", "png", "image/png")
@@ -41,6 +40,7 @@ MANIFEST: Final[ArtifactKind] = ArtifactKind("manifest", "json", "application/js
 LOAD_PAGES: Final[Step] = Step(1, "Load Pages")
 # ClockTesting's fixed time of day, as a run folder name renders it.
 CLOCK_TESTING_FOLDER_TIMESTAMP: Final[str] = "20261003_140322"
+CLOCK_TESTING_FOLDER_TIMESTAMP_ONE_MINUTE_LATER: Final[str] = "20261003_140422"
 _RANDOM_SUFFIX_BYTES: Final[int] = 4
 
 
@@ -128,14 +128,18 @@ class TestRunFolder:
     def test_create_run_folder_WhenTheSameFileIsRunLater_ThenTheEarlierRunIsKept(self, tmp_path: Path, clock_testing: ClockTesting) -> None:
         # Arrange
         run_folder_label: str = create_random_label()
-        earlier_run_folder: Path = create_run_folder(tmp_path, run_folder_label, supplied_clock=clock_testing.clock)
+        create_run_folder(tmp_path, run_folder_label, supplied_clock=clock_testing.clock)
         clock_testing.advance(60)
+        expected_entry_names: list[str] = [
+            f"{CLOCK_TESTING_FOLDER_TIMESTAMP}_{run_folder_label}",
+            f"{CLOCK_TESTING_FOLDER_TIMESTAMP_ONE_MINUTE_LATER}_{run_folder_label}",
+        ]
 
         # Act
-        actual_later_run_folder: Path = create_run_folder(tmp_path, run_folder_label, supplied_clock=clock_testing.clock)
+        create_run_folder(tmp_path, run_folder_label, supplied_clock=clock_testing.clock)
 
         # Assert
-        assert sorted(actual_path.name for actual_path in tmp_path.iterdir()) == [earlier_run_folder.name, actual_later_run_folder.name]
+        assert _list_entry_names(tmp_path) == expected_entry_names
 
 
 @pytest.mark.acceptance
@@ -145,10 +149,11 @@ class TestArtifactSinkFileSystem:
         work_item: WorkItem = create_random_work_item()
         expected_content: bytes = secrets.token_bytes(_RANDOM_SUFFIX_BYTES)
         artifact_sink_file_system: ArtifactSinkFileSystem = ArtifactSinkFileSystem(tmp_path)
-        expected_path: Path = tmp_path / work_item.stem / f"{work_item.stem}_step_01_page_text_page_0000.txt"
+        discriminator: str = create_random_discriminator()
+        expected_path: Path = tmp_path / work_item.stem / f"{work_item.stem}_step_01_page_text_{discriminator}.txt"
 
         # Act
-        await artifact_sink_file_system(StepArtifact(PAGE_TEXT, expected_content, work_item, StepPath((1,)), discriminator="page_0000"))
+        await artifact_sink_file_system(StepArtifact(PAGE_TEXT, expected_content, work_item, StepPath((1,)), discriminator=discriminator))
 
         # Assert
         assert _read_written_bytes(expected_path) == expected_content
@@ -233,14 +238,16 @@ class TestArtifactSinkFileSystem:
 class TestAttachedRunLog:
     async def test_attached_run_log_WhenARunIsLogged_ThenTheLogSitsBesideTheArtifactsAndIsDetachedAfterwards(self, tmp_path: Path) -> None:
         # Arrange
+        pipeline_name: str = create_random_pipeline_name()
         work_item: WorkItem = create_random_work_item()
         run_logger: logging.Logger = logging.getLogger("pipeline_breadcrumbs.acceptance_tests.hosting")
         run_logger.propagate = False
         expected_handler_count: int = len(run_logger.handlers)
-        expected_run_log: ExpectedRenderedText = ExpectedRenderedText(
+        progress_message: str = "Loading pages"
+        expected_run_log_rendered_text: ExpectedRenderedText = ExpectedRenderedText(
             contained_phrases=[
                 "STEP 1: Load Pages - STARTED",
-                "Loading pages (count=3)",
+                f"{progress_message} (count=3)",
                 f"Emitted artifact: {work_item.stem}_step_01_page_text.txt (5 B)",
             ]
         )
@@ -248,12 +255,12 @@ class TestAttachedRunLog:
 
         # Act
         with attached_run_log(run_logger, tmp_path, BreadcrumbFormatter(time_display=TimeDisplay.NONE)):
-            pipeline_run: PipelineRun = PipelineRun(pipeline_name=PIPELINE_NAME, sink=ArtifactSinkFileSystem(tmp_path), logger=run_logger)
+            pipeline_run: PipelineRun = PipelineRun(pipeline_name=pipeline_name, sink=ArtifactSinkFileSystem(tmp_path), logger=run_logger)
             async with pipeline_run, pipeline_run.open_work_item(work_item) as work_item_scope, work_item_scope.step(LOAD_PAGES) as step_scope:
-                step_scope.info("Loading pages", count=3)
+                step_scope.info(progress_message, count=3)
                 await step_scope.emit(PAGE_TEXT, b"hello")
 
         # Assert - the log sits beside the manifest and the work item's folder, and the handler is gone again
-        AsserterRenderedText.assert_text(expected_run_log, _read_written_text(tmp_path / RUN_LOG_FILENAME))
+        AsserterRenderedText.assert_text(expected_run_log_rendered_text, _read_written_text(tmp_path / RUN_LOG_FILENAME))
         assert _list_entry_names(tmp_path) == expected_entry_names
         assert len(run_logger.handlers) == expected_handler_count

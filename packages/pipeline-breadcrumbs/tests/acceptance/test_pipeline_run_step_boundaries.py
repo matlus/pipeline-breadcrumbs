@@ -13,12 +13,11 @@ from breadcrumbs_acceptance_support.asserters.asserter_exception import Asserter
 from breadcrumbs_acceptance_support.asserters.asserter_log_record import AsserterLogRecord, ExpectedLogRecord
 from breadcrumbs_acceptance_support.asserters.asserter_step_boundaries import AsserterStepBoundaries, ExpectedStepBoundary
 from breadcrumbs_acceptance_support.clock_testing import ClockTesting
-from breadcrumbs_acceptance_support.data_generators import create_random_work_item
+from breadcrumbs_acceptance_support.data_generators import create_random_pipeline_name, create_random_work_item
 
 from pipeline_breadcrumbs import ArtifactKind, AttributeKey, EventKind, InvalidDeclarationError, PipelineRun, Step, WorkItem
 from pipeline_breadcrumbs.testing import ArtifactSinkTesting, RecordCapture
 
-PIPELINE_NAME: Final[str] = "demo"
 MANIFEST_FILENAME: Final[str] = "manifest.json"
 PAGE_IMAGE_EXTRACTION: Final[Step] = Step(1, "Page Image Extraction")
 METADATA_AUDIT: Final[Step] = Step(2, "Metadata Audit")
@@ -39,17 +38,18 @@ class TestStepBoundaries:
         self, clock_testing: ClockTesting, artifact_sink_testing: ArtifactSinkTesting, run_logger: logging.Logger, record_capture: RecordCapture
     ) -> None:
         # Arrange
+        pipeline_name: str = create_random_pipeline_name()
         work_item: WorkItem = create_random_work_item()
         expected_elapsed_seconds: float = 2.5
         expected_step_number: str = "1"
         pipeline_run: PipelineRun = PipelineRun(
-            pipeline_name=PIPELINE_NAME, sink=artifact_sink_testing, logger=run_logger, supplied_clock=clock_testing.clock
+            pipeline_name=pipeline_name, sink=artifact_sink_testing, logger=run_logger, supplied_clock=clock_testing.clock
         )
         expected_step_boundaries: list[ExpectedStepBoundary] = [
             ExpectedStepBoundary(expected_step_number, "STARTED"),
             ExpectedStepBoundary(expected_step_number, "COMPLETE", elapsed_seconds=expected_elapsed_seconds),
         ]
-        expected_completion_record: ExpectedLogRecord = ExpectedLogRecord(
+        expected_completion_log_record: ExpectedLogRecord = ExpectedLogRecord(
             message=f"Step {expected_step_number} Page Image Extraction complete in 2.500s",
             attribute_value_by_key={AttributeKey.STEP_KEY: "page_image_extraction"},
         )
@@ -60,17 +60,18 @@ class TestStepBoundaries:
 
         # Assert
         AsserterStepBoundaries.assert_exactly_these_step_boundaries(expected_step_boundaries, record_capture.records)
-        AsserterLogRecord.assert_record(expected_completion_record, record_capture.boundaries(EventKind.STEP)[-1])
+        AsserterLogRecord.assert_record(expected_completion_log_record, record_capture.boundaries(EventKind.STEP)[-1])
 
     async def test_PipelineRun_WhenAStepSetsItsOutcome_ThenTheOutcomeIsPartOfTheCompletionRecord(
         self, artifact_sink_testing: ArtifactSinkTesting, run_logger: logging.Logger, record_capture: RecordCapture
     ) -> None:
         # Arrange
+        pipeline_name: str = create_random_pipeline_name()
         work_item: WorkItem = create_random_work_item()
-        pipeline_run: PipelineRun = PipelineRun(pipeline_name=PIPELINE_NAME, sink=artifact_sink_testing, logger=run_logger)
+        pipeline_run: PipelineRun = PipelineRun(pipeline_name=pipeline_name, sink=artifact_sink_testing, logger=run_logger)
         expected_outcome: str = "Found 5 write-up starts"
         expected_start_count: int = 5
-        expected_completion_record: ExpectedLogRecord = ExpectedLogRecord(
+        expected_completion_log_record: ExpectedLogRecord = ExpectedLogRecord(
             message_suffix=f": {expected_outcome}",
             attribute_value_by_key={AttributeKey.OUTCOME: expected_outcome, f"{AttributeKey.DETAIL_PREFIX}starts": expected_start_count},
         )
@@ -80,16 +81,17 @@ class TestStepBoundaries:
             step_scope.outcome(expected_outcome, starts=expected_start_count)
 
         # Assert
-        AsserterLogRecord.assert_record(expected_completion_record, record_capture.boundaries(EventKind.STEP)[-1])
+        AsserterLogRecord.assert_record(expected_completion_log_record, record_capture.boundaries(EventKind.STEP)[-1])
 
     async def test_PipelineRun_WhenAStepOpensAChildStep_ThenTheChildsNumberComposesUnderTheParents(
         self, artifact_sink_testing: ArtifactSinkTesting, run_logger: logging.Logger, record_capture: RecordCapture
     ) -> None:
         # Arrange
+        pipeline_name: str = create_random_pipeline_name()
         work_item: WorkItem = create_random_work_item()
         expected_parent_step_number: str = "3"
         expected_child_step_number: str = "3.2"
-        pipeline_run: PipelineRun = PipelineRun(pipeline_name=PIPELINE_NAME, sink=artifact_sink_testing, logger=run_logger)
+        pipeline_run: PipelineRun = PipelineRun(pipeline_name=pipeline_name, sink=artifact_sink_testing, logger=run_logger)
         expected_step_boundaries: list[ExpectedStepBoundary] = [
             ExpectedStepBoundary(expected_parent_step_number, "STARTED"),
             ExpectedStepBoundary(expected_child_step_number, "STARTED"),
@@ -115,11 +117,12 @@ class TestStepBoundaries:
         self, artifact_sink_testing: ArtifactSinkTesting, run_logger: logging.Logger, record_capture: RecordCapture
     ) -> None:
         # Arrange
+        pipeline_name: str = create_random_pipeline_name()
         work_item: WorkItem = create_random_work_item()
         skip_reason: str = "no low-confidence sections"
         expected_child_step_number: str = "3.3"
-        pipeline_run: PipelineRun = PipelineRun(pipeline_name=PIPELINE_NAME, sink=artifact_sink_testing, logger=run_logger)
-        expected_skipped_record: ExpectedLogRecord = ExpectedLogRecord(
+        pipeline_run: PipelineRun = PipelineRun(pipeline_name=pipeline_name, sink=artifact_sink_testing, logger=run_logger)
+        expected_skipped_log_record: ExpectedLogRecord = ExpectedLogRecord(
             message=f"Step {expected_child_step_number} Reconcile skipped: {skip_reason}",
             attribute_value_by_key={AttributeKey.STATUS: "SKIPPED", AttributeKey.STEP_NUMBER: expected_child_step_number},
         )
@@ -129,7 +132,7 @@ class TestStepBoundaries:
             parent_step_scope.skipped(RECONCILE_SCORES, skip_reason)
 
         # Assert
-        AsserterLogRecord.assert_record(expected_skipped_record, record_capture.boundaries(EventKind.STEP)[1])
+        AsserterLogRecord.assert_record(expected_skipped_log_record, record_capture.boundaries(EventKind.STEP)[1])
 
 
 @pytest.mark.acceptance
@@ -138,13 +141,14 @@ class TestProgressLinesAndAttributes:
         self, artifact_sink_testing: ArtifactSinkTesting, run_logger: logging.Logger, record_capture: RecordCapture
     ) -> None:
         # Arrange
+        pipeline_name: str = create_random_pipeline_name()
         work_item: WorkItem = create_random_work_item()
         expected_progress_message: str = "Auditing metadata"
         expected_page_count: int = 14
         expected_concurrency: int = 5
-        pipeline_run: PipelineRun = PipelineRun(pipeline_name=PIPELINE_NAME, sink=artifact_sink_testing, logger=run_logger)
+        pipeline_run: PipelineRun = PipelineRun(pipeline_name=pipeline_name, sink=artifact_sink_testing, logger=run_logger)
         # A progress line is not a boundary, so it carries no event attribute.
-        expected_progress_record: ExpectedLogRecord = ExpectedLogRecord(
+        expected_progress_log_record: ExpectedLogRecord = ExpectedLogRecord(
             attribute_value_by_key={
                 f"{AttributeKey.DETAIL_PREFIX}pages": expected_page_count,
                 f"{AttributeKey.DETAIL_PREFIX}concurrency": expected_concurrency,
@@ -157,17 +161,18 @@ class TestProgressLinesAndAttributes:
             step_scope.info(expected_progress_message, pages=expected_page_count, concurrency=expected_concurrency)
 
         # Assert
-        AsserterLogRecord.assert_record(expected_progress_record, _retrieve_record(record_capture.records, expected_progress_message))
+        AsserterLogRecord.assert_record(expected_progress_log_record, _retrieve_record(record_capture.records, expected_progress_message))
 
     async def test_PipelineRun_WhenAFieldIsNamedLikeALogRecordAttribute_ThenLoggingStillWorks(
         self, artifact_sink_testing: ArtifactSinkTesting, run_logger: logging.Logger, record_capture: RecordCapture
     ) -> None:
         # Arrange
+        pipeline_name: str = create_random_pipeline_name()
         work_item: WorkItem = create_random_work_item()
         expected_progress_message: str = "Reading"
         expected_name_detail: str = f"Contract {secrets.token_hex(_RANDOM_SUFFIX_BYTES)}"
-        pipeline_run: PipelineRun = PipelineRun(pipeline_name=PIPELINE_NAME, sink=artifact_sink_testing, logger=run_logger)
-        expected_progress_record: ExpectedLogRecord = ExpectedLogRecord(
+        pipeline_run: PipelineRun = PipelineRun(pipeline_name=pipeline_name, sink=artifact_sink_testing, logger=run_logger)
+        expected_progress_log_record: ExpectedLogRecord = ExpectedLogRecord(
             attribute_value_by_key={f"{AttributeKey.DETAIL_PREFIX}name": expected_name_detail}
         )
 
@@ -176,21 +181,22 @@ class TestProgressLinesAndAttributes:
             step_scope.info(expected_progress_message, name=expected_name_detail, message="x", filename="a.pdf")
 
         # Assert
-        AsserterLogRecord.assert_record(expected_progress_record, _retrieve_record(record_capture.records, expected_progress_message))
+        AsserterLogRecord.assert_record(expected_progress_log_record, _retrieve_record(record_capture.records, expected_progress_message))
 
     async def test_PipelineRun_WhenCallerAttributesAreGiven_ThenEveryRecordCarriesThem(
         self, artifact_sink_testing: ArtifactSinkTesting, run_logger: logging.Logger, record_capture: RecordCapture
     ) -> None:
         # Arrange
+        pipeline_name: str = create_random_pipeline_name()
         work_item: WorkItem = create_random_work_item()
         expected_trace_id: str = secrets.token_hex(_RANDOM_SUFFIX_BYTES)
         trace_id_attribute_name: str = "trace_id"
         pipeline_run: PipelineRun = PipelineRun(
-            pipeline_name=PIPELINE_NAME, sink=artifact_sink_testing, logger=run_logger, attributes={trace_id_attribute_name: expected_trace_id}
+            pipeline_name=pipeline_name, sink=artifact_sink_testing, logger=run_logger, attributes={trace_id_attribute_name: expected_trace_id}
         )
         expected_attribute_value_by_key: dict[str, object] = {
             trace_id_attribute_name: expected_trace_id,
-            AttributeKey.PIPELINE_NAME: PIPELINE_NAME,
+            AttributeKey.PIPELINE_NAME: pipeline_name,
             AttributeKey.RUN_ID: pipeline_run.run_id,
         }
 
@@ -206,9 +212,10 @@ class TestProgressLinesAndAttributes:
         self, artifact_sink_testing: ArtifactSinkTesting, run_logger: logging.Logger, record_capture: RecordCapture
     ) -> None:
         # Arrange
+        pipeline_name: str = create_random_pipeline_name()
         work_item: WorkItem = create_random_work_item()
-        pipeline_run: PipelineRun = PipelineRun(pipeline_name=PIPELINE_NAME, sink=artifact_sink_testing, logger=run_logger)
-        expected_step_record: ExpectedLogRecord = ExpectedLogRecord(
+        pipeline_run: PipelineRun = PipelineRun(pipeline_name=pipeline_name, sink=artifact_sink_testing, logger=run_logger)
+        expected_step_log_record: ExpectedLogRecord = ExpectedLogRecord(
             attribute_value_by_key={AttributeKey.WORK_ITEM_ID: work_item.id, AttributeKey.WORK_ITEM_NAME: work_item.name}
         )
 
@@ -217,10 +224,11 @@ class TestProgressLinesAndAttributes:
             pass
 
         # Assert
-        AsserterLogRecord.assert_record(expected_step_record, record_capture.boundaries(EventKind.STEP)[0])
+        AsserterLogRecord.assert_record(expected_step_log_record, record_capture.boundaries(EventKind.STEP)[0])
 
     def test_PipelineRun_WhenCallerAttributesShadowALogRecordAttribute_ThenTheRunIsRefused(self, artifact_sink_testing: ArtifactSinkTesting) -> None:
         # Arrange
+        pipeline_name: str = create_random_pipeline_name()
         shadowing_attribute_name: str = "name"
         expected_exception: ExpectedException = ExpectedException(
             InvalidDeclarationError, message_phrases=["reserved logging attribute names", shadowing_attribute_name]
@@ -228,7 +236,7 @@ class TestProgressLinesAndAttributes:
 
         # Act
         with pytest.raises(InvalidDeclarationError) as actual_raised:
-            PipelineRun(pipeline_name=PIPELINE_NAME, sink=artifact_sink_testing, attributes={shadowing_attribute_name: "x"})
+            PipelineRun(pipeline_name=pipeline_name, sink=artifact_sink_testing, attributes={shadowing_attribute_name: "x"})
 
         # Assert
         AsserterException.assert_exception(expected_exception, actual_raised.value)

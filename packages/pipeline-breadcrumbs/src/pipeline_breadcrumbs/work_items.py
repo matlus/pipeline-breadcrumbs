@@ -1,7 +1,7 @@
 """The thing a pipeline run is working on."""
 
 from dataclasses import dataclass
-from pathlib import PurePath
+from pathlib import PurePosixPath
 from typing import final
 
 from pipeline_breadcrumbs.declaration_errors import InvalidDeclarationError
@@ -25,11 +25,11 @@ class WorkItem:
 
     def __post_init__(self) -> None:
         if not self.id.strip():
-            raise InvalidDeclarationError("WorkItem id must not be blank")
+            raise InvalidDeclarationError(f"WorkItem id must not be blank (name {self.name!r})")
         if not self.name.strip():
-            raise InvalidDeclarationError("WorkItem name must not be blank")
+            raise InvalidDeclarationError(f"WorkItem name must not be blank (id {self.id!r})")
 
     @property
     def stem(self) -> str:
         """The name without a file extension, used as the prefix of artifact filenames."""
-        return PurePath(self.name).stem or self.name
+        return PurePosixPath(self.name).stem or self.name

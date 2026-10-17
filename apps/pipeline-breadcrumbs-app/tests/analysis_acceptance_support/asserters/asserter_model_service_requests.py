@@ -3,7 +3,7 @@ from typing import Final
 
 from breadcrumbs_acceptance_support.assertion_reports import format_assertion_report
 
-from analysis_acceptance_support.mediator_model_service import CapturedSectionDetectionRequest, CapturedSectionRequest
+from analysis_acceptance_support.mediator_model_service import SectionDetectionRequest, SectionQuestionRequest
 
 
 class AsserterModelServiceRequests:
@@ -14,26 +14,29 @@ class AsserterModelServiceRequests:
 
     @staticmethod
     def assert_requests(
-        expected_detection_requests: Sequence[CapturedSectionDetectionRequest],
-        expected_score_requests: Sequence[CapturedSectionRequest],
-        expected_reconcile_requests: Sequence[CapturedSectionRequest],
-        actual_detection_requests: Sequence[CapturedSectionDetectionRequest],
-        actual_score_requests: Sequence[CapturedSectionRequest],
-        actual_reconcile_requests: Sequence[CapturedSectionRequest],
+        expected_section_detection_requests: Sequence[SectionDetectionRequest],
+        expected_score_section_question_requests: Sequence[SectionQuestionRequest],
+        expected_reconcile_section_question_requests: Sequence[SectionQuestionRequest],
+        actual_section_detection_requests: Sequence[SectionDetectionRequest],
+        actual_score_section_question_requests: Sequence[SectionQuestionRequest],
+        actual_reconcile_section_question_requests: Sequence[SectionQuestionRequest],
     ) -> None:
         # Detection runs concurrently, so its requests arrive in any order; the other steps ask one section at a time, in order.
-        actual_detection_requests_by_page: list[CapturedSectionDetectionRequest] = sorted(
-            actual_detection_requests, key=lambda actual_detection_request: actual_detection_request["page_number"]
+        actual_section_detection_requests_in_page_order: list[SectionDetectionRequest] = sorted(
+            actual_section_detection_requests, key=lambda actual_section_detection_request: actual_section_detection_request["page_number"]
         )
         mismatches: list[str] = [
-            *AsserterModelServiceRequests._compare("detection", expected_detection_requests, actual_detection_requests_by_page),
-            *AsserterModelServiceRequests._compare("score", expected_score_requests, actual_score_requests),
-            *AsserterModelServiceRequests._compare("reconcile", expected_reconcile_requests, actual_reconcile_requests),
+            *AsserterModelServiceRequests._compare("detection", expected_section_detection_requests, actual_section_detection_requests_in_page_order),
+            *AsserterModelServiceRequests._compare("score", expected_score_section_question_requests, actual_score_section_question_requests),
+            *AsserterModelServiceRequests._compare(
+                "reconcile", expected_reconcile_section_question_requests, actual_reconcile_section_question_requests
+            ),
         ]
         assert not mismatches, format_assertion_report(
             AsserterModelServiceRequests.MODEL_SERVICE_REQUESTS_ASSERTION_FAILED_HEADER,
             "The gateway asks the model service exactly what each step needs, and nothing more.",
-            f"received {len(actual_detection_requests)} detection, {len(actual_score_requests)} score, {len(actual_reconcile_requests)} reconcile",
+            f"received {len(actual_section_detection_requests)} detection, {len(actual_score_section_question_requests)} score, "
+            f"{len(actual_reconcile_section_question_requests)} reconcile",
             mismatches,
         )
 
@@ -41,11 +44,13 @@ class AsserterModelServiceRequests:
     def assert_detection_concurrency(
         expected_page_numbers: Sequence[int],
         expected_maximum_concurrent_count: int,
-        actual_detection_requests: Sequence[CapturedSectionDetectionRequest],
+        actual_section_detection_requests: Sequence[SectionDetectionRequest],
         actual_maximum_concurrent_detection_count: int,
     ) -> None:
         mismatches: list[str] = []
-        actual_page_numbers: list[int] = sorted(actual_detection_request["page_number"] for actual_detection_request in actual_detection_requests)
+        actual_page_numbers: list[int] = sorted(
+            actual_section_detection_request["page_number"] for actual_section_detection_request in actual_section_detection_requests
+        )
         if actual_page_numbers != list(expected_page_numbers):
             mismatches.append(f"pages asked about: expected {list(expected_page_numbers)} but found {actual_page_numbers}")
         if actual_maximum_concurrent_detection_count != expected_maximum_concurrent_count:
@@ -60,26 +65,34 @@ class AsserterModelServiceRequests:
         )
 
     @staticmethod
-    def _compare[CapturedRequestT: (CapturedSectionDetectionRequest, CapturedSectionRequest)](
-        request_kind: str, expected_requests: Sequence[CapturedRequestT], actual_requests: Sequence[CapturedRequestT]
+    def _compare[ModelServiceRequestT: (SectionDetectionRequest, SectionQuestionRequest)](
+        request_kind: str,
+        expected_model_service_requests: Sequence[ModelServiceRequestT],
+        actual_model_service_requests: Sequence[ModelServiceRequestT],
     ) -> list[str]:
         mismatches: list[str] = []
         position: int
-        expected_request: CapturedRequestT
-        actual_request: CapturedRequestT
-        for position, (expected_request, actual_request) in enumerate(zip(expected_requests, actual_requests, strict=False)):
+        expected_model_service_request: ModelServiceRequestT
+        actual_model_service_request: ModelServiceRequestT
+        for position, (expected_model_service_request, actual_model_service_request) in enumerate(
+            zip(expected_model_service_requests, actual_model_service_requests, strict=False)
+        ):
             field_name: str
-            for field_name in expected_request:
-                expected_value: object = expected_request.get(field_name)
-                actual_value: object = actual_request.get(field_name)
+            for field_name in sorted(set(expected_model_service_request) | set(actual_model_service_request)):
+                expected_value: object = expected_model_service_request.get(field_name)
+                actual_value: object = actual_model_service_request.get(field_name)
                 if actual_value != expected_value:
                     mismatches.append(f"{request_kind} request {position} '{field_name}': expected {expected_value!r} but found {actual_value!r}")
         mismatches.extend(
             f"{request_kind} request {position}: missing {missing_request!r}"
-            for position, missing_request in enumerate(expected_requests[len(actual_requests) :], len(actual_requests))
+            for position, missing_request in enumerate(
+                expected_model_service_requests[len(actual_model_service_requests) :], len(actual_model_service_requests)
+            )
         )
         mismatches.extend(
             f"{request_kind} request {position}: unexpected {unexpected_request!r}"
-            for position, unexpected_request in enumerate(actual_requests[len(expected_requests) :], len(expected_requests))
+            for position, unexpected_request in enumerate(
+                actual_model_service_requests[len(expected_model_service_requests) :], len(expected_model_service_requests)
+            )
         )
         return mismatches

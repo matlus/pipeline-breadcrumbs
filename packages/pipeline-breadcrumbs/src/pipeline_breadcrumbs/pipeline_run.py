@@ -51,14 +51,10 @@ class PipelineRun:
         attributes: Mapping[str, AttributeValue] | None = None,
         supplied_clock: Clock | None = None,
     ) -> None:
-        if not pipeline_name.strip():
-            raise InvalidDeclarationError("A pipeline run needs a name, such as 'invoice-field-extraction'")
-        clock: Clock = supplied_clock or Clock.create_system_clock()
-        caller_attributes: AttributeBag = dict(attributes or {})
-        reserved_names: frozenset[str] = _RESERVED_RECORD_ATTRIBUTES.intersection(caller_attributes)
-        if reserved_names:
-            raise InvalidDeclarationError(f"Run attributes may not use reserved logging attribute names: {sorted(reserved_names)}")
-        self._run_id: str = f"{clock.now():%Y%m%d_%H%M%S}_{uuid4().hex[:8]}"
+        _require_pipeline_name(pipeline_name)
+        caller_attributes: AttributeBag = _validate_caller_attributes(attributes)
+        run_clock: Clock = supplied_clock or Clock.create_system_clock()
+        self._run_id: str = _create_run_id(run_clock)
         self._pipeline_name: str = pipeline_name
         self._run_context: RunContext = RunContext(
             sink=sink,
@@ -68,11 +64,11 @@ class PipelineRun:
                 AttributeKey.PIPELINE_NAME: pipeline_name,
                 AttributeKey.RUN_ID: self._run_id,
             },
-            clock=clock,
+            clock=run_clock,
             run_recorder=RunRecorder(pipeline_name=pipeline_name, run_id=self._run_id),
         )
         self._started: float = 0.0
-        self._started_at: datetime = clock.now()
+        self._started_at: datetime = run_clock.now()
 
     @property
     def run_id(self) -> str:
@@ -123,25 +119,53 @@ class PipelineRun:
         }
 
     async def _emit_manifest(self, elapsed_seconds: float, run_status: StepStatus, *, original_error: BaseException | None) -> None:
+        run_artifact: RunArtifact = self._build_manifest_artifact(elapsed_seconds, run_status)
+        try:
+            await self._run_context.persist(run_artifact)
+        except ArtifactSinkError as artifact_sink_error:
+            if original_error is None:
+                raise
+            _attach_lost_manifest(original_error, artifact_sink_error)
+            return
+        self._log_manifest_emitted(run_artifact)
+
+    def _build_manifest_artifact(self, elapsed_seconds: float, run_status: StepStatus) -> RunArtifact:
         content: bytes = self._run_context.run_recorder.serialize_manifest(
             started_at=self._started_at,
             finished_at=self._run_context.clock.now(),
             elapsed_seconds=elapsed_seconds,
             run_status=run_status,
         )
-        run_artifact: RunArtifact = RunArtifact(artifact_kind=MANIFEST_KIND, content=content)
-        try:
-            await self._run_context.persist(run_artifact)
-        except ArtifactSinkError as artifact_sink_error:
-            if original_error is None:
-                raise
-            # The run is already failing; losing the manifest must not hide why. The lost manifest travels as a
-            # note on the failure that is already on its way out, so the host reports both, once, at its boundary.
-            original_error.add_note(f"The run manifest could not be persisted either: {artifact_sink_error}")
-            return
+        return RunArtifact(artifact_kind=MANIFEST_KIND, content=content)
+
+    def _log_manifest_emitted(self, run_artifact: RunArtifact) -> None:
+        byte_count: int = len(run_artifact.content)
         attributes: AttributeBag = {
             AttributeKey.ARTIFACT_KIND: run_artifact.artifact_type,
             AttributeKey.ARTIFACT_FILENAME: run_artifact.filename,
-            AttributeKey.ARTIFACT_BYTES: len(content),
+            AttributeKey.ARTIFACT_BYTES: byte_count,
         }
-        self._run_context.log(logging.INFO, f"Emitted artifact: {run_artifact.filename} ({format_byte_size(len(content))})", attributes)
+        self._run_context.log(logging.INFO, f"Emitted artifact: {run_artifact.filename} ({format_byte_size(byte_count)})", attributes)
+
+
+def _require_pipeline_name(pipeline_name: str) -> None:
+    if not pipeline_name.strip():
+        raise InvalidDeclarationError("A pipeline run needs a name, such as 'invoice-field-extraction'")
+
+
+def _validate_caller_attributes(attributes: Mapping[str, AttributeValue] | None) -> AttributeBag:
+    caller_attributes: AttributeBag = dict(attributes or {})
+    reserved_names: frozenset[str] = _RESERVED_RECORD_ATTRIBUTES.intersection(caller_attributes)
+    if reserved_names:
+        raise InvalidDeclarationError(f"Run attributes may not use reserved logging attribute names: {sorted(reserved_names)}")
+    return caller_attributes
+
+
+def _create_run_id(run_clock: Clock) -> str:
+    return f"{run_clock.now():%Y%m%d_%H%M%S}_{uuid4().hex[:8]}"
+
+
+def _attach_lost_manifest(original_error: BaseException, artifact_sink_error: ArtifactSinkError) -> None:
+    # The run is already failing; losing the manifest must not hide why. The lost manifest travels as a note on the
+    # failure that is already on its way out, so the host reports both, once, at its boundary.
+    original_error.add_note(f"The run manifest could not be persisted either: {artifact_sink_error}")

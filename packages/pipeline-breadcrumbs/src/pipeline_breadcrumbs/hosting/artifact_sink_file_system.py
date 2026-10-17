@@ -1,6 +1,7 @@
 """A local-file-system artifact sink, for development and for hosts that keep artifacts on disk."""
 
 import asyncio
+import unicodedata
 from pathlib import Path
 from typing import final
 
@@ -52,7 +53,7 @@ class ArtifactSinkFileSystem:
 
     def _claim_folder(self, work_item: WorkItem) -> str:
         folder_name: str = safe_path_component(work_item.stem)
-        owner_id: str = self._work_item_id_by_folder.setdefault(folder_name.casefold(), work_item.id)
+        owner_id: str = self._work_item_id_by_folder.setdefault(unicodedata.normalize("NFC", folder_name).casefold(), work_item.id)
         if owner_id != work_item.id:
             raise WorkItemFolderCollisionError(
                 f"Work items '{owner_id}' and '{work_item.id}' both map to the folder '{folder_name}'; work item names must be unique within a run"

@@ -1,6 +1,7 @@
 from collections.abc import Mapping
 from typing import Final, final
-from urllib.parse import ParseResult, urlparse
+
+import httpx
 
 from pipeline_breadcrumbs_app.document_analysis.configuration_providers.settings_models.model_service_settings import ModelServiceSettings
 from pipeline_breadcrumbs_app.document_analysis.configuration_providers.settings_providers.settings_source import SettingsSource
@@ -36,10 +37,12 @@ class SettingsProviderModelService:
                 MODEL_SERVICE_BASE_URL_VARIABLE_NAME,
             )
         base_url: str = base_url_raw_value.strip()
-        parsed_base_url: ParseResult = urlparse(base_url)
-        if parsed_base_url.scheme not in ("http", "https") or not parsed_base_url.netloc:
-            raise ConfigurationSettingError(
-                f"Setting '{MODEL_SERVICE_BASE_URL_VARIABLE_NAME}' is '{base_url}', which is not an absolute http or https URL",
-                MODEL_SERVICE_BASE_URL_VARIABLE_NAME,
-            )
+        not_absolute_message: str = f"Setting '{MODEL_SERVICE_BASE_URL_VARIABLE_NAME}' is '{base_url}', which is not an absolute http or https URL"
+        # Parsed with the same parser the gateway's client uses, so a value accepted here is one the client accepts too.
+        try:
+            parsed_base_url: httpx.URL = httpx.URL(base_url)
+        except httpx.InvalidURL as invalid_url_error:
+            raise ConfigurationSettingError(not_absolute_message, MODEL_SERVICE_BASE_URL_VARIABLE_NAME) from invalid_url_error
+        if parsed_base_url.scheme not in ("http", "https") or not parsed_base_url.host:
+            raise ConfigurationSettingError(not_absolute_message, MODEL_SERVICE_BASE_URL_VARIABLE_NAME)
         return base_url

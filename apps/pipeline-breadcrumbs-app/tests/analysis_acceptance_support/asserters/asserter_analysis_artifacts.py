@@ -15,7 +15,7 @@ class AsserterAnalysisArtifacts:
     def assert_trail(
         expected_filenames: Sequence[str],
         expected_output_filenames: Sequence[str],
-        expected_report_kind: ArtifactKind,
+        expected_report_artifact_kind: ArtifactKind,
         expected_report_heading: str,
         actual_artifacts: Sequence[Artifact],
     ) -> None:
@@ -30,13 +30,13 @@ class AsserterAnalysisArtifacts:
         ]
         if actual_output_filenames != list(expected_output_filenames):
             mismatches.append(f"outputs: expected {list(expected_output_filenames)} but found {actual_output_filenames}")
-        actual_reports: list[Artifact] = [
-            actual_artifact for actual_artifact in actual_artifacts if actual_artifact.artifact_kind == expected_report_kind
+        actual_report_artifacts: list[Artifact] = [
+            actual_artifact for actual_artifact in actual_artifacts if actual_artifact.artifact_kind == expected_report_artifact_kind
         ]
-        if len(actual_reports) != 1:
-            mismatches.append(f"report: expected exactly one but found {len(actual_reports)}")
+        if len(actual_report_artifacts) != 1:
+            mismatches.append(f"report: expected exactly one but found {len(actual_report_artifacts)}")
         else:
-            actual_report_text: str = actual_reports[0].content.decode("utf-8")
+            actual_report_text: str = actual_report_artifacts[0].content.decode("utf-8")
             if not actual_report_text.startswith(expected_report_heading):
                 mismatches.append(f"report: expected it to start with {expected_report_heading!r} but it starts with {actual_report_text[:40]!r}")
         assert not mismatches, format_assertion_report(

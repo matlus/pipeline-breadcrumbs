@@ -15,14 +15,14 @@ _SECTION_SCORES_PATH: Final[str] = "/section-scores"
 _SECTION_RECONCILIATIONS_PATH: Final[str] = "/section-reconciliations"
 
 
-class CapturedSectionDetectionRequest(TypedDict):
+class SectionDetectionRequest(TypedDict):
     """One detection request exactly as the gateway put it on the wire."""
 
     page_number: int
     page_text: str
 
 
-class CapturedSectionRequest(TypedDict):
+class SectionQuestionRequest(TypedDict):
     """One score or reconciliation request exactly as the gateway put it on the wire (mirrors ClassificationPrompt)."""
 
     page_number: int
@@ -71,14 +71,18 @@ class TestMediatorModelService:
         self._scripted_model_service_response: ScriptedModelServiceResponse | None = scripted_model_service_response
         self._simulate_unreachable: bool = simulate_unreachable
         self._concurrent_detection_count: int = 0
-        self.captured_detection_requests: list[CapturedSectionDetectionRequest] = []
-        self.captured_score_requests: list[CapturedSectionRequest] = []
-        self.captured_reconcile_requests: list[CapturedSectionRequest] = []
+        self.captured_section_detection_requests: list[SectionDetectionRequest] = []
+        self.captured_score_section_question_requests: list[SectionQuestionRequest] = []
+        self.captured_reconcile_section_question_requests: list[SectionQuestionRequest] = []
         self.maximum_concurrent_detection_count: int = 0
 
     @property
-    def captured_request_count(self) -> int:
-        return len(self.captured_detection_requests) + len(self.captured_score_requests) + len(self.captured_reconcile_requests)
+    def captured_model_service_request_count(self) -> int:
+        return (
+            len(self.captured_section_detection_requests)
+            + len(self.captured_score_section_question_requests)
+            + len(self.captured_reconcile_section_question_requests)
+        )
 
     def create_http_transport(self) -> httpx.MockTransport:
         return httpx.MockTransport(self._answer_model_service_request)
@@ -88,18 +92,18 @@ class TestMediatorModelService:
             raise httpx.ConnectError("the model service is unreachable (simulated by TestMediatorModelService)")
         resource_path: str = model_service_request.url.path
         if resource_path == _SECTION_DETECTIONS_PATH:
-            return await self._answer_detection(cast(CapturedSectionDetectionRequest, json.loads(model_service_request.content)))
-        captured_section_request: CapturedSectionRequest = cast(CapturedSectionRequest, json.loads(model_service_request.content))
+            return await self._answer_detection(cast(SectionDetectionRequest, json.loads(model_service_request.content)))
+        captured_section_question_request: SectionQuestionRequest = cast(SectionQuestionRequest, json.loads(model_service_request.content))
         if resource_path == _SECTION_SCORES_PATH:
-            self.captured_score_requests.append(captured_section_request)
-            return self._answer(self._score_reply_by_title, captured_section_request["title"])
+            self.captured_score_section_question_requests.append(captured_section_question_request)
+            return self._answer(self._score_reply_by_title, captured_section_question_request["title"])
         if resource_path == _SECTION_RECONCILIATIONS_PATH:
-            self.captured_reconcile_requests.append(captured_section_request)
-            return self._answer(self._reconcile_reply_by_title, captured_section_request["title"])
+            self.captured_reconcile_section_question_requests.append(captured_section_question_request)
+            return self._answer(self._reconcile_reply_by_title, captured_section_question_request["title"])
         raise AssertionError(f"The gateway called a resource the model service does not have: {resource_path}")
 
-    async def _answer_detection(self, captured_section_detection_request: CapturedSectionDetectionRequest) -> httpx.Response:
-        self.captured_detection_requests.append(captured_section_detection_request)
+    async def _answer_detection(self, captured_section_detection_request: SectionDetectionRequest) -> httpx.Response:
+        self.captured_section_detection_requests.append(captured_section_detection_request)
         self._concurrent_detection_count += 1
         self.maximum_concurrent_detection_count = max(self.maximum_concurrent_detection_count, self._concurrent_detection_count)
         try:

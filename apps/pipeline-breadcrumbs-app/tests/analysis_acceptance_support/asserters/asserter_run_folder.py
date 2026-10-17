@@ -1,5 +1,5 @@
 import re
-from collections.abc import Iterable, Mapping, Sequence
+from collections.abc import Iterable, Mapping, Sequence, Set as AbstractSet
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Final
@@ -59,19 +59,21 @@ class AsserterRunFolder:
 
     @staticmethod
     def assert_run_outcome(
-        expected_run_outcome: ExpectedRunOutcome, actual_failed_work_item_names: Sequence[str], actual_manifest: ManifestDocument
+        expected_run_outcome: ExpectedRunOutcome, actual_failed_work_item_names: Sequence[str], actual_manifest_document: ManifestDocument
     ) -> None:
         mismatches: list[str] = []
         if list(actual_failed_work_item_names) != list(expected_run_outcome.failed_work_item_names):
             mismatches.append(
                 f"failed work items: expected {list(expected_run_outcome.failed_work_item_names)} but found {list(actual_failed_work_item_names)}"
             )
-        if actual_manifest["pipeline_name"] != expected_run_outcome.pipeline_name:
-            mismatches.append(f"pipeline name: expected {expected_run_outcome.pipeline_name!r} but found {actual_manifest['pipeline_name']!r}")
-        if actual_manifest["run_status"] != expected_run_outcome.run_status:
-            mismatches.append(f"run status: expected {expected_run_outcome.run_status!r} but found {actual_manifest['run_status']!r}")
+        if actual_manifest_document["pipeline_name"] != expected_run_outcome.pipeline_name:
+            mismatches.append(
+                f"pipeline name: expected {expected_run_outcome.pipeline_name!r} but found {actual_manifest_document['pipeline_name']!r}"
+            )
+        if actual_manifest_document["run_status"] != expected_run_outcome.run_status:
+            mismatches.append(f"run status: expected {expected_run_outcome.run_status!r} but found {actual_manifest_document['run_status']!r}")
         for expected_work_item_outcome in expected_run_outcome.work_item_outcomes:
-            mismatches.extend(AsserterRunFolder._compare_work_item(expected_work_item_outcome, actual_manifest["work_item_records"]))
+            mismatches.extend(AsserterRunFolder._compare_work_item(expected_work_item_outcome, actual_manifest_document["work_item_records"]))
         assert not mismatches, format_assertion_report(
             AsserterRunFolder.RUN_OUTCOME_ASSERTION_FAILED_HEADER,
             "The caller and the manifest agree on how the run and each document ended, step by step.",
@@ -80,7 +82,7 @@ class AsserterRunFolder:
         )
 
     @staticmethod
-    def assert_exactly_these_entries(expected_entry_names: set[str], actual_entry_names: Iterable[str]) -> None:
+    def assert_exactly_these_entries(expected_entry_names: AbstractSet[str], actual_entry_names: Iterable[str]) -> None:
         actual_entry_name_set: set[str] = set(actual_entry_names)
         mismatches: list[str] = [
             *(f"missing entry {missing_name!r}" for missing_name in sorted(expected_entry_names - actual_entry_name_set)),
@@ -115,7 +117,8 @@ class AsserterRunFolder:
         if actual_step_paths != sorted(actual_step_paths):
             mismatches.append(f"step paths go backwards in an alphabetical listing: {actual_step_paths}")
         if not actual_step_paths or actual_step_paths[0] != expected_first_step_path:
-            mismatches.append(f"the listing should start at step {expected_first_step_path}")
+            actual_first_step_path: tuple[int, ...] | str = actual_step_paths[0] if actual_step_paths else "no step path"
+            mismatches.append(f"the listing should start at step {expected_first_step_path} but starts at {actual_first_step_path}")
         if actual_folder_names:
             mismatches.append(f"a work item folder holds only files, but found folders {list(actual_folder_names)}")
         assert not mismatches, format_assertion_report(
@@ -207,7 +210,6 @@ class AsserterRunFolder:
         actual_exception_telemetry_records: Sequence[ExceptionTelemetry],
         actual_manifest_run_id: str,
     ) -> None:
-        """Exactly one exception reached telemetry, with its facts and the run's own identity as the manifest records it."""
         claim: str = "Only the exception reaches telemetry, carrying its facts and the identity of the run it belongs to."
         # A prerequisite: the other comparisons describe that one exception, so without exactly one there is nothing to compare.
         assert len(actual_exception_telemetry_records) == 1, format_assertion_report(
@@ -226,52 +228,56 @@ class AsserterRunFolder:
             )
         if expected_exception_telemetry.stack_trace_phrase not in (actual_exception_telemetry.stack_trace or ""):
             mismatches.append(f"stack trace: expected the phrase {expected_exception_telemetry.stack_trace_phrase!r}")
-        expected_custom_dimensions: dict[str, object] = {**expected_exception_telemetry.custom_dimensions, _RUN_ID_DIMENSION: actual_manifest_run_id}
         expected_name: str
         expected_value: object
-        for expected_name, expected_value in expected_custom_dimensions.items():
+        for expected_name, expected_value in expected_exception_telemetry.custom_dimensions.items():
             actual_value: object = actual_exception_telemetry.custom_dimensions.get(expected_name)
             if actual_value != expected_value:
                 mismatches.append(f"custom dimension {expected_name!r}: expected {expected_value!r} but found {actual_value!r}")
+        actual_run_id_dimension: object = actual_exception_telemetry.custom_dimensions.get(_RUN_ID_DIMENSION)
+        if actual_run_id_dimension != actual_manifest_run_id:
+            mismatches.append(f"run identity: telemetry carries {actual_run_id_dimension!r} but the manifest records run {actual_manifest_run_id!r}")
+        expected_dimension_count: int = len(expected_exception_telemetry.custom_dimensions)
         assert not mismatches, format_assertion_report(
             AsserterRunFolder.TELEMETRY_ASSERTION_FAILED_HEADER,
             claim,
-            f"{actual_exception_telemetry.exception_type} in run {actual_manifest_run_id}, {len(expected_custom_dimensions)} dimension(s) expected",
+            f"{actual_exception_telemetry.exception_type} in run {actual_manifest_run_id}, {expected_dimension_count} dimension(s) expected",
             mismatches,
         )
 
     @staticmethod
     def _compare_work_item(
-        expected_work_item_outcome: ExpectedWorkItemOutcome, actual_work_item_records: Sequence[WorkItemRecordDocument]
+        expected_work_item_outcome: ExpectedWorkItemOutcome, actual_work_item_record_documents: Sequence[WorkItemRecordDocument]
     ) -> list[str]:
-        matching_work_item_records: list[WorkItemRecordDocument] = [
-            actual_work_item_record
-            for actual_work_item_record in actual_work_item_records
-            if actual_work_item_record["work_item_name"] == expected_work_item_outcome.name
+        matching_work_item_record_documents: list[WorkItemRecordDocument] = [
+            actual_work_item_record_document
+            for actual_work_item_record_document in actual_work_item_record_documents
+            if actual_work_item_record_document["work_item_name"] == expected_work_item_outcome.name
         ]
         work_item_label: str = f"'{expected_work_item_outcome.name}'"
-        if len(matching_work_item_records) != 1:
-            return [f"{work_item_label}: expected one record but found {len(matching_work_item_records)}"]
-        actual_work_item_record: WorkItemRecordDocument = matching_work_item_records[0]
+        if len(matching_work_item_record_documents) != 1:
+            return [f"{work_item_label}: expected one record but found {len(matching_work_item_record_documents)}"]
+        actual_work_item_record_document: WorkItemRecordDocument = matching_work_item_record_documents[0]
         mismatches: list[str] = []
-        if actual_work_item_record["work_item_status"] != expected_work_item_outcome.work_item_status:
+        if actual_work_item_record_document["work_item_status"] != expected_work_item_outcome.work_item_status:
             mismatches.append(
                 f"{work_item_label} status: expected {expected_work_item_outcome.work_item_status!r} "
-                f"but found {actual_work_item_record['work_item_status']!r}"
+                f"but found {actual_work_item_record_document['work_item_status']!r}"
             )
         actual_step_status_by_path: dict[str, str] = {
-            actual_step_record["step_path"]: actual_step_record["step_status"] for actual_step_record in actual_work_item_record["step_records"]
+            actual_step_record_document["step_path"]: actual_step_record_document["step_status"]
+            for actual_step_record_document in actual_work_item_record_document["step_records"]
         }
         if actual_step_status_by_path != dict(expected_work_item_outcome.step_status_by_path):
             mismatches.append(
                 f"{work_item_label} steps: expected {dict(expected_work_item_outcome.step_status_by_path)} but found {actual_step_status_by_path}"
             )
         if expected_work_item_outcome.failure_phrase is not None and expected_work_item_outcome.failure_phrase not in (
-            actual_work_item_record["failure"] or ""
+            actual_work_item_record_document["failure"] or ""
         ):
             mismatches.append(f"{work_item_label} failure: expected the phrase {expected_work_item_outcome.failure_phrase!r}")
         actual_artifact_filenames: list[str] = [
-            actual_artifact_record["filename"] for actual_artifact_record in actual_work_item_record["artifact_records"]
+            actual_artifact_record_document["filename"] for actual_artifact_record_document in actual_work_item_record_document["artifact_records"]
         ]
         mismatches.extend(
             f"{work_item_label}: expected an artifact named with {expected_fragment!r}"

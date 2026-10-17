@@ -34,8 +34,10 @@ from uuid import uuid4
 
 from pipeline_breadcrumbs import (
     ArtifactSink,
+    ArtifactSinkError,
     AttributeKey,
     BreadcrumbFormatter,
+    ContextualExceptionProtocol,
     PipelineRun,
     TimeDisplay,
     WorkItem,
@@ -43,7 +45,7 @@ from pipeline_breadcrumbs import (
 )
 from pipeline_breadcrumbs.hosting import ArtifactSinkFileSystem, attached_run_log, create_run_folder
 from pipeline_breadcrumbs_app.document_analysis.document_analysis_manager import DocumentAnalysisManager
-from pipeline_breadcrumbs_app.document_analysis.exceptions import DocumentAnalysisError
+from pipeline_breadcrumbs_app.document_analysis.exceptions import DocumentAnalysisBusinessError, DocumentAnalysisTechnicalError
 from pipeline_breadcrumbs_app.sample_documents import SAMPLE_DOCUMENTS, InvalidFailPageError, with_malformed_reply
 from pipeline_breadcrumbs_app.service_locator_demo import ServiceLocatorDemo
 from pipeline_breadcrumbs_app.telemetry import TELEMETRY_FILENAME, attached_exception_telemetry
@@ -109,6 +111,19 @@ def _console_logger(formatter: logging.Formatter) -> Generator[logging.Logger]:
         logger.propagate = previous_propagate
 
 
+def _describe_contextual_data(contextual_exception: ContextualExceptionProtocol) -> str:
+    fact_lines: list[str] = []
+    fact_name: str
+    fact_value: object
+    for fact_name, fact_value in contextual_exception.contextual_data_by_name.items():
+        fact_lines.append(f"  {fact_name}: {fact_value}")
+    return "\n".join(fact_lines)
+
+
+def _identify_work_item(pipeline_run: PipelineRun, document_name: str) -> dict[str, str]:
+    return {AttributeKey.PIPELINE_NAME: PIPELINE_NAME, AttributeKey.RUN_ID: pipeline_run.run_id, AttributeKey.WORK_ITEM_NAME: document_name}
+
+
 async def _analyze_documents(
     pages_by_document_name: Mapping[str, list[str]],
     document_analysis_manager: DocumentAnalysisManager,
@@ -124,20 +139,26 @@ async def _analyze_documents(
                 work_item_scope: WorkItemScope
                 async with pipeline_run.open_work_item(WorkItem(id=str(uuid4()), name=document_name)) as work_item_scope:
                     await document_analysis_manager.analyze_document(work_item_scope, pages)
-            except DocumentAnalysisError as document_analysis_error:
-                # The application's single outer boundary: the exception is logged once, with its
-                # traceback and every named fact it carries. Steps only leave breadcrumbs. The run and
-                # work item identity travel as attributes, so telemetry can tell which run this was.
+            except DocumentAnalysisBusinessError as document_analysis_business_error:
+                # The document itself cannot be analyzed; whoever sent it can correct it. A warning names every problem,
+                # and no traceback, because nothing in the system failed.
+                logger.warning(
+                    "Work item '%s' was rejected:\n%s",
+                    document_name,
+                    _describe_contextual_data(document_analysis_business_error),
+                    extra=_identify_work_item(pipeline_run, document_name),
+                )
+                failed_document_names.append(document_name)
+            except (DocumentAnalysisTechnicalError, ArtifactSinkError) as technical_error:
+                # The application's single outer boundary for failures an operator owns: the exception is logged once,
+                # with its traceback and every named fact it carries. Steps only leave breadcrumbs. The run and work
+                # item identity travel as attributes, so telemetry can tell which run this was.
                 logger.error(
                     "Work item '%s' failed:\n%s",
                     document_name,
-                    document_analysis_error.describe(),
-                    exc_info=document_analysis_error,
-                    extra={
-                        AttributeKey.PIPELINE_NAME: PIPELINE_NAME,
-                        AttributeKey.RUN_ID: pipeline_run.run_id,
-                        AttributeKey.WORK_ITEM_NAME: document_name,
-                    },
+                    _describe_contextual_data(technical_error),
+                    exc_info=technical_error,
+                    extra=_identify_work_item(pipeline_run, document_name),
                 )
                 failed_document_names.append(document_name)
     return failed_document_names

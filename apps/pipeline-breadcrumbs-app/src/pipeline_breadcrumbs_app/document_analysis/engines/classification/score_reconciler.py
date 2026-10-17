@@ -1,6 +1,6 @@
 """Step 3.3: ask the model again about the sections it was unsure of. A conditional model processor."""
 
-from collections.abc import Iterable
+from collections.abc import Iterable, Sequence
 
 from pipeline_breadcrumbs import StepHostProtocol, StepScope
 from pipeline_breadcrumbs_app.document_analysis.analysis_steps import RECONCILE_SCORES
@@ -15,7 +15,7 @@ class ScoreReconciler:
     def __init__(self, gateway_model_service: GatewayModelService) -> None:
         self._gateway_model_service: GatewayModelService = gateway_model_service
 
-    async def reconcile(self, step_host: StepHostProtocol, scored_sections: list[ScoredSection]) -> list[ScoredSection]:
+    async def reconcile(self, step_host: StepHostProtocol, scored_sections: Sequence[ScoredSection]) -> list[ScoredSection]:
         async with step_host.step(RECONCILE_SCORES) as step_scope:
             doubtful_count: int = self._count_doubtful(scored_sections)
             step_scope.info("Reconciling low-confidence sections", sections=doubtful_count)
