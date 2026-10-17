@@ -6,8 +6,8 @@ A scope travels as an argument. It replaces the logger, the artifact sink, the w
 item and the step number that every step used to receive separately, and it is never
 stored on a long-lived object.
 
-A scope holds only what its own lifetime needs: when it was entered and, for a step, the
-outcome the step reports. What happened is handed to the run recorder as immutable events.
+A scope holds only what its own lifetime needs: when it was entered, whether a work item is
+still open, and, for a step, the outcome the step reports. What happened is handed to the run recorder as immutable events.
 """
 
 import logging
@@ -27,6 +27,7 @@ from pipeline_breadcrumbs.errors import (
 from pipeline_breadcrumbs.formatting import format_byte_size, format_elapsed
 from pipeline_breadcrumbs.manifest import ArtifactRecord, ArtifactRecorded, StepClosed, StepRecord, StepRecorded, WorkItemClosed, WorkItemOpened
 from pipeline_breadcrumbs.run_context import RunContext
+from pipeline_breadcrumbs.scope_errors import WorkItemNotOpenError
 from pipeline_breadcrumbs.steps import Step, StepPath, StepStatus
 from pipeline_breadcrumbs.work_items import WorkItem
 
@@ -73,6 +74,7 @@ class WorkItemScope:
             AttributeKey.WORK_ITEM_ID: work_item.id,
             AttributeKey.WORK_ITEM_NAME: work_item.name,
         }
+        self._is_open: bool = False
 
     @property
     def work_item(self) -> WorkItem:
@@ -86,9 +88,11 @@ class WorkItemScope:
         self._started = self._run_context.clock.monotonic()
         self._record_opened()
         self._log_started()
+        self._is_open = True
         return self
 
     async def __aexit__(self, _exc_type: type[BaseException] | None, exc: BaseException | None, _traceback: TracebackType | None) -> None:
+        self._is_open = False
         elapsed_seconds: float = self._run_context.clock.monotonic() - self._started
         if exc is None:
             self._complete(elapsed_seconds)
@@ -96,7 +100,14 @@ class WorkItemScope:
         self._fail(elapsed_seconds, exc)
 
     def step(self, step: Step) -> StepScope:
+        self._require_open(step)
         return StepScope(self._run_context, self, StepPath().child(step.step_number), step)
+
+    def _require_open(self, step: Step) -> None:
+        if not self._is_open:
+            raise WorkItemNotOpenError(
+                f"Work item '{self._work_item.name}' is not open; enter it with `async with` before using step {step.step_number} {step.name}"
+            )
 
     def _record_opened(self) -> None:
         self._run_context.run_recorder.record_run_event(
@@ -111,6 +122,7 @@ class WorkItemScope:
         self._run_context.log(logging.INFO, f"Work item {self._work_item.name} started", self._boundary_attributes(StepStatus.STARTED))
 
     def skipped(self, step: Step, reason: str) -> None:
+        self._require_open(step)
         _record_skipped(self._run_context, self, StepPath().child(step.step_number), step, reason)
 
     def _complete(self, elapsed_seconds: float) -> None:

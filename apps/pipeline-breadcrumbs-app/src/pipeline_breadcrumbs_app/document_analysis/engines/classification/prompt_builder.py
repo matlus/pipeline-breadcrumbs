@@ -7,7 +7,7 @@ from pipeline_breadcrumbs_app.document_analysis.analysis_steps import PREPARE_PR
 from pipeline_breadcrumbs_app.document_analysis.artifact_kinds import CLASSIFICATION_PROMPTS
 from pipeline_breadcrumbs_app.document_analysis.json_documents import to_json_document
 from pipeline_breadcrumbs_app.document_analysis.models import ClassificationPrompt, DetectedSection
-from pipeline_breadcrumbs_app.document_analysis.simulated_work import SimulatedWork
+from pipeline_breadcrumbs_app.document_analysis.simulated_work.simulated_work import SimulatedWork
 
 
 class PromptBuilder:

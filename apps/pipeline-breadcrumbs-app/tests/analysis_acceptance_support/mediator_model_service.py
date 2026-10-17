@@ -1,8 +1,8 @@
 import asyncio
 import json
-from collections.abc import Mapping
+from collections.abc import Callable, Mapping
 from dataclasses import dataclass
-from typing import ClassVar, Final, TypedDict, cast
+from typing import ClassVar, Final, TypedDict, cast, override
 
 import httpx
 
@@ -37,6 +37,18 @@ class ScriptedModelServiceResponse:
     body_text: str
 
 
+class _MockTransportClosingSpy(httpx.MockTransport):
+    """The in-process transport, which also reports each time the gateway closes it."""
+
+    def __init__(self, answer_request: Callable[[httpx.Request], object], record_closed: Callable[[], None]) -> None:
+        super().__init__(answer_request)
+        self._record_closed: Callable[[], None] = record_closed
+
+    @override
+    async def aclose(self) -> None:
+        self._record_closed()
+
+
 class TestMediatorModelService:
     # The Test Mediator/Spy for the model service's HTTP API.
     #
@@ -48,7 +60,8 @@ class TestMediatorModelService:
     # Two-way conversation. Going in, the test scripts what the model replies: detections by page
     # number, scores and reconciliations by title, or one response that replaces every reply (a failure
     # status, or a body that breaks the API's envelope), or an unreachable service. Coming out, it hands
-    # back every request that reached it, and the most detection requests it ever held at once.
+    # back every request that reached it, the most detection requests it ever held at once, and how many
+    # times the gateway closed the wire.
     #
     # A request is captured only if it reached the service: a scripted failure status captures (the
     # service saw it and refused), simulated unreachability does not (nothing arrived).
@@ -75,6 +88,7 @@ class TestMediatorModelService:
         self.captured_score_section_question_requests: list[SectionQuestionRequest] = []
         self.captured_reconcile_section_question_requests: list[SectionQuestionRequest] = []
         self.maximum_concurrent_detection_count: int = 0
+        self.closed_transport_count: int = 0
 
     @property
     def captured_model_service_request_count(self) -> int:
@@ -85,7 +99,10 @@ class TestMediatorModelService:
         )
 
     def create_http_transport(self) -> httpx.MockTransport:
-        return httpx.MockTransport(self._answer_model_service_request)
+        return _MockTransportClosingSpy(self._answer_model_service_request, self._record_transport_closed)
+
+    def _record_transport_closed(self) -> None:
+        self.closed_transport_count += 1
 
     async def _answer_model_service_request(self, model_service_request: httpx.Request) -> httpx.Response:
         if self._simulate_unreachable:

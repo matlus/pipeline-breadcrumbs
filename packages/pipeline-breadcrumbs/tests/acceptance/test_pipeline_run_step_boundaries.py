@@ -13,7 +13,14 @@ from breadcrumbs_acceptance_support.asserters.asserter_exception import Asserter
 from breadcrumbs_acceptance_support.asserters.asserter_log_record import AsserterLogRecord, ExpectedLogRecord
 from breadcrumbs_acceptance_support.asserters.asserter_step_boundaries import AsserterStepBoundaries, ExpectedStepBoundary
 from breadcrumbs_acceptance_support.clock_testing import ClockTesting
-from breadcrumbs_acceptance_support.data_generators import create_random_pipeline_name, create_random_work_item
+from breadcrumbs_acceptance_support.data_generators import (
+    create_random_attribute_name,
+    create_random_outcome,
+    create_random_pipeline_name,
+    create_random_progress_message,
+    create_random_skip_reason,
+    create_random_work_item,
+)
 
 from pipeline_breadcrumbs import ArtifactKind, AttributeKey, EventKind, InvalidDeclarationError, PipelineRun, Step, WorkItem
 from pipeline_breadcrumbs.testing import ArtifactSinkTesting, RecordCapture
@@ -69,7 +76,7 @@ class TestStepBoundaries:
         pipeline_name: str = create_random_pipeline_name()
         work_item: WorkItem = create_random_work_item()
         pipeline_run: PipelineRun = PipelineRun(pipeline_name=pipeline_name, artifact_sink=artifact_sink_testing, logger=run_logger)
-        expected_outcome: str = "Found 5 write-up starts"
+        expected_outcome: str = create_random_outcome()
         expected_start_count: int = 5
         expected_completion_log_record: ExpectedLogRecord = ExpectedLogRecord(
             message_suffix=f": {expected_outcome}",
@@ -119,7 +126,7 @@ class TestStepBoundaries:
         # Arrange
         pipeline_name: str = create_random_pipeline_name()
         work_item: WorkItem = create_random_work_item()
-        skip_reason: str = "no low-confidence sections"
+        skip_reason: str = create_random_skip_reason()
         expected_child_step_number: str = "3.3"
         pipeline_run: PipelineRun = PipelineRun(pipeline_name=pipeline_name, artifact_sink=artifact_sink_testing, logger=run_logger)
         expected_skipped_log_record: ExpectedLogRecord = ExpectedLogRecord(
@@ -143,7 +150,7 @@ class TestProgressLinesAndAttributes:
         # Arrange
         pipeline_name: str = create_random_pipeline_name()
         work_item: WorkItem = create_random_work_item()
-        expected_progress_message: str = "Auditing metadata"
+        expected_progress_message: str = create_random_progress_message()
         expected_page_count: int = 14
         expected_concurrency: int = 5
         pipeline_run: PipelineRun = PipelineRun(pipeline_name=pipeline_name, artifact_sink=artifact_sink_testing, logger=run_logger)
@@ -169,7 +176,7 @@ class TestProgressLinesAndAttributes:
         # Arrange
         pipeline_name: str = create_random_pipeline_name()
         work_item: WorkItem = create_random_work_item()
-        expected_progress_message: str = "Reading"
+        expected_progress_message: str = create_random_progress_message()
         expected_name_detail: str = f"Contract {secrets.token_hex(_RANDOM_SUFFIX_BYTES)}"
         pipeline_run: PipelineRun = PipelineRun(pipeline_name=pipeline_name, artifact_sink=artifact_sink_testing, logger=run_logger)
         expected_progress_log_record: ExpectedLogRecord = ExpectedLogRecord(
@@ -190,7 +197,7 @@ class TestProgressLinesAndAttributes:
         pipeline_name: str = create_random_pipeline_name()
         work_item: WorkItem = create_random_work_item()
         expected_trace_id: str = secrets.token_hex(_RANDOM_SUFFIX_BYTES)
-        trace_id_attribute_name: str = "trace_id"
+        trace_id_attribute_name: str = create_random_attribute_name()
         pipeline_run: PipelineRun = PipelineRun(
             pipeline_name=pipeline_name,
             artifact_sink=artifact_sink_testing,
@@ -205,7 +212,7 @@ class TestProgressLinesAndAttributes:
 
         # Act
         async with pipeline_run, pipeline_run.open_work_item(work_item) as work_item_scope, work_item_scope.step(METADATA_AUDIT) as step_scope:
-            step_scope.info("Working")
+            step_scope.info(create_random_progress_message())
             await step_scope.emit(PAGE_EVIDENCE, b"{}")
 
         # Assert

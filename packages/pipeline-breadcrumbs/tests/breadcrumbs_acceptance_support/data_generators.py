@@ -18,3 +18,20 @@ def create_random_pipeline_name() -> str:
 
 def create_random_discriminator() -> str:
     return f"page_{secrets.randbelow(_DISCRIMINATOR_PAGE_LIMIT):04d}"
+
+
+def create_random_outcome() -> str:
+    return f"Outcome {secrets.token_hex(_RANDOM_SUFFIX_BYTES)}"
+
+
+def create_random_skip_reason() -> str:
+    return f"Skip reason {secrets.token_hex(_RANDOM_SUFFIX_BYTES)}"
+
+
+def create_random_progress_message() -> str:
+    return f"Progress {secrets.token_hex(_RANDOM_SUFFIX_BYTES)}"
+
+
+def create_random_attribute_name() -> str:
+    """A caller attribute name no LogRecord attribute or library attribute shares."""
+    return f"caller_attribute_{secrets.token_hex(_RANDOM_SUFFIX_BYTES)}"

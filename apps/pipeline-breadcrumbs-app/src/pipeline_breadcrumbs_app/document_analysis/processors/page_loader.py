@@ -5,7 +5,7 @@ from collections.abc import Iterable
 from pipeline_breadcrumbs import StepHostProtocol, StepScope
 from pipeline_breadcrumbs_app.document_analysis.analysis_steps import LOAD_PAGES
 from pipeline_breadcrumbs_app.document_analysis.artifact_kinds import PAGE_TEXT, page_discriminator
-from pipeline_breadcrumbs_app.document_analysis.simulated_work import SimulatedWork
+from pipeline_breadcrumbs_app.document_analysis.simulated_work.simulated_work import SimulatedWork
 
 
 class PageLoader:

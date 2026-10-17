@@ -12,7 +12,7 @@ from pipeline_breadcrumbs_app.document_analysis.engines.classification.score_rec
 from pipeline_breadcrumbs_app.document_analysis.engines.classification.section_scorer import SectionScorer
 from pipeline_breadcrumbs_app.document_analysis.gateways.gateway_model_service import GatewayModelService
 from pipeline_breadcrumbs_app.document_analysis.models import ClassificationPrompt, DetectedSection, ScoredSection
-from pipeline_breadcrumbs_app.document_analysis.simulated_work import SimulatedWork
+from pipeline_breadcrumbs_app.document_analysis.simulated_work.simulated_work import SimulatedWork
 
 
 class SectionClassifier:

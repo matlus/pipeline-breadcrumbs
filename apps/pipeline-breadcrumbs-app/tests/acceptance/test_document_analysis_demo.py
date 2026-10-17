@@ -19,7 +19,7 @@ from analysis_acceptance_support.asserters.asserter_shared_logger import Asserte
 from analysis_acceptance_support.run_folder_reader import RunFolderReader
 from breadcrumbs_acceptance_support.asserters.asserter_exception import AsserterException, ExpectedException
 
-from pipeline_breadcrumbs import TimeDisplay
+from pipeline_breadcrumbs import StepStatus, TimeDisplay
 from pipeline_breadcrumbs.testing import RecordCapture
 from pipeline_breadcrumbs_app.main import BLOB_CONTAINER_NAME, PIPELINE_NAME, DemoResult, HostProfile, run_demo
 from pipeline_breadcrumbs_app.sample_documents import InvalidFailPageError
@@ -232,6 +232,32 @@ class TestDemoRunFailures:
         # Assert - the step and work item breadcrumbs name the failure but never print a traceback; the first one is the application's
         AsserterRunFolder.assert_failure_logged_once(
             expected_host_log_line, expected_facts, RunFolderReader.read_run_log(actual_demo_result.run_directory)
+        )
+
+    async def test_run_demo_WhenTheManifestCannotBePersistedAsTheRunCloses_ThenTheRunFailsAndTelemetryReceivesTheFailureOnce(
+        self, tmp_path: Path
+    ) -> None:
+        # Arrange - a file where the blob container belongs makes every upload fail, the manifest's included
+        (tmp_path / BLOB_CONTAINER_NAME).write_bytes(b"")
+        expected_run_status: StepStatus = StepStatus.FAILED
+        expected_exception_telemetry: ExpectedExceptionTelemetry = ExpectedExceptionTelemetry(
+            severity="ERROR",
+            exception_type="ArtifactSinkError",
+            stack_trace_phrase="Traceback",
+            custom_dimensions={"pipeline.name": PIPELINE_NAME, "ArtifactKind": "manifest", "ArtifactFilename": MANIFEST_FILENAME},
+        )
+
+        # Act
+        actual_demo_result: DemoResult = await run_demo(
+            tmp_path, host_profile=HostProfile.HOSTED, time_display=TimeDisplay.NONE, pace_seconds=NO_DELAY_SECONDS
+        )
+
+        # Assert
+        AsserterRunFolder.assert_run_failure_reported_once(
+            expected_run_status,
+            expected_exception_telemetry,
+            actual_demo_result.run_status,
+            RunFolderReader.read_exception_telemetry(actual_demo_result.run_directory),
         )
 
     async def test_run_demo_WhenTheFailingPageDoesNotExist_ThenItIsRefusedBeforeAnyFolderIsCreated(self, tmp_path: Path) -> None:

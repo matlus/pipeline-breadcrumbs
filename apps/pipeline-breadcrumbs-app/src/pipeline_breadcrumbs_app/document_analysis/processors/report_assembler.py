@@ -6,7 +6,7 @@ from pipeline_breadcrumbs import StepHostProtocol
 from pipeline_breadcrumbs_app.document_analysis.analysis_steps import ASSEMBLE_REPORT
 from pipeline_breadcrumbs_app.document_analysis.artifact_kinds import ANALYSIS_REPORT
 from pipeline_breadcrumbs_app.document_analysis.models import ScoredSection
-from pipeline_breadcrumbs_app.document_analysis.simulated_work import SimulatedWork
+from pipeline_breadcrumbs_app.document_analysis.simulated_work.simulated_work import SimulatedWork
 
 
 class ReportAssembler:
