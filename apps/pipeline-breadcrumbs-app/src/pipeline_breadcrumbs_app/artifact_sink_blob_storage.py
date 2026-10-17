@@ -26,8 +26,9 @@ class ArtifactSinkBlobStorage(ArtifactSinkProtocol):
       <run name>/Contract 12/Contract 12_step_01_page_text_page_0000.txt
     ```
 
-    A container holds many runs, so the run name leads every blob name. The sink owns the container
-    it uploads to, which is state a bare function would have had to capture in a closure.
+    A container holds many runs, so the run name leads every blob name. The application hands the sink
+    the folder that stands for `<container>/<run name>/`; the sink owns uploading under it, which is
+    state a bare function would have had to capture in a closure.
 
     Work item names must be unique within a run, because the blob prefix is named for the work item.
     Two items that map to the same prefix raise rather than overwrite each other's blobs, exactly as
@@ -35,15 +36,9 @@ class ArtifactSinkBlobStorage(ArtifactSinkProtocol):
     case count as the same prefix.
     """
 
-    def __init__(self, container_directory: Path, run_name: str) -> None:
-        self._container_directory: Path = container_directory
-        self._run_name: str = safe_path_component(run_name)
+    def __init__(self, run_blob_directory: Path) -> None:
+        self._run_blob_directory: Path = run_blob_directory
         self._work_item_id_by_prefix: dict[str, str] = {}
-
-    @property
-    def run_directory(self) -> Path:
-        """Where this run's blobs land inside the container."""
-        return self._container_directory / self._run_name
 
     @override
     async def persist(self, artifact: Artifact) -> None:
@@ -52,11 +47,13 @@ class ArtifactSinkBlobStorage(ArtifactSinkProtocol):
 
     def _blob_path(self, artifact: Artifact) -> Path:
         if isinstance(artifact, RunArtifact):
-            return self.run_directory / safe_path_component(artifact.filename)
-        return self.run_directory / self._claim_prefix(artifact.work_item) / safe_path_component(artifact.filename)
+            return self._run_blob_directory / safe_path_component(artifact.filename)
+        return self._run_blob_directory / self._claim_prefix(artifact.work_item) / safe_path_component(artifact.filename)
 
     def _claim_prefix(self, work_item: WorkItem) -> str:
         blob_prefix: str = safe_path_component(work_item.stem)
+        # A file name can reach the same folder in composed or decomposed Unicode form (macOS file systems
+        # store decomposed names), so the claim key is the NFC form, case-folded for case-insensitive folders.
         owner_id: str = self._work_item_id_by_prefix.setdefault(unicodedata.normalize("NFC", blob_prefix).casefold(), work_item.id)
         if owner_id != work_item.id:
             raise WorkItemFolderCollisionError(

@@ -1,4 +1,6 @@
 import json
+from collections.abc import Sequence
+from dataclasses import dataclass
 from pathlib import Path
 from typing import Final
 
@@ -8,6 +10,16 @@ from pipeline_breadcrumbs_app.telemetry import TELEMETRY_FILENAME, ExceptionTele
 
 _MANIFEST_FILENAME: Final[str] = "manifest.json"
 _RUN_LOG_FILENAME: Final[str] = "run.log"
+
+
+@dataclass(frozen=True)
+class HostedRunTrail:
+    """What a hosted run left behind: its own run folder, where its artifacts went, and the blobs in the container."""
+
+    run_directory: Path
+    artifact_directory: Path
+    blob_names: Sequence[str]
+    run_directory_entry_names: Sequence[str]
 
 
 class RunFolderReader:
@@ -36,6 +48,15 @@ class RunFolderReader:
     @staticmethod
     def list_folder_names(folder: Path) -> list[str]:
         return sorted(entry.name for entry in folder.iterdir() if entry.is_dir())
+
+    @staticmethod
+    def read_hosted_run_trail(container: Path, run_directory: Path, artifact_directory: Path) -> HostedRunTrail:
+        return HostedRunTrail(
+            run_directory=run_directory,
+            artifact_directory=artifact_directory,
+            blob_names=RunFolderReader.list_blob_names(container),
+            run_directory_entry_names=RunFolderReader.list_entry_names(run_directory),
+        )
 
     @staticmethod
     def list_blob_names(container: Path) -> list[str]:

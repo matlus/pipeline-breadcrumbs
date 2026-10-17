@@ -271,7 +271,6 @@ class TestAttachedRunLog:
 
 
 def _list_file_paths(folder: Path) -> list[str]:
-    """Every file under the folder, as its path from the folder with forward slashes, in alphabetical order."""
     return sorted(entry.relative_to(folder).as_posix() for entry in folder.rglob("*") if entry.is_file())
 
 

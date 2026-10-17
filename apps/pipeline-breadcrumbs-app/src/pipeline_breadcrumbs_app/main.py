@@ -91,8 +91,6 @@ class DemoResult:
 
 @dataclass(frozen=True, slots=True)
 class ArtifactDestination:
-    """The sink the application chose, and the folder its artifacts land in."""
-
     artifact_sink: ArtifactSinkProtocol
     artifact_directory: Path
 
@@ -102,8 +100,9 @@ def _create_file_system_destination(run_directory: Path) -> ArtifactDestination:
 
 
 def _create_blob_storage_destination(output_root: Path, run_directory: Path) -> ArtifactDestination:
-    artifact_sink_blob_storage: ArtifactSinkBlobStorage = ArtifactSinkBlobStorage(output_root / BLOB_CONTAINER_NAME, run_directory.name)
-    return ArtifactDestination(artifact_sink_blob_storage, artifact_sink_blob_storage.run_directory)
+    # A container holds many runs, so each run's blobs sit under its run folder's name.
+    run_blob_directory: Path = output_root / BLOB_CONTAINER_NAME / run_directory.name
+    return ArtifactDestination(ArtifactSinkBlobStorage(run_blob_directory), run_blob_directory)
 
 
 @contextmanager

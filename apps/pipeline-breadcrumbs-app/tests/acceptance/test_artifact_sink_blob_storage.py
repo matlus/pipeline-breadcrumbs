@@ -36,7 +36,7 @@ class TestArtifactSinkBlobStorage:
         shared_stem: str = create_random_stem()
         first_work_item: WorkItem = create_random_work_item_with_stem(shared_stem, "pdf")
         second_work_item: WorkItem = create_random_work_item_with_stem(shared_stem, "docx")
-        artifact_sink_blob_storage: ArtifactSinkBlobStorage = ArtifactSinkBlobStorage(tmp_path, create_random_run_name())
+        artifact_sink_blob_storage: ArtifactSinkBlobStorage = ArtifactSinkBlobStorage(tmp_path / create_random_run_name())
         await artifact_sink_blob_storage.persist(StepArtifact(PAGE_TEXT, secrets.token_bytes(8), first_work_item, StepPath((1,))))
         expected_exception: ExpectedException = ExpectedException(
             WorkItemFolderCollisionError, message_phrases=[first_work_item.id, second_work_item.id, shared_stem, "must be unique within a run"]
@@ -54,7 +54,7 @@ class TestArtifactSinkBlobStorage:
         shared_stem: str = create_random_stem()
         first_work_item: WorkItem = create_random_work_item_with_stem(shared_stem, "pdf")
         second_work_item: WorkItem = create_random_work_item_with_stem(shared_stem.upper(), "pdf")
-        artifact_sink_blob_storage: ArtifactSinkBlobStorage = ArtifactSinkBlobStorage(tmp_path, create_random_run_name())
+        artifact_sink_blob_storage: ArtifactSinkBlobStorage = ArtifactSinkBlobStorage(tmp_path / create_random_run_name())
         await artifact_sink_blob_storage.persist(StepArtifact(PAGE_TEXT, secrets.token_bytes(8), first_work_item, StepPath((1,))))
         expected_exception: ExpectedException = ExpectedException(
             WorkItemFolderCollisionError, message_phrases=[first_work_item.id, second_work_item.id, "must be unique within a run"]

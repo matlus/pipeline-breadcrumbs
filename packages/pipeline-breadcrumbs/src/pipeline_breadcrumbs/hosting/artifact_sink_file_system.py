@@ -54,6 +54,8 @@ class ArtifactSinkFileSystem(ArtifactSinkProtocol):
 
     def _claim_folder(self, work_item: WorkItem) -> str:
         folder_name: str = safe_path_component(work_item.stem)
+        # A file name can reach the same folder in composed or decomposed Unicode form (macOS file systems
+        # store decomposed names), so the claim key is the NFC form, case-folded for case-insensitive folders.
         owner_id: str = self._work_item_id_by_folder.setdefault(unicodedata.normalize("NFC", folder_name).casefold(), work_item.id)
         if owner_id != work_item.id:
             raise WorkItemFolderCollisionError(

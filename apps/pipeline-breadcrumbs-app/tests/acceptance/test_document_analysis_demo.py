@@ -11,6 +11,7 @@ import pytest
 from analysis_acceptance_support.asserters.asserter_run_folder import (
     AsserterRunFolder,
     ExpectedExceptionTelemetry,
+    ExpectedHostedBlobs,
     ExpectedRunOutcome,
     ExpectedWorkItemOutcome,
 )
@@ -298,11 +299,15 @@ class TestDemoHosts:
     ) -> None:
         # Arrange - the manifest sits directly under the run; a work item's blobs sit under its own name
         expected_container: Path = tmp_path / BLOB_CONTAINER_NAME
-        expected_blob_names_within_run: set[str] = {
-            MANIFEST_FILENAME,
-            f"{CONTRACT_FOLDER_NAME}/{CONTRACT_FOLDER_NAME}{FIRST_PAGE_TEXT_FILENAME_SUFFIX}",
-            f"{LEASE_FOLDER_NAME}/{LEASE_FOLDER_NAME}{FIRST_PAGE_TEXT_FILENAME_SUFFIX}",
-        }
+        expected_hosted_blobs: ExpectedHostedBlobs = ExpectedHostedBlobs(
+            container=expected_container,
+            blob_names_within_run={
+                MANIFEST_FILENAME,
+                f"{CONTRACT_FOLDER_NAME}/{CONTRACT_FOLDER_NAME}{FIRST_PAGE_TEXT_FILENAME_SUFFIX}",
+                f"{LEASE_FOLDER_NAME}/{LEASE_FOLDER_NAME}{FIRST_PAGE_TEXT_FILENAME_SUFFIX}",
+            },
+            manifest_filename=MANIFEST_FILENAME,
+        )
 
         # Act
         actual_demo_result: DemoResult = await run_demo(
@@ -311,13 +316,8 @@ class TestDemoHosts:
 
         # Assert
         AsserterRunFolder.assert_blobs_named_by_run(
-            expected_container=expected_container,
-            expected_blob_names_within_run=expected_blob_names_within_run,
-            expected_manifest_filename=MANIFEST_FILENAME,
-            actual_run_directory=actual_demo_result.run_directory,
-            actual_artifact_directory=actual_demo_result.artifact_directory,
-            actual_blob_names=RunFolderReader.list_blob_names(expected_container),
-            actual_run_directory_entry_names=RunFolderReader.list_entry_names(actual_demo_result.run_directory),
+            expected_hosted_blobs,
+            RunFolderReader.read_hosted_run_trail(expected_container, actual_demo_result.run_directory, actual_demo_result.artifact_directory),
         )
 
     async def test_run_demo_WhenRunHostedWithoutAFailure_ThenNothingIsSentToTelemetry(self, tmp_path: Path) -> None:
