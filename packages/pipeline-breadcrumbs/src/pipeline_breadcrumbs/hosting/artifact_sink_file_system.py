@@ -6,7 +6,7 @@ from pathlib import Path
 from typing import final, override
 
 from pipeline_breadcrumbs.artifacts import Artifact, ArtifactSinkProtocol, RunArtifact
-from pipeline_breadcrumbs.hosting.paths import safe_path_component
+from pipeline_breadcrumbs.path_components import safe_path_component
 from pipeline_breadcrumbs.work_items import WorkItem
 
 

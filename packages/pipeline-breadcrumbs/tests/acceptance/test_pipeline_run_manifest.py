@@ -9,6 +9,7 @@ from typing import Final
 import pytest
 from breadcrumbs_acceptance_support.asserters.asserter_manifest import (
     ExpectedManifest,
+    ExpectedManifestRunArtifact,
     ExpectedManifestStep,
     ExpectedManifestWorkItem,
     ManifestAsserter,
@@ -32,10 +33,43 @@ LOAD_PAGES_STEP_PATH: Final[str] = str(LOAD_PAGES.step_number)
 DETECT_SECTIONS: Final[Step] = Step(2, "Detect Sections")
 PAGE_TEXT: Final[ArtifactKind] = ArtifactKind("page_text", "txt", "text/plain")
 FINAL_REPORT: Final[ArtifactKind] = ArtifactKind("final_report", "md", "text/markdown", role=ArtifactRole.OUTPUT)
+RUN_SETTINGS: Final[ArtifactKind] = ArtifactKind("run_settings", "json", "application/json")
 
 
 @pytest.mark.acceptance
 class TestRunManifest:
+    async def test_PipelineRun_WhenARunArtifactIsEmitted_ThenTheManifestListsItAmongTheRunsArtifacts(
+        self, clock_testing: ClockTesting, artifact_sink_testing: ArtifactSinkTesting, run_logger: logging.Logger
+    ) -> None:
+        # Arrange
+        pipeline_name: str = create_random_pipeline_name()
+        run_settings_content: bytes = f'{{"pipeline": "{pipeline_name}"}}'.encode()
+        pipeline_run: PipelineRun = PipelineRun(
+            pipeline_name=pipeline_name, artifact_sink=artifact_sink_testing, logger=run_logger, supplied_clock=clock_testing.clock
+        )
+        expected_manifest: ExpectedManifest = ExpectedManifest(
+            pipeline_name=pipeline_name,
+            run_id=pipeline_run.run_id,
+            run_status="COMPLETE",
+            elapsed_seconds=0.0,
+            manifest_work_items=[],
+            manifest_run_artifacts=[
+                ExpectedManifestRunArtifact(
+                    filename="run_settings.json",
+                    artifact_type=RUN_SETTINGS.key,
+                    role=ArtifactRole.INTERIM.value,
+                    byte_count=len(run_settings_content),
+                )
+            ],
+        )
+
+        # Act
+        async with pipeline_run:
+            await pipeline_run.emit(RUN_SETTINGS, run_settings_content)
+
+        # Assert
+        ManifestAsserter.assert_expected_and_actual_are_equal(expected_manifest, artifact_sink_testing.artifacts[-1])
+
     async def test_PipelineRun_WhenARunCompletes_ThenTheManifestIsTheLastArtifactAndIndexesTheRun(
         self, clock_testing: ClockTesting, artifact_sink_testing: ArtifactSinkTesting, run_logger: logging.Logger
     ) -> None:

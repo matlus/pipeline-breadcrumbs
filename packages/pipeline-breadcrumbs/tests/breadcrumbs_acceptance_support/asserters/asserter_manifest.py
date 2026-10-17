@@ -6,6 +6,7 @@ from breadcrumbs_acceptance_support.assertion_reports import format_assertion_re
 from breadcrumbs_acceptance_support.manifest_documents import (
     ArtifactRecordDocument,
     ManifestDocument,
+    RunArtifactRecordDocument,
     StepRecordDocument,
     WorkItemRecordDocument,
     parse_manifest_document,
@@ -33,12 +34,21 @@ class ExpectedManifestWorkItem:
 
 
 @dataclass(frozen=True)
+class ExpectedManifestRunArtifact:
+    filename: str
+    artifact_type: str
+    role: str
+    byte_count: int
+
+
+@dataclass(frozen=True)
 class ExpectedManifest:
     pipeline_name: str
     run_id: str
     run_status: str
     elapsed_seconds: float
     manifest_work_items: Sequence[ExpectedManifestWorkItem]
+    manifest_run_artifacts: Sequence[ExpectedManifestRunArtifact] = ()
 
 
 class ManifestAsserter:
@@ -91,6 +101,18 @@ class ManifestAsserter:
             ManifestAsserter._compare_steps(
                 label, expected_manifest_work_item.manifest_steps, actual_work_item_record_document["step_records"], mismatches
             )
+        ManifestAsserter._compare(
+            "run artifacts",
+            [
+                (expected_run_artifact.filename, expected_run_artifact.artifact_type, expected_run_artifact.role, expected_run_artifact.byte_count)
+                for expected_run_artifact in expected_manifest.manifest_run_artifacts
+            ],
+            [
+                ManifestAsserter._describe_run_artifact_record(actual_run_artifact_record_document)
+                for actual_run_artifact_record_document in actual_manifest_document["run_artifact_records"]
+            ],
+            mismatches,
+        )
         expected_manifest_work_item_count: int = len(expected_manifest.manifest_work_items)
         actual_work_item_record_document_count: int = len(actual_work_item_record_documents)
         assert not mismatches, format_assertion_report(
@@ -99,6 +121,15 @@ class ManifestAsserter:
             f"run '{expected_manifest.pipeline_name}': {expected_manifest_work_item_count} work item(s) expected, "
             f"{actual_work_item_record_document_count} found",
             mismatches,
+        )
+
+    @staticmethod
+    def _describe_run_artifact_record(actual_run_artifact_record_document: RunArtifactRecordDocument) -> tuple[str, str, str, int]:
+        return (
+            actual_run_artifact_record_document["filename"],
+            actual_run_artifact_record_document["artifact_type"],
+            actual_run_artifact_record_document["role"],
+            actual_run_artifact_record_document["byte_count"],
         )
 
     @staticmethod

@@ -1,4 +1,8 @@
-"""Turning names into safe file system path components."""
+"""Turning names into safe file system path components.
+
+A work item's name seeds its artifact filenames, so the core makes that prefix safe; the host-side
+sinks apply the same rule to every name they store under.
+"""
 
 import re
 from typing import Final

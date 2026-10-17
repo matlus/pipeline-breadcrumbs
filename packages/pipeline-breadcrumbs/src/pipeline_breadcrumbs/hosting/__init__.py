@@ -5,9 +5,9 @@ can replace it with an `ArtifactSinkProtocol` implementation for blob storage, a
 """
 
 from pipeline_breadcrumbs.hosting.artifact_sink_file_system import ArtifactSinkFileSystem, WorkItemFolderCollisionError
-from pipeline_breadcrumbs.hosting.paths import safe_path_component
 from pipeline_breadcrumbs.hosting.run_folder import create_run_folder
 from pipeline_breadcrumbs.hosting.run_log import RUN_LOG_FILENAME, attached_run_log
+from pipeline_breadcrumbs.path_components import safe_path_component
 
 __all__ = [
     "RUN_LOG_FILENAME",

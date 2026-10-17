@@ -14,6 +14,7 @@ from pipeline_breadcrumbs.declaration_errors import InvalidDeclarationError
 from pipeline_breadcrumbs.errors import ArtifactSinkError, ContextualDataDict, ContextualExceptionProtocol
 from pipeline_breadcrumbs.formatting import format_byte_size, format_elapsed
 from pipeline_breadcrumbs.manifest import MANIFEST_KIND
+from pipeline_breadcrumbs.path_components import safe_path_component
 from pipeline_breadcrumbs.pipeline_run import DEFAULT_LOGGER_NAME, PipelineRun
 from pipeline_breadcrumbs.scope_errors import WorkItemNotOpenError
 from pipeline_breadcrumbs.scopes import StepHostProtocol, StepScope, WorkItemScope
@@ -51,4 +52,5 @@ __all__ = [
     "WorkItemScope",
     "format_byte_size",
     "format_elapsed",
+    "safe_path_component",
 ]

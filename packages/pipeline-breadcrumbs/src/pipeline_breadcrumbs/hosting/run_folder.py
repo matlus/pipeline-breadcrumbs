@@ -4,7 +4,7 @@ from pathlib import Path
 from typing import Final
 
 from pipeline_breadcrumbs.clock import Clock
-from pipeline_breadcrumbs.hosting.paths import safe_path_component
+from pipeline_breadcrumbs.path_components import safe_path_component
 
 _MAX_COLLISION_SUFFIX: Final[int] = 1000
 

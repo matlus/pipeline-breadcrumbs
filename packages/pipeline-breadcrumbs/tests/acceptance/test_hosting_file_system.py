@@ -167,6 +167,24 @@ class TestArtifactSinkFileSystem:
         # Assert
         assert _read_written_bytes(expected_path) == expected_content
 
+    async def test_ArtifactSinkFileSystem_WhenTheWorkItemHasAFileStem_ThenItsFolderAndFilenameAreTheNamesTheArtifactReports(
+        self, tmp_path: Path
+    ) -> None:
+        # Arrange - a model identifier such as `publisher/model-1.13` must not become a subfolder, nor lose its version
+        model_identifier: str = f"publisher-{secrets.token_hex(_RANDOM_SUFFIX_BYTES)}/model-1.13"
+        file_stem: str = safe_path_component(model_identifier)
+        work_item: WorkItem = WorkItem(id=model_identifier, name=model_identifier, file_stem=file_stem)
+        expected_content: bytes = secrets.token_bytes(_RANDOM_SUFFIX_BYTES)
+        artifact_sink_file_system: ArtifactSinkFileSystem = ArtifactSinkFileSystem(tmp_path)
+        step_artifact: StepArtifact = StepArtifact(PAGE_TEXT, expected_content, work_item, StepPath((1,)))
+        expected_path: Path = tmp_path / file_stem / step_artifact.filename
+
+        # Act
+        await artifact_sink_file_system.persist(step_artifact)
+
+        # Assert
+        assert _read_written_bytes(expected_path) == expected_content
+
     async def test_ArtifactSinkFileSystem_WhenARunArtifactArrives_ThenItSitsAtTheTop(self, tmp_path: Path) -> None:
         # Arrange
         expected_content: bytes = b"{}"

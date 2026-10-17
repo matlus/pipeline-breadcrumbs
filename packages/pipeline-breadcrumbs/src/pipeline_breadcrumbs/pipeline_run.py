@@ -7,13 +7,13 @@ from types import TracebackType
 from typing import Final, Self, final
 from uuid import uuid4
 
-from pipeline_breadcrumbs.artifacts import ArtifactSinkProtocol, RunArtifact
+from pipeline_breadcrumbs.artifacts import ArtifactKind, ArtifactSinkProtocol, RunArtifact
 from pipeline_breadcrumbs.attributes import AttributeBag, AttributeKey, AttributeValue, EventKind
 from pipeline_breadcrumbs.clock import Clock
 from pipeline_breadcrumbs.declaration_errors import InvalidDeclarationError
 from pipeline_breadcrumbs.errors import ArtifactSinkError
 from pipeline_breadcrumbs.formatting import format_byte_size, format_elapsed
-from pipeline_breadcrumbs.manifest import MANIFEST_KIND, RunRecorder
+from pipeline_breadcrumbs.manifest import MANIFEST_KIND, RunArtifactRecord, RunRecorder
 from pipeline_breadcrumbs.run_context import RunContext
 from pipeline_breadcrumbs.scopes import WorkItemScope
 from pipeline_breadcrumbs.steps import StepStatus
@@ -90,6 +90,26 @@ class PipelineRun:
         self._log_run_finished(elapsed_seconds, run_status)
         await self._emit_manifest(elapsed_seconds, run_status, original_error=exc)
 
+    async def emit(self, artifact_kind: ArtifactKind, content: bytes) -> RunArtifact:
+        """Hand an artifact that belongs to the whole run, rather than to one step of one work item, to the sink.
+
+        Use it for what the run as a whole was given or decided, such as the settings it ran with. The manifest
+        lists it among the run's artifacts. Its filename is the kind's key and extension, so emit each kind once.
+        """
+        _require_run_artifact_kind(artifact_kind)
+        run_artifact: RunArtifact = RunArtifact(artifact_kind=artifact_kind, content=content)
+        await self._run_context.persist(run_artifact)
+        self._run_context.run_recorder.record_run_artifact(
+            RunArtifactRecord(
+                filename=run_artifact.filename,
+                artifact_type=run_artifact.artifact_type,
+                role=artifact_kind.role.value,
+                byte_count=len(content),
+            )
+        )
+        self._log_run_artifact_emitted(run_artifact)
+        return run_artifact
+
     def open_work_item(self, work_item: WorkItem) -> WorkItemScope:
         """The returned scope does nothing until it is entered with `async with`; entering it is what records the work item."""
         return WorkItemScope(self._run_context, work_item)
@@ -127,7 +147,7 @@ class PipelineRun:
                 raise
             self._report_lost_manifest(run_artifact, original_error, artifact_sink_error)
             return
-        self._log_manifest_emitted(run_artifact)
+        self._log_run_artifact_emitted(run_artifact)
 
     def _build_manifest_artifact(self, elapsed_seconds: float, run_status: StepStatus) -> RunArtifact:
         content: bytes = self._run_context.run_recorder.serialize_manifest(
@@ -138,7 +158,7 @@ class PipelineRun:
         )
         return RunArtifact(artifact_kind=MANIFEST_KIND, content=content)
 
-    def _log_manifest_emitted(self, run_artifact: RunArtifact) -> None:
+    def _log_run_artifact_emitted(self, run_artifact: RunArtifact) -> None:
         byte_count: int = len(run_artifact.content)
         attributes: AttributeBag = {
             AttributeKey.ARTIFACT_KIND: run_artifact.artifact_type,
@@ -161,6 +181,11 @@ class PipelineRun:
             AttributeKey.FAILURE_MESSAGE: str(sink_failure),
         }
         self._run_context.log(logging.ERROR, lost_manifest_description, attributes, exception=artifact_sink_error)
+
+
+def _require_run_artifact_kind(artifact_kind: ArtifactKind) -> None:
+    if artifact_kind.key == MANIFEST_KIND.key:
+        raise InvalidDeclarationError(f"The artifact kind '{MANIFEST_KIND.key}' is reserved for the manifest the run writes when it closes")
 
 
 def _require_pipeline_name(pipeline_name: str) -> None:

@@ -47,6 +47,17 @@ class ArtifactRecord:
 
 @final
 @dataclass(frozen=True, slots=True)
+class RunArtifactRecord:
+    """An artifact that belongs to the run as a whole, such as the settings the run used."""
+
+    filename: str
+    artifact_type: str
+    role: str
+    byte_count: int
+
+
+@final
+@dataclass(frozen=True, slots=True)
 class WorkItemRecord:
     work_item_id: str
     work_item_name: str
@@ -68,6 +79,7 @@ class RunRecord:
     finished_at: str
     elapsed_seconds: float
     work_item_records: tuple[WorkItemRecord, ...]
+    run_artifact_records: tuple[RunArtifactRecord, ...]
 
 
 @final
@@ -214,9 +226,13 @@ class RunRecorder:
         self._pipeline_name: str = pipeline_name
         self._run_id: str = run_id
         self._run_events: list[RunEvent] = []
+        self._run_artifact_records: list[RunArtifactRecord] = []
 
     def record_run_event(self, run_event: RunEvent) -> None:
         self._run_events.append(run_event)
+
+    def record_run_artifact(self, run_artifact_record: RunArtifactRecord) -> None:
+        self._run_artifact_records.append(run_artifact_record)
 
     def work_item_count(self) -> int:
         return len(build_work_item_records(self._run_events))
@@ -233,5 +249,6 @@ class RunRecorder:
             finished_at=finished_at.isoformat(),
             elapsed_seconds=round(elapsed_seconds, _ELAPSED_SECONDS_DECIMALS),
             work_item_records=build_work_item_records(self._run_events),
+            run_artifact_records=tuple(self._run_artifact_records),
         )
         return json.dumps(asdict(run_record), indent=2).encode("utf-8")

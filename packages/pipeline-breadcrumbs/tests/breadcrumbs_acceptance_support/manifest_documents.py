@@ -21,6 +21,13 @@ class ArtifactRecordDocument(TypedDict):
     step_path: str
 
 
+class RunArtifactRecordDocument(TypedDict):
+    filename: str
+    artifact_type: str
+    role: str
+    byte_count: int
+
+
 class WorkItemRecordDocument(TypedDict):
     work_item_id: str
     work_item_name: str
@@ -42,6 +49,7 @@ class ManifestDocument(TypedDict):
     finished_at: str
     elapsed_seconds: float
     work_item_records: list[WorkItemRecordDocument]
+    run_artifact_records: list[RunArtifactRecordDocument]
 
 
 def parse_manifest_document(manifest_content: bytes | str) -> ManifestDocument:
