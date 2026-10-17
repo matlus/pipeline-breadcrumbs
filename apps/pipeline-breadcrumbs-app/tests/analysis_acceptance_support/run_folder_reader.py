@@ -66,3 +66,7 @@ class RunFolderReader:
     @staticmethod
     def read_text_by_filename(folder: Path) -> dict[str, str]:
         return {entry.name: entry.read_text(encoding="utf-8") for entry in sorted(folder.iterdir()) if entry.is_file()}
+
+    @staticmethod
+    def read_content_by_filename(folder: Path) -> dict[str, bytes]:
+        return {entry.name: entry.read_bytes() for entry in sorted(folder.iterdir()) if entry.is_file()}

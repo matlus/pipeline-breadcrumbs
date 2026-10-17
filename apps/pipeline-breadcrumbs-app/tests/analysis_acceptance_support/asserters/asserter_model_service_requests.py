@@ -58,18 +58,16 @@ class ModelServiceRequestsAsserter:
                 actual_value: object = actual_model_service_request.get(field_name)
                 if actual_value != expected_value:
                     mismatches.append(f"{request_kind} request {position} '{field_name}': expected {expected_value!r} but found {actual_value!r}")
-        mismatches.extend(
-            f"{request_kind} request {position}: missing {missing_request!r}"
-            for position, missing_request in enumerate(
-                expected_model_service_requests[len(actual_model_service_requests) :], len(actual_model_service_requests)
-            )
-        )
-        mismatches.extend(
-            f"{request_kind} request {position}: unexpected {unexpected_request!r}"
-            for position, unexpected_request in enumerate(
-                actual_model_service_requests[len(expected_model_service_requests) :], len(expected_model_service_requests)
-            )
-        )
+        missing_model_service_request: ModelServiceRequestT
+        for position, missing_model_service_request in enumerate(
+            expected_model_service_requests[len(actual_model_service_requests) :], len(actual_model_service_requests)
+        ):
+            mismatches.append(f"{request_kind} request {position}: missing {missing_model_service_request!r}")
+        unexpected_model_service_request: ModelServiceRequestT
+        for position, unexpected_model_service_request in enumerate(
+            actual_model_service_requests[len(expected_model_service_requests) :], len(expected_model_service_requests)
+        ):
+            mismatches.append(f"{request_kind} request {position}: unexpected {unexpected_model_service_request!r}")
         return mismatches
 
 

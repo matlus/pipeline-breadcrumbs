@@ -36,6 +36,18 @@ def create_random_progress_message() -> str:
     return f"Progress {secrets.token_hex(_RANDOM_SUFFIX_BYTES)}"
 
 
+def create_random_log_message() -> str:
+    return f"Log message {secrets.token_hex(_RANDOM_SUFFIX_BYTES)}"
+
+
+def create_random_logger_name() -> str:
+    return f"logger_{secrets.token_hex(_RANDOM_SUFFIX_BYTES)}"
+
+
+def create_random_source_path() -> str:
+    return f"source_{secrets.token_hex(_RANDOM_SUFFIX_BYTES)}.py"
+
+
 def create_random_attribute_name() -> str:
     """A caller attribute name no LogRecord attribute or library attribute shares."""
     return f"caller_attribute_{secrets.token_hex(_RANDOM_SUFFIX_BYTES)}"

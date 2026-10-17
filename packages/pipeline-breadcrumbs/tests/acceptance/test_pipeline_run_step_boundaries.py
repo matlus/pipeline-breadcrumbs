@@ -36,7 +36,13 @@ _RANDOM_SUFFIX_BYTES: Final[int] = 4
 
 
 def _retrieve_record(actual_log_records: Iterable[logging.LogRecord], expected_message: str) -> logging.LogRecord:
-    return next(actual_log_record for actual_log_record in actual_log_records if actual_log_record.getMessage() == expected_message)
+    actual_log_records_in_order: list[logging.LogRecord] = list(actual_log_records)
+    actual_log_record: logging.LogRecord | None = next(
+        (actual_log_record for actual_log_record in actual_log_records_in_order if actual_log_record.getMessage() == expected_message), None
+    )
+    actual_messages: list[str] = [logged_record.getMessage() for logged_record in actual_log_records_in_order]
+    assert actual_log_record is not None, f"no record was logged with the message {expected_message!r}; the messages were {actual_messages!r}"
+    return actual_log_record
 
 
 @pytest.mark.acceptance

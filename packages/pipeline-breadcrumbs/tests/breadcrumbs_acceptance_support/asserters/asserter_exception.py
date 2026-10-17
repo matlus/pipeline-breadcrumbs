@@ -64,11 +64,8 @@ class ExceptionAsserter:
             return []
         if not isinstance(actual_exception, ContextualExceptionProtocol):
             return ["contextual data: expected some, but the exception carries none"]
-        actual_contextual_data_by_name: dict[str, object] = {
-            actual_name: actual_value
-            for actual_name, actual_value in actual_exception.contextual_data_by_name.items()
-            if actual_name != _MESSAGE_ENTRY_NAME
-        }
+        actual_contextual_data_by_name: dict[str, object] = dict(actual_exception.contextual_data_by_name)
+        actual_contextual_data_by_name.pop(_MESSAGE_ENTRY_NAME, None)
         contextual_mismatches: list[str] = []
         expected_name: str
         expected_value: object

@@ -171,15 +171,29 @@ class TestFailingSink:
         # Assert
         ExceptionAsserter.assert_expected_and_actual_are_equal(expected_exception, actual_raised.value)
 
-    async def test_PipelineRun_WhenTheManifestCannotBeWrittenWhileTheRunIsFailing_ThenTheOriginalFailureIsNotHidden(
-        self, run_logger: logging.Logger
+    async def test_PipelineRun_WhenTheManifestCannotBeWrittenWhileTheRunIsFailing_ThenTheOriginalFailureIsNotHiddenAndTheOutageIsDiagnosable(
+        self, run_logger: logging.Logger, record_capture: RecordCapture
     ) -> None:
         # Arrange
         pipeline_name: str = create_random_pipeline_name()
         real_problem_message: str = create_random_failure_message()
         pipeline_run: PipelineRun = PipelineRun(pipeline_name=pipeline_name, artifact_sink=ArtifactSinkUnreachable(), logger=run_logger)
+        expected_lost_manifest_description: str = (
+            f"The run manifest could not be persisted either: The artifact sink failed to persist '{MANIFEST_FILENAME}' "
+            f"because of ConnectionError: {STORAGE_OUTAGE_MESSAGE}"
+        )
         expected_exception: ExpectedException = ExpectedException(
-            PlainTestingError, message_phrases=[real_problem_message], note_phrases=["run manifest could not be persisted", MANIFEST_FILENAME]
+            PlainTestingError, message_phrases=[real_problem_message], note_phrases=[expected_lost_manifest_description]
+        )
+        expected_lost_manifest_log_record: ExpectedLogRecord = ExpectedLogRecord(
+            message=expected_lost_manifest_description,
+            level=logging.ERROR,
+            attribute_value_by_key={
+                AttributeKey.ARTIFACT_FILENAME: MANIFEST_FILENAME,
+                AttributeKey.FAILURE_TYPE: "ConnectionError",
+                AttributeKey.FAILURE_MESSAGE: STORAGE_OUTAGE_MESSAGE,
+            },
+            carries_traceback=True,
         )
 
         # Act
@@ -187,8 +201,10 @@ class TestFailingSink:
             async with pipeline_run:
                 raise PlainTestingError(real_problem_message)
 
-        # Assert - the run's own failure, not the storage outage, reaches the caller, carrying the lost manifest as a note
+        # Assert - the run's own failure, not the storage outage, reaches the caller, carrying the lost manifest and its cause as a note;
+        # the outage itself is logged with its traceback as the last thing the run reports
         ExceptionAsserter.assert_expected_and_actual_are_equal(expected_exception, actual_raised.value)
+        LogRecordAsserter.assert_expected_and_actual_are_equal(expected_lost_manifest_log_record, record_capture.records[-1])
 
     async def test_PipelineRun_WhenTheManifestCannotBeWrittenAndNothingElseFailed_ThenTheOutageIsReported(self, run_logger: logging.Logger) -> None:
         # Arrange

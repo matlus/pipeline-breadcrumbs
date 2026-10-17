@@ -34,9 +34,10 @@ class RunContext:
         self._artifact_sink: ArtifactSinkProtocol = artifact_sink
         self._base_attributes: Mapping[str, AttributeValue] = base_attributes
 
-    def log(self, level: int, message: str, attributes: Mapping[str, AttributeValue]) -> None:
+    def log(self, level: int, message: str, attributes: Mapping[str, AttributeValue], *, exception: BaseException | None = None) -> None:
+        """`exception`, when given, travels with the record so a handler can render its traceback."""
         merged_attributes: AttributeBag = {**self._base_attributes, **attributes}
-        self.logger.log(level, message, extra=merged_attributes)
+        self.logger.log(level, message, exc_info=exception, extra=merged_attributes)
 
     async def persist(self, artifact: Artifact) -> None:
         try:

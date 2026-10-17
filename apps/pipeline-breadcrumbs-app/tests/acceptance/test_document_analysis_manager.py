@@ -107,9 +107,6 @@ def create_pipeline_run(artifact_sink_testing: ArtifactSinkTesting, run_logger: 
     return PipelineRun(pipeline_name=create_random_pipeline_name(), artifact_sink=artifact_sink_testing, logger=run_logger)
 
 
-# ==================== EXPECTED PATHS ====================
-
-
 @pytest.mark.acceptance
 class TestAnalyzeDocumentExpectedPaths:
     async def test_analyze_document_WhenEveryScoreIsConfident_ThenTheSectionsAreReturnedAndTheReconcileStepIsSkipped(
@@ -280,9 +277,6 @@ class TestAnalyzeDocumentExpectedPaths:
         )
 
 
-# ==================== DOCUMENT VALIDATION ====================
-
-
 @pytest.mark.acceptance
 class TestAnalyzeDocumentValidation:
     async def test_analyze_document_WhenTheDocumentHasNoPages_ThenItIsRefusedBeforeAnyWorkOrArtifact(
@@ -335,9 +329,6 @@ class TestAnalyzeDocumentValidation:
 
         # Assert
         ExceptionAsserter.assert_expected_and_actual_are_equal(expected_exception, actual_raised.value)
-
-
-# ==================== MODEL REPLY FAILURES ====================
 
 
 @pytest.mark.acceptance
@@ -508,9 +499,6 @@ class TestAnalyzeDocumentModelReplyFailures:
         ExceptionAsserter.assert_expected_and_actual_are_equal(expected_exception, actual_raised.value)
 
 
-# ==================== MODEL SERVICE FAILURES ====================
-
-
 @pytest.mark.acceptance
 class TestAnalyzeDocumentModelServiceFailures:
     async def test_analyze_document_WhenTheModelServiceIsUnreachable_ThenTheStepFailsWithAModelServiceUnavailableError(
@@ -647,9 +635,6 @@ class TestAnalyzeDocumentModelServiceFailures:
         ExceptionAsserter.assert_expected_and_actual_are_equal(expected_exception, actual_raised.value)
 
 
-# ==================== LIFECYCLE ====================
-
-
 @pytest.mark.acceptance
 class TestDocumentAnalysisManagerLifecycle:
     async def test_DocumentAnalysisManager_WhenClosedAgainAfterItsAsyncWithBlock_ThenTheModelServiceConnectionIsReleasedOnce(self) -> None:
@@ -666,9 +651,6 @@ class TestDocumentAnalysisManagerLifecycle:
 
         # Assert
         assert test_mediator_model_service.closed_transport_count == expected_closed_transport_count
-
-
-# ==================== CONFIGURATION ====================
 
 
 @pytest.mark.acceptance

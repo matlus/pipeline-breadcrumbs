@@ -23,8 +23,8 @@ from analysis_acceptance_support.asserters.asserter_run_folder import (
     RunFolderEntriesAsserter,
     RunOutcomeAsserter,
     StepOrderAsserter,
+    WorkItemContentsAsserter,
     WorkItemFilesAsserter,
-    WorkItemListingsAsserter,
 )
 from analysis_acceptance_support.asserters.asserter_shared_logger import SharedLoggerAsserter
 from analysis_acceptance_support.run_folder_reader import RunFolderReader
@@ -340,16 +340,16 @@ class TestDemoHosts:
         )
 
         # Assert
-        actual_local_listing_by_folder_name: dict[str, list[str]] = {
-            folder_name: RunFolderReader.list_entry_names(actual_local_demo_result.artifact_directory / folder_name)
+        actual_local_content_by_filename_by_folder_name: dict[str, dict[str, bytes]] = {
+            folder_name: RunFolderReader.read_content_by_filename(actual_local_demo_result.artifact_directory / folder_name)
             for folder_name in RunFolderReader.list_folder_names(actual_local_demo_result.artifact_directory)
         }
-        actual_hosted_listing_by_folder_name: dict[str, list[str]] = {
-            folder_name: RunFolderReader.list_entry_names(actual_hosted_demo_result.artifact_directory / folder_name)
+        actual_hosted_content_by_filename_by_folder_name: dict[str, dict[str, bytes]] = {
+            folder_name: RunFolderReader.read_content_by_filename(actual_hosted_demo_result.artifact_directory / folder_name)
             for folder_name in RunFolderReader.list_folder_names(actual_hosted_demo_result.artifact_directory)
         }
-        WorkItemListingsAsserter.assert_expected_and_actual_are_equal(
-            expected_work_item_folder_names, actual_local_listing_by_folder_name, actual_hosted_listing_by_folder_name
+        WorkItemContentsAsserter.assert_expected_and_actual_are_equal(
+            expected_work_item_folder_names, actual_local_content_by_filename_by_folder_name, actual_hosted_content_by_filename_by_folder_name
         )
         RunFolderEntriesAsserter.assert_expected_and_actual_are_equal(
             expected_hosted_entry_names, RunFolderReader.list_entry_names(actual_hosted_demo_result.artifact_directory)
@@ -367,7 +367,6 @@ class TestDemoHosts:
                 f"{CONTRACT_FOLDER_NAME}/{CONTRACT_FOLDER_NAME}{FIRST_PAGE_TEXT_FILENAME_SUFFIX}",
                 f"{LEASE_FOLDER_NAME}/{LEASE_FOLDER_NAME}{FIRST_PAGE_TEXT_FILENAME_SUFFIX}",
             },
-            manifest_filename=MANIFEST_FILENAME,
         )
 
         # Act

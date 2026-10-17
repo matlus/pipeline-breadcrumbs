@@ -48,9 +48,16 @@ class ManifestAsserter:
 
     @staticmethod
     def assert_expected_and_actual_are_equal(expected_manifest: ExpectedManifest, actual_manifest_artifact: Artifact) -> None:
+        business_claim: str = "The manifest records how the run, each work item and each step ended, and which artifacts each one left behind."
+        # A prerequisite: only a manifest can be read as one, so any other artifact is reported before its content is parsed.
+        artifact_kind_mismatch: str = (
+            f"artifact kind: expected {MANIFEST_KIND!r} but found {actual_manifest_artifact.artifact_kind!r} in {actual_manifest_artifact.filename!r}"
+        )
+        assert actual_manifest_artifact.artifact_kind == MANIFEST_KIND, format_assertion_report(
+            ManifestAsserter.MANIFEST_ASSERTION_FAILED_HEADER, business_claim, f"run '{expected_manifest.pipeline_name}'", [artifact_kind_mismatch]
+        )
         actual_manifest_document: ManifestDocument = parse_manifest_document(actual_manifest_artifact.content)
         mismatches: list[str] = []
-        ManifestAsserter._compare("artifact kind", MANIFEST_KIND, actual_manifest_artifact.artifact_kind, mismatches)
         ManifestAsserter._compare("pipeline_name", expected_manifest.pipeline_name, actual_manifest_document["pipeline_name"], mismatches)
         ManifestAsserter._compare("run_id", expected_manifest.run_id, actual_manifest_document["run_id"], mismatches)
         ManifestAsserter._compare("run_status", expected_manifest.run_status, actual_manifest_document["run_status"], mismatches)
@@ -74,7 +81,13 @@ class ManifestAsserter:
             ManifestAsserter._compare(
                 f"{label} failure", expected_manifest_work_item.failure, actual_work_item_record_document["failure"], mismatches
             )
-            ManifestAsserter._compare_artifacts(label, expected_manifest_work_item, actual_work_item_record_document["artifact_records"], mismatches)
+            ManifestAsserter._compare_artifacts(
+                label,
+                expected_manifest_work_item.artifact_filenames,
+                expected_manifest_work_item.artifact_role_by_filename,
+                actual_work_item_record_document["artifact_records"],
+                mismatches,
+            )
             ManifestAsserter._compare_steps(
                 label, expected_manifest_work_item.manifest_steps, actual_work_item_record_document["step_records"], mismatches
             )
@@ -82,7 +95,7 @@ class ManifestAsserter:
         actual_work_item_record_document_count: int = len(actual_work_item_record_documents)
         assert not mismatches, format_assertion_report(
             ManifestAsserter.MANIFEST_ASSERTION_FAILED_HEADER,
-            "The manifest records how the run, each work item and each step ended, and which artifacts each one left behind.",
+            business_claim,
             f"run '{expected_manifest.pipeline_name}': {expected_manifest_work_item_count} work item(s) expected, "
             f"{actual_work_item_record_document_count} found",
             mismatches,
@@ -91,20 +104,21 @@ class ManifestAsserter:
     @staticmethod
     def _compare_artifacts(
         label: str,
-        expected_manifest_work_item: ExpectedManifestWorkItem,
+        expected_artifact_filenames: Sequence[str],
+        expected_artifact_role_by_filename: Mapping[str, str] | None,
         actual_artifact_record_documents: Sequence[ArtifactRecordDocument],
         mismatches: list[str],
     ) -> None:
         ManifestAsserter._compare(
             f"{label} artifact filenames",
-            list(expected_manifest_work_item.artifact_filenames),
+            list(expected_artifact_filenames),
             [actual_artifact_record_document["filename"] for actual_artifact_record_document in actual_artifact_record_documents],
             mismatches,
         )
-        if expected_manifest_work_item.artifact_role_by_filename is not None:
+        if expected_artifact_role_by_filename is not None:
             ManifestAsserter._compare(
                 f"{label} artifact roles",
-                dict(expected_manifest_work_item.artifact_role_by_filename),
+                dict(expected_artifact_role_by_filename),
                 {
                     actual_artifact_record_document["filename"]: actual_artifact_record_document["role"]
                     for actual_artifact_record_document in actual_artifact_record_documents

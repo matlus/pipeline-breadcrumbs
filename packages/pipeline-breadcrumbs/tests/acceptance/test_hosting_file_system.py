@@ -12,7 +12,12 @@ from breadcrumbs_acceptance_support.asserters.asserter_artifacts import Artifact
 from breadcrumbs_acceptance_support.asserters.asserter_exception import ExceptionAsserter, ExpectedException
 from breadcrumbs_acceptance_support.asserters.asserter_rendered_text import ExpectedRenderedText, RenderedTextAsserter
 from breadcrumbs_acceptance_support.clock_testing import ClockTesting
-from breadcrumbs_acceptance_support.data_generators import create_random_discriminator, create_random_pipeline_name, create_random_work_item
+from breadcrumbs_acceptance_support.data_generators import (
+    create_random_discriminator,
+    create_random_pipeline_name,
+    create_random_progress_message,
+    create_random_work_item,
+)
 
 from pipeline_breadcrumbs import (
     ArtifactKind,
@@ -247,7 +252,7 @@ class TestAttachedRunLog:
         run_logger: logging.Logger = logging.getLogger("pipeline_breadcrumbs.acceptance_tests.hosting")
         run_logger.propagate = False
         expected_handler_count: int = len(run_logger.handlers)
-        progress_message: str = "Loading pages"
+        progress_message: str = create_random_progress_message()
         expected_run_log_rendered_text: ExpectedRenderedText = ExpectedRenderedText(
             contained_phrases=[
                 "STEP 1: Load Pages - STARTED",

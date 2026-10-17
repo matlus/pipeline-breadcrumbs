@@ -56,7 +56,6 @@ class ExpectedRunFailure:
 class ExpectedHostedBlobs:
     container: Path
     blob_names_within_run: AbstractSet[str]
-    manifest_filename: str
 
 
 class RunOutcomeAsserter:
@@ -178,12 +177,15 @@ class StepOrderAsserter:
 
     @staticmethod
     def assert_expected_and_actual_are_equal(
-        expected_first_step_path: tuple[int, ...], actual_listing: Sequence[str], actual_folder_names: Sequence[str]
+        expected_first_step_path: tuple[int, ...], actual_entry_names: Sequence[str], actual_folder_names: Sequence[str]
     ) -> None:
         mismatches: list[str] = []
-        actual_step_paths: list[tuple[int, ...]] = StepOrderAsserter._read_step_paths(actual_listing)
-        if len(actual_step_paths) != len(actual_listing):
-            mismatches.append(f"every entry should carry a step path; {len(actual_listing) - len(actual_step_paths)} do not")
+        actual_step_paths: list[tuple[int, ...]] = StepOrderAsserter._read_step_paths(actual_entry_names)
+        actual_entry_names_without_step_path: list[str] = [
+            actual_entry_name for actual_entry_name in actual_entry_names if _STEP_PATH_PATTERN.search(actual_entry_name) is None
+        ]
+        if actual_entry_names_without_step_path:
+            mismatches.append(f"every entry should carry a step path, but these do not: {actual_entry_names_without_step_path}")
         if actual_step_paths != sorted(actual_step_paths):
             mismatches.append(f"step paths go backwards in an alphabetical listing: {actual_step_paths}")
         if not actual_step_paths or actual_step_paths[0] != expected_first_step_path:
@@ -194,7 +196,7 @@ class StepOrderAsserter:
         assert not mismatches, format_assertion_report(
             StepOrderAsserter.STEP_ORDER_ASSERTION_FAILED_HEADER,
             "An ordinary alphabetical listing of a work item's folder reads in pipeline order.",
-            f"{len(actual_listing)} entr(ies) listed",
+            f"{len(actual_entry_names)} entr(ies) listed",
             mismatches,
         )
 
@@ -261,29 +263,54 @@ class DistinctRunFoldersAsserter:
         )
 
 
-class WorkItemListingsAsserter:
-    """Checks that where the application runs never changes the artifacts each work item leaves behind."""
+class WorkItemContentsAsserter:
+    """Checks that where the application runs never changes the artifacts each work item leaves behind, file by file and byte for byte."""
 
-    WORK_ITEM_LISTINGS_ASSERTION_FAILED_HEADER: Final[str] = "WORK ITEM LISTINGS ASSERTION FAILED"
+    WORK_ITEM_CONTENTS_ASSERTION_FAILED_HEADER: Final[str] = "WORK ITEM CONTENTS ASSERTION FAILED"
 
     @staticmethod
     def assert_expected_and_actual_are_equal(
         expected_work_item_folder_names: Sequence[str],
-        actual_local_listing_by_folder_name: Mapping[str, Sequence[str]],
-        actual_hosted_listing_by_folder_name: Mapping[str, Sequence[str]],
+        actual_local_content_by_filename_by_folder_name: Mapping[str, Mapping[str, bytes]],
+        actual_hosted_content_by_filename_by_folder_name: Mapping[str, Mapping[str, bytes]],
     ) -> None:
         mismatches: list[str] = []
         for expected_folder_name in expected_work_item_folder_names:
-            actual_local_listing: list[str] = list(actual_local_listing_by_folder_name.get(expected_folder_name, ()))
-            actual_hosted_listing: list[str] = list(actual_hosted_listing_by_folder_name.get(expected_folder_name, ()))
-            if actual_hosted_listing != actual_local_listing:
-                mismatches.append(f"{expected_folder_name}: local {actual_local_listing} but hosted {actual_hosted_listing}")
+            actual_local_content_by_filename: Mapping[str, bytes] = actual_local_content_by_filename_by_folder_name.get(expected_folder_name, {})
+            actual_hosted_content_by_filename: Mapping[str, bytes] = actual_hosted_content_by_filename_by_folder_name.get(expected_folder_name, {})
+            if not actual_local_content_by_filename:
+                mismatches.append(f"{expected_folder_name}: missing or empty locally")
+            if not actual_hosted_content_by_filename:
+                mismatches.append(f"{expected_folder_name}: missing or empty hosted")
+            mismatches.extend(
+                WorkItemContentsAsserter._compare_folder(expected_folder_name, actual_local_content_by_filename, actual_hosted_content_by_filename)
+            )
         assert not mismatches, format_assertion_report(
-            WorkItemListingsAsserter.WORK_ITEM_LISTINGS_ASSERTION_FAILED_HEADER,
+            WorkItemContentsAsserter.WORK_ITEM_CONTENTS_ASSERTION_FAILED_HEADER,
             "Where the application runs never changes the artifacts each work item leaves behind.",
             f"{len(expected_work_item_folder_names)} work item folder(s) compared",
             mismatches,
         )
+
+    @staticmethod
+    def _compare_folder(
+        folder_name: str, actual_local_content_by_filename: Mapping[str, bytes], actual_hosted_content_by_filename: Mapping[str, bytes]
+    ) -> list[str]:
+        folder_mismatches: list[str] = [
+            f"{folder_name}/{filename}: local only"
+            for filename in sorted(actual_local_content_by_filename.keys() - actual_hosted_content_by_filename.keys())
+        ]
+        folder_mismatches.extend(
+            f"{folder_name}/{filename}: hosted only"
+            for filename in sorted(actual_hosted_content_by_filename.keys() - actual_local_content_by_filename.keys())
+        )
+        folder_mismatches.extend(
+            f"{folder_name}/{filename}: local holds {len(actual_local_content_by_filename[filename])} byte(s) "
+            f"but hosted holds {len(actual_hosted_content_by_filename[filename])} different byte(s)"
+            for filename in sorted(actual_local_content_by_filename.keys() & actual_hosted_content_by_filename.keys())
+            if actual_local_content_by_filename[filename] != actual_hosted_content_by_filename[filename]
+        )
+        return folder_mismatches
 
 
 class BlobNamesAsserter:
@@ -308,11 +335,14 @@ class BlobNamesAsserter:
             for expected_blob_name in sorted(expected_hosted_blobs.blob_names_within_run)
             if f"{run_name}/{expected_blob_name}" not in actual_hosted_run_trail.blob_names
         )
-        if expected_hosted_blobs.manifest_filename in actual_hosted_run_trail.run_directory_entry_names:
-            mismatches.append(
-                f"the run folder {actual_hosted_run_trail.run_directory} holds a {expected_hosted_blobs.manifest_filename}, "
-                "which belongs in the container"
-            )
+        expected_top_level_blob_names: set[str] = {
+            expected_blob_name.split("/", 1)[0] for expected_blob_name in expected_hosted_blobs.blob_names_within_run
+        }
+        mismatches.extend(
+            f"the run folder {actual_hosted_run_trail.run_directory} holds {actual_entry_name!r}, which belongs in the container"
+            for actual_entry_name in actual_hosted_run_trail.run_directory_entry_names
+            if actual_entry_name in expected_top_level_blob_names
+        )
         assert not mismatches, format_assertion_report(
             BlobNamesAsserter.BLOB_NAMES_ASSERTION_FAILED_HEADER,
             "A container holds many runs, so the run's name leads every blob name and the run folder keeps no artifacts.",

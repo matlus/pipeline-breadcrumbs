@@ -125,7 +125,7 @@ class PipelineRun:
         except ArtifactSinkError as artifact_sink_error:
             if original_error is None:
                 raise
-            _attach_lost_manifest(original_error, artifact_sink_error)
+            self._report_lost_manifest(run_artifact, original_error, artifact_sink_error)
             return
         self._log_manifest_emitted(run_artifact)
 
@@ -147,6 +147,21 @@ class PipelineRun:
         }
         self._run_context.log(logging.INFO, f"Emitted artifact: {run_artifact.filename} ({format_byte_size(byte_count)})", attributes)
 
+    def _report_lost_manifest(self, run_artifact: RunArtifact, original_error: BaseException, artifact_sink_error: ArtifactSinkError) -> None:
+        # The run is already failing; losing the manifest must not hide why. The run's own failure stays the one that escapes,
+        # carrying the lost manifest and the sink's underlying failure as a note, so the host reports both, once, at its boundary.
+        # The sink's failure is logged here with its traceback, because nothing else will raise it.
+        lost_manifest_description: str = f"The run manifest could not be persisted either: {_describe_sink_failure(artifact_sink_error)}"
+        original_error.add_note(lost_manifest_description)
+        sink_failure: BaseException = artifact_sink_error.__cause__ or artifact_sink_error
+        attributes: AttributeBag = {
+            AttributeKey.ARTIFACT_KIND: run_artifact.artifact_type,
+            AttributeKey.ARTIFACT_FILENAME: run_artifact.filename,
+            AttributeKey.FAILURE_TYPE: type(sink_failure).__name__,
+            AttributeKey.FAILURE_MESSAGE: str(sink_failure),
+        }
+        self._run_context.log(logging.ERROR, lost_manifest_description, attributes, exception=artifact_sink_error)
+
 
 def _require_pipeline_name(pipeline_name: str) -> None:
     if not pipeline_name.strip():
@@ -165,7 +180,9 @@ def _create_run_id(run_clock: Clock) -> str:
     return f"{run_clock.now():%Y%m%d_%H%M%S}_{uuid4().hex[:8]}"
 
 
-def _attach_lost_manifest(original_error: BaseException, artifact_sink_error: ArtifactSinkError) -> None:
-    # The run is already failing; losing the manifest must not hide why. The lost manifest travels as a note on the
-    # failure that is already on its way out, so the host reports both, once, at its boundary.
-    original_error.add_note(f"The run manifest could not be persisted either: {artifact_sink_error}")
+def _describe_sink_failure(artifact_sink_error: ArtifactSinkError) -> str:
+    """The sink's own message, followed by the failure underneath it, which is what explains the outage."""
+    sink_failure: BaseException | None = artifact_sink_error.__cause__
+    if sink_failure is None:
+        return str(artifact_sink_error)
+    return f"{artifact_sink_error} because of {type(sink_failure).__name__}: {sink_failure}"

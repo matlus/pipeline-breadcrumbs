@@ -34,18 +34,20 @@ class StepBoundariesAsserter:
             zip(expected_step_boundaries, actual_step_boundaries, strict=False)
         ):
             mismatches.extend(StepBoundariesAsserter._compare_boundary(position, expected_step_boundary, actual_step_boundary))
-        mismatches.extend(
-            f"missing boundary {position}: step {missing_expected_step_boundary.step_number} {missing_expected_step_boundary.step_status}"
-            for position, missing_expected_step_boundary in enumerate(
-                expected_step_boundaries[len(actual_step_boundaries) :], start=len(actual_step_boundaries)
+        missing_expected_step_boundary: ExpectedStepBoundary
+        for position, missing_expected_step_boundary in enumerate(
+            expected_step_boundaries[len(actual_step_boundaries) :], start=len(actual_step_boundaries)
+        ):
+            mismatches.append(
+                f"missing boundary {position}: step {missing_expected_step_boundary.step_number} {missing_expected_step_boundary.step_status}"
             )
-        )
-        mismatches.extend(
-            f"unexpected boundary {position}: step {unexpected_actual_step_boundary.step_number} {unexpected_actual_step_boundary.step_status}"
-            for position, unexpected_actual_step_boundary in enumerate(
-                actual_step_boundaries[len(expected_step_boundaries) :], start=len(expected_step_boundaries)
+        unexpected_actual_step_boundary: ExpectedStepBoundary
+        for position, unexpected_actual_step_boundary in enumerate(
+            actual_step_boundaries[len(expected_step_boundaries) :], start=len(expected_step_boundaries)
+        ):
+            mismatches.append(
+                f"unexpected boundary {position}: step {unexpected_actual_step_boundary.step_number} {unexpected_actual_step_boundary.step_status}"
             )
-        )
         assert not mismatches, format_assertion_report(
             StepBoundariesAsserter.STEP_BOUNDARIES_ASSERTION_FAILED_HEADER,
             "Every step announces itself and reports how it ended, in the order the steps ran.",

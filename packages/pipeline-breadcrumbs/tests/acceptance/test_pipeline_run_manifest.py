@@ -14,7 +14,14 @@ from breadcrumbs_acceptance_support.asserters.asserter_manifest import (
     ManifestAsserter,
 )
 from breadcrumbs_acceptance_support.clock_testing import ClockTesting
-from breadcrumbs_acceptance_support.data_generators import create_random_discriminator, create_random_pipeline_name, create_random_work_item
+from breadcrumbs_acceptance_support.data_generators import (
+    create_random_discriminator,
+    create_random_failure_message,
+    create_random_outcome,
+    create_random_pipeline_name,
+    create_random_skip_reason,
+    create_random_work_item,
+)
 from breadcrumbs_acceptance_support.exceptions_testing import PlainTestingError
 
 from pipeline_breadcrumbs import ArtifactKind, ArtifactRole, PipelineRun, Step, WorkItem, WorkItemScope
@@ -35,7 +42,7 @@ class TestRunManifest:
         # Arrange
         work_item: WorkItem = create_random_work_item()
         pipeline_name: str = create_random_pipeline_name()
-        expected_step_outcome: str = "Loaded 1 page"
+        expected_step_outcome: str = create_random_outcome()
         discriminator: str = create_random_discriminator()
         pipeline_run: PipelineRun = PipelineRun(
             pipeline_name=pipeline_name, artifact_sink=artifact_sink_testing, logger=run_logger, supplied_clock=clock_testing.clock
@@ -111,7 +118,7 @@ class TestRunManifest:
         # Arrange
         failing_work_item: WorkItem = create_random_work_item()
         healthy_work_item: WorkItem = create_random_work_item()
-        failure_message: str = "unreadable"
+        failure_message: str = create_random_failure_message()
         expected_failure: str = f"PlainTestingError: {failure_message}"
         pipeline_name: str = create_random_pipeline_name()
         pipeline_run: PipelineRun = PipelineRun(
@@ -153,7 +160,7 @@ class TestRunManifest:
     ) -> None:
         # Arrange
         work_item: WorkItem = create_random_work_item()
-        skip_reason: str = "nothing to reconcile"
+        skip_reason: str = create_random_skip_reason()
         pipeline_name: str = create_random_pipeline_name()
         pipeline_run: PipelineRun = PipelineRun(
             pipeline_name=pipeline_name, artifact_sink=artifact_sink_testing, logger=run_logger, supplied_clock=clock_testing.clock
@@ -187,7 +194,7 @@ class TestRunManifest:
     ) -> None:
         # Arrange - a retry reopens the same work item; the failure of the first attempt must not be erased by the success of the second
         work_item: WorkItem = create_random_work_item()
-        first_attempt_failure_message: str = "first attempt"
+        first_attempt_failure_message: str = create_random_failure_message()
         expected_first_attempt_failure: str = f"PlainTestingError: {first_attempt_failure_message}"
         pipeline_name: str = create_random_pipeline_name()
         pipeline_run: PipelineRun = PipelineRun(
@@ -229,7 +236,7 @@ class TestRunManifest:
     ) -> None:
         # Arrange
         work_item: WorkItem = create_random_work_item()
-        page_failure_message: str = "page 1 is unreadable"
+        page_failure_message: str = create_random_failure_message()
         expected_page_failure: str = f"PlainTestingError: {page_failure_message}"
         pipeline_name: str = create_random_pipeline_name()
         pipeline_run: PipelineRun = PipelineRun(
