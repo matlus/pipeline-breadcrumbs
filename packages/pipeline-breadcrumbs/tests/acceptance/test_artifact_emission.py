@@ -37,7 +37,7 @@ class TestEmit:
         discriminator: str = "page_0003"
         pipeline_run: PipelineRun = PipelineRun(pipeline_name=PIPELINE_NAME, sink=artifact_sink_testing, logger=run_logger)
         expected_filename: str = f"{work_item.stem}_step_02_page_evidence_{discriminator}.json"
-        expected_emit_record: ExpectedLogRecord = ExpectedLogRecord(
+        expected_emit_log_record: ExpectedLogRecord = ExpectedLogRecord(
             message=f"Emitted artifact: {expected_filename} (12 B)",
             attribute_value_by_key={AttributeKey.ARTIFACT_FILENAME: expected_filename, AttributeKey.ARTIFACT_BYTES: len(expected_content)},
         )
@@ -47,12 +47,11 @@ class TestEmit:
             actual_emitted_step_artifact: StepArtifact = await step_scope.emit(PAGE_EVIDENCE, expected_content, discriminator=discriminator)
 
         # Assert
-        assert actual_emitted_step_artifact.filename == expected_filename
-        assert artifact_sink_testing.of_kind(PAGE_EVIDENCE)[0].content == expected_content
-        actual_emit_record: logging.LogRecord = next(
+        AsserterArtifacts.assert_emitted_artifact(expected_filename, expected_content, actual_emitted_step_artifact, artifact_sink_testing.artifacts)
+        actual_emit_log_record: logging.LogRecord = next(
             actual_log_record for actual_log_record in record_capture.records if AttributeKey.ARTIFACT_FILENAME in actual_log_record.__dict__
         )
-        AsserterLogRecord.assert_record(expected_emit_record, actual_emit_record)
+        AsserterLogRecord.assert_record(expected_emit_log_record, actual_emit_log_record)
 
     async def test_StepScope_WhenAnArtifactIsEmitted_ThenItDescribesItselfToTheSink(
         self, artifact_sink_testing: ArtifactSinkTesting, run_logger: logging.Logger
@@ -178,13 +177,13 @@ class TestWorkItemIdentity:
 
     def test_WorkItem_WhenTheNameHasNoExtension_ThenTheStemIsTheName(self) -> None:
         # Arrange
-        work_item_name: str = f"request-{secrets.token_hex(_RANDOM_SUFFIX_BYTES)}"
+        expected_work_item_name: str = f"request-{secrets.token_hex(_RANDOM_SUFFIX_BYTES)}"
 
         # Act
-        actual_work_item: WorkItem = WorkItem(secrets.token_hex(_RANDOM_SUFFIX_BYTES), work_item_name)
+        actual_work_item: WorkItem = WorkItem(secrets.token_hex(_RANDOM_SUFFIX_BYTES), expected_work_item_name)
 
         # Assert
-        assert actual_work_item.stem == work_item_name
+        assert actual_work_item.stem == expected_work_item_name
 
     def test_WorkItem_WhenTheIdentityIsBlank_ThenItIsRefused(self) -> None:
         # Arrange

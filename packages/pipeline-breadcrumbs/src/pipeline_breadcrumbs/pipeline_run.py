@@ -49,16 +49,16 @@ class PipelineRun:
         sink: ArtifactSink,
         logger: logging.Logger | None = None,
         attributes: Mapping[str, AttributeValue] | None = None,
-        clock: Clock | None = None,
+        supplied_clock: Clock | None = None,
     ) -> None:
         if not pipeline_name.strip():
             raise InvalidDeclarationError("A pipeline run needs a name, such as 'invoice-field-extraction'")
-        resolved_clock: Clock = clock or Clock.create_system_clock()
+        clock: Clock = supplied_clock or Clock.create_system_clock()
         caller_attributes: AttributeBag = dict(attributes or {})
         reserved_names: frozenset[str] = _RESERVED_RECORD_ATTRIBUTES.intersection(caller_attributes)
         if reserved_names:
             raise InvalidDeclarationError(f"Run attributes may not use reserved logging attribute names: {sorted(reserved_names)}")
-        self._run_id: str = f"{resolved_clock.now():%Y%m%d_%H%M%S}_{uuid4().hex[:8]}"
+        self._run_id: str = f"{clock.now():%Y%m%d_%H%M%S}_{uuid4().hex[:8]}"
         self._pipeline_name: str = pipeline_name
         self._run_context: RunContext = RunContext(
             sink=sink,
@@ -68,11 +68,11 @@ class PipelineRun:
                 AttributeKey.PIPELINE_NAME: pipeline_name,
                 AttributeKey.RUN_ID: self._run_id,
             },
-            clock=resolved_clock,
+            clock=clock,
             run_recorder=RunRecorder(pipeline_name=pipeline_name, run_id=self._run_id),
         )
         self._started: float = 0.0
-        self._started_at: datetime = resolved_clock.now()
+        self._started_at: datetime = clock.now()
 
     @property
     def run_id(self) -> str:
@@ -95,7 +95,7 @@ class PipelineRun:
         await self._emit_manifest(elapsed_seconds, run_status, original_error=exc)
 
     def open_work_item(self, work_item: WorkItem) -> WorkItemScope:
-        """Open a work item on this run."""
+        """The returned scope does nothing until it is entered with `async with`; entering it is what records the work item."""
         return WorkItemScope(self._run_context, work_item)
 
     def _run_status(self, exc: BaseException | None) -> StepStatus:
@@ -132,11 +132,12 @@ class PipelineRun:
         run_artifact: RunArtifact = RunArtifact(artifact_kind=MANIFEST_KIND, content=content)
         try:
             await self._run_context.persist(run_artifact)
-        except ArtifactSinkError:
+        except ArtifactSinkError as artifact_sink_error:
             if original_error is None:
                 raise
-            # The run is already failing; losing the manifest must not hide why.
-            self._run_context.log(logging.WARNING, f"Could not persist {run_artifact.filename} while the run was failing", {})
+            # The run is already failing; losing the manifest must not hide why. The lost manifest travels as a
+            # note on the failure that is already on its way out, so the host reports both, once, at its boundary.
+            original_error.add_note(f"The run manifest could not be persisted either: {artifact_sink_error}")
             return
         attributes: AttributeBag = {
             AttributeKey.ARTIFACT_KIND: run_artifact.artifact_type,

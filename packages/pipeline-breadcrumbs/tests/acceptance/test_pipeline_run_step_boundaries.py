@@ -42,7 +42,9 @@ class TestStepBoundaries:
         work_item: WorkItem = create_random_work_item()
         expected_elapsed_seconds: float = 2.5
         expected_step_number: str = "1"
-        pipeline_run: PipelineRun = PipelineRun(pipeline_name=PIPELINE_NAME, sink=artifact_sink_testing, logger=run_logger, clock=clock_testing.clock)
+        pipeline_run: PipelineRun = PipelineRun(
+            pipeline_name=PIPELINE_NAME, sink=artifact_sink_testing, logger=run_logger, supplied_clock=clock_testing.clock
+        )
         expected_step_boundaries: list[ExpectedStepBoundary] = [
             ExpectedStepBoundary(expected_step_number, "STARTED"),
             ExpectedStepBoundary(expected_step_number, "COMPLETE", elapsed_seconds=expected_elapsed_seconds),
@@ -115,10 +117,11 @@ class TestStepBoundaries:
         # Arrange
         work_item: WorkItem = create_random_work_item()
         skip_reason: str = "no low-confidence sections"
+        expected_child_step_number: str = "3.3"
         pipeline_run: PipelineRun = PipelineRun(pipeline_name=PIPELINE_NAME, sink=artifact_sink_testing, logger=run_logger)
         expected_skipped_record: ExpectedLogRecord = ExpectedLogRecord(
-            message=f"Step 3.3 Reconcile skipped: {skip_reason}",
-            attribute_value_by_key={AttributeKey.STATUS: "SKIPPED", AttributeKey.STEP_NUMBER: "3.3"},
+            message=f"Step {expected_child_step_number} Reconcile skipped: {skip_reason}",
+            attribute_value_by_key={AttributeKey.STATUS: "SKIPPED", AttributeKey.STEP_NUMBER: expected_child_step_number},
         )
 
         # Act

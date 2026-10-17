@@ -22,6 +22,7 @@ CLASSIFICATION: Final[Step] = Step(3, "Classification")
 SCORE_SECTIONS: Final[Step] = Step(2, "Score Sections")
 PAGE_EVIDENCE: Final[ArtifactKind] = ArtifactKind("page_evidence", "json", "application/json")
 STORAGE_OUTAGE_MESSAGE: Final[str] = "blob storage unreachable"
+MANIFEST_FILENAME: Final[str] = "manifest.json"
 
 
 async def _sink_that_cannot_store(artifact: Artifact) -> None:
@@ -29,7 +30,6 @@ async def _sink_that_cannot_store(artifact: Artifact) -> None:
 
 
 def _advance_then_fail(clock_testing: ClockTesting, elapsed_seconds: float, failure_message: str) -> NoReturn:
-    """The body of a step that works for a while and then fails."""
     clock_testing.advance(elapsed_seconds)
     raise PlainTestingError(failure_message)
 
@@ -43,7 +43,9 @@ class TestFailingStep:
         work_item: WorkItem = create_random_work_item()
         expected_elapsed_seconds: float = 1.25
         expected_failure_message: str = "bad json"
-        pipeline_run: PipelineRun = PipelineRun(pipeline_name=PIPELINE_NAME, sink=artifact_sink_testing, logger=run_logger, clock=clock_testing.clock)
+        pipeline_run: PipelineRun = PipelineRun(
+            pipeline_name=PIPELINE_NAME, sink=artifact_sink_testing, logger=run_logger, supplied_clock=clock_testing.clock
+        )
         expected_exception: ExpectedException = ExpectedException(PlainTestingError, message_phrases=[expected_failure_message])
         expected_step_boundaries: list[ExpectedStepBoundary] = [
             ExpectedStepBoundary("2", "STARTED"),
@@ -149,14 +151,16 @@ class TestFailingSink:
         # Arrange
         real_problem_message: str = "the real problem"
         pipeline_run: PipelineRun = PipelineRun(pipeline_name=PIPELINE_NAME, sink=_sink_that_cannot_store, logger=run_logger)
-        expected_exception: ExpectedException = ExpectedException(PlainTestingError, message_phrases=[real_problem_message])
+        expected_exception: ExpectedException = ExpectedException(
+            PlainTestingError, message_phrases=[real_problem_message], note_phrases=["run manifest could not be persisted", MANIFEST_FILENAME]
+        )
 
         # Act
         with pytest.raises(PlainTestingError) as actual_raised:
             async with pipeline_run:
                 raise PlainTestingError(real_problem_message)
 
-        # Assert - the run's own failure, not the storage outage, reaches the caller
+        # Assert - the run's own failure, not the storage outage, reaches the caller, carrying the lost manifest as a note
         AsserterException.assert_exception(expected_exception, actual_raised.value)
 
     async def test_PipelineRun_WhenTheManifestCannotBeWrittenAndNothingElseFailed_ThenTheOutageIsReported(self, run_logger: logging.Logger) -> None:
@@ -164,11 +168,11 @@ class TestFailingSink:
         pipeline_run: PipelineRun = PipelineRun(pipeline_name=PIPELINE_NAME, sink=_sink_that_cannot_store, logger=run_logger)
         expected_exception: ExpectedException = ExpectedException(
             ArtifactSinkError,
-            message_phrases=["manifest.json"],
+            message_phrases=[MANIFEST_FILENAME],
             contextual_data_by_name={
                 "ExceptionType": "ArtifactSinkError",
                 "ArtifactKind": "manifest",
-                "ArtifactFilename": "manifest.json",
+                "ArtifactFilename": MANIFEST_FILENAME,
                 "ArtifactBytes": ANY_CONTEXTUAL_VALUE,
             },
             cause_type=ConnectionError,

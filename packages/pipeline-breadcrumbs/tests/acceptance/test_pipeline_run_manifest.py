@@ -35,7 +35,9 @@ class TestRunManifest:
         work_item: WorkItem = create_random_work_item()
         pipeline_name: str = "demo"
         expected_step_outcome: str = "Loaded 1 page"
-        pipeline_run: PipelineRun = PipelineRun(pipeline_name=pipeline_name, sink=artifact_sink_testing, logger=run_logger, clock=clock_testing.clock)
+        pipeline_run: PipelineRun = PipelineRun(
+            pipeline_name=pipeline_name, sink=artifact_sink_testing, logger=run_logger, supplied_clock=clock_testing.clock
+        )
         expected_manifest: ExpectedManifest = ExpectedManifest(
             pipeline_name=pipeline_name,
             run_id=pipeline_run.run_id,
@@ -74,7 +76,9 @@ class TestRunManifest:
         # Arrange
         work_item: WorkItem = create_random_work_item()
         pipeline_name: str = "demo"
-        pipeline_run: PipelineRun = PipelineRun(pipeline_name=pipeline_name, sink=artifact_sink_testing, logger=run_logger, clock=clock_testing.clock)
+        pipeline_run: PipelineRun = PipelineRun(
+            pipeline_name=pipeline_name, sink=artifact_sink_testing, logger=run_logger, supplied_clock=clock_testing.clock
+        )
         expected_report_filename: str = f"{work_item.stem}_step_01_final_report.md"
         expected_manifest: ExpectedManifest = ExpectedManifest(
             pipeline_name=pipeline_name,
@@ -106,8 +110,11 @@ class TestRunManifest:
         failing_work_item: WorkItem = create_random_work_item()
         healthy_work_item: WorkItem = create_random_work_item()
         failure_message: str = "unreadable"
+        expected_failure: str = f"PlainTestingError: {failure_message}"
         pipeline_name: str = "demo"
-        pipeline_run: PipelineRun = PipelineRun(pipeline_name=pipeline_name, sink=artifact_sink_testing, logger=run_logger, clock=clock_testing.clock)
+        pipeline_run: PipelineRun = PipelineRun(
+            pipeline_name=pipeline_name, sink=artifact_sink_testing, logger=run_logger, supplied_clock=clock_testing.clock
+        )
         expected_manifest: ExpectedManifest = ExpectedManifest(
             pipeline_name=pipeline_name,
             run_id=pipeline_run.run_id,
@@ -117,8 +124,8 @@ class TestRunManifest:
                 ExpectedManifestWorkItem(
                     name=failing_work_item.name,
                     work_item_status="FAILED",
-                    failure="PlainTestingError: unreadable",
-                    step_records=[ExpectedManifestStep("1", "FAILED", failure="PlainTestingError: unreadable")],
+                    failure=expected_failure,
+                    step_records=[ExpectedManifestStep("1", "FAILED", failure=expected_failure)],
                 ),
                 ExpectedManifestWorkItem(
                     name=healthy_work_item.name,
@@ -144,8 +151,11 @@ class TestRunManifest:
     ) -> None:
         # Arrange
         work_item: WorkItem = create_random_work_item()
+        skip_reason: str = "nothing to reconcile"
         pipeline_name: str = "demo"
-        pipeline_run: PipelineRun = PipelineRun(pipeline_name=pipeline_name, sink=artifact_sink_testing, logger=run_logger, clock=clock_testing.clock)
+        pipeline_run: PipelineRun = PipelineRun(
+            pipeline_name=pipeline_name, sink=artifact_sink_testing, logger=run_logger, supplied_clock=clock_testing.clock
+        )
         expected_manifest: ExpectedManifest = ExpectedManifest(
             pipeline_name=pipeline_name,
             run_id=pipeline_run.run_id,
@@ -157,7 +167,7 @@ class TestRunManifest:
                     work_item_status="COMPLETE",
                     step_records=[
                         ExpectedManifestStep("1", "COMPLETE"),
-                        ExpectedManifestStep("1.2", "SKIPPED", outcome="nothing to reconcile"),
+                        ExpectedManifestStep("1.2", "SKIPPED", outcome=skip_reason),
                     ],
                 )
             ],
@@ -165,7 +175,7 @@ class TestRunManifest:
 
         # Act
         async with pipeline_run, pipeline_run.open_work_item(work_item) as work_item_scope, work_item_scope.step(LOAD_PAGES) as step_scope:
-            step_scope.skipped(DETECT_SECTIONS, "nothing to reconcile")
+            step_scope.skipped(DETECT_SECTIONS, skip_reason)
 
         # Assert
         AsserterManifest.assert_manifest(expected_manifest, artifact_sink_testing.artifacts[-1])
@@ -176,8 +186,11 @@ class TestRunManifest:
         # Arrange - a retry reopens the same work item; the failure of the first attempt must not be erased by the success of the second
         work_item: WorkItem = create_random_work_item()
         first_attempt_failure_message: str = "first attempt"
+        expected_first_attempt_failure: str = f"PlainTestingError: {first_attempt_failure_message}"
         pipeline_name: str = "demo"
-        pipeline_run: PipelineRun = PipelineRun(pipeline_name=pipeline_name, sink=artifact_sink_testing, logger=run_logger, clock=clock_testing.clock)
+        pipeline_run: PipelineRun = PipelineRun(
+            pipeline_name=pipeline_name, sink=artifact_sink_testing, logger=run_logger, supplied_clock=clock_testing.clock
+        )
         expected_manifest: ExpectedManifest = ExpectedManifest(
             pipeline_name=pipeline_name,
             run_id=pipeline_run.run_id,
@@ -187,8 +200,8 @@ class TestRunManifest:
                 ExpectedManifestWorkItem(
                     name=work_item.name,
                     work_item_status="FAILED",
-                    failure="PlainTestingError: first attempt",
-                    step_records=[ExpectedManifestStep("1", "FAILED", failure="PlainTestingError: first attempt")],
+                    failure=expected_first_attempt_failure,
+                    step_records=[ExpectedManifestStep("1", "FAILED", failure=expected_first_attempt_failure)],
                 ),
                 ExpectedManifestWorkItem(
                     name=work_item.name,
@@ -214,8 +227,12 @@ class TestRunManifest:
     ) -> None:
         # Arrange
         work_item: WorkItem = create_random_work_item()
+        page_failure_message: str = "page 1 is unreadable"
+        expected_page_failure: str = f"PlainTestingError: {page_failure_message}"
         pipeline_name: str = "demo"
-        pipeline_run: PipelineRun = PipelineRun(pipeline_name=pipeline_name, sink=artifact_sink_testing, logger=run_logger, clock=clock_testing.clock)
+        pipeline_run: PipelineRun = PipelineRun(
+            pipeline_name=pipeline_name, sink=artifact_sink_testing, logger=run_logger, supplied_clock=clock_testing.clock
+        )
         expected_manifest: ExpectedManifest = ExpectedManifest(
             pipeline_name=pipeline_name,
             run_id=pipeline_run.run_id,
@@ -225,10 +242,10 @@ class TestRunManifest:
                 ExpectedManifestWorkItem(
                     name=work_item.name,
                     work_item_status="FAILED",
-                    failure="PlainTestingError: page 1 is unreadable",
+                    failure=expected_page_failure,
                     step_records=[
                         ExpectedManifestStep("1", "COMPLETE"),
-                        ExpectedManifestStep("1", "FAILED", failure="PlainTestingError: page 1 is unreadable"),
+                        ExpectedManifestStep("1", "FAILED", failure=expected_page_failure),
                     ],
                 )
             ],
@@ -238,11 +255,11 @@ class TestRunManifest:
             for page_number in range(3):
                 async with work_item_scope.step(LOAD_PAGES):
                     if page_number == 1:
-                        raise PlainTestingError("page 1 is unreadable")
+                        raise PlainTestingError(page_failure_message)
 
         # Act - the second page fails, so the work item ends before a third opening
         async with pipeline_run:
-            with pytest.raises(PlainTestingError, match="page 1 is unreadable"):
+            with pytest.raises(PlainTestingError, match=page_failure_message):
                 async with pipeline_run.open_work_item(work_item) as work_item_scope:
                     await open_the_step_once_per_page(work_item_scope)
 
@@ -255,7 +272,9 @@ class TestRunManifest:
         # Arrange
         work_item: WorkItem = create_random_work_item()
         pipeline_name: str = "demo"
-        pipeline_run: PipelineRun = PipelineRun(pipeline_name=pipeline_name, sink=artifact_sink_testing, logger=run_logger, clock=clock_testing.clock)
+        pipeline_run: PipelineRun = PipelineRun(
+            pipeline_name=pipeline_name, sink=artifact_sink_testing, logger=run_logger, supplied_clock=clock_testing.clock
+        )
         expected_manifest: ExpectedManifest = ExpectedManifest(
             pipeline_name=pipeline_name,
             run_id=pipeline_run.run_id,

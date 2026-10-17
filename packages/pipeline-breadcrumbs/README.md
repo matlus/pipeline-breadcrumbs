@@ -24,7 +24,7 @@ for the reasoning.
 
 Create a run with `PipelineRun(pipeline_name=..., sink=...)` and open each item
 with `pipeline_run.open_work_item(work_item)`. For deterministic run folders,
-pass `supplied_clock` to `create_run_folder`; `Clock.create_system_clock()` supplies
+pass `supplied_clock` to `create_run_folder` and `PipelineRun`; `Clock.create_system_clock()` supplies
 the normal wall and monotonic clocks. `ArtifactSinkTesting.step_paths()` returns
 the distinct emitting step paths in first-emitted order.
 

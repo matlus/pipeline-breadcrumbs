@@ -5,6 +5,7 @@
 import contextlib
 import logging
 import re
+from collections.abc import Iterable
 from typing import Final
 
 import pytest
@@ -29,9 +30,10 @@ TIME_OF_DAY_AT_LINE_START: Final[re.Pattern[str]] = re.compile(r"^\d\d:\d\d:\d\d
 
 
 async def _run_one_step(clock_testing: ClockTesting, run_logger: logging.Logger, *, fails: bool = False) -> None:
-    """Arranges a real run's records: one step that reports progress and an outcome, and optionally fails."""
     work_item: WorkItem = create_random_work_item()
-    pipeline_run: PipelineRun = PipelineRun(pipeline_name=PIPELINE_NAME, sink=ArtifactSinkTesting(), logger=run_logger, clock=clock_testing.clock)
+    pipeline_run: PipelineRun = PipelineRun(
+        pipeline_name=PIPELINE_NAME, sink=ArtifactSinkTesting(), logger=run_logger, supplied_clock=clock_testing.clock
+    )
     with contextlib.suppress(PlainTestingError):
         async with pipeline_run, pipeline_run.open_work_item(work_item) as work_item_scope, work_item_scope.step(METADATA_AUDIT) as step_scope:
             step_scope.info(PROGRESS_MESSAGE, pages=14)
@@ -41,7 +43,7 @@ async def _run_one_step(clock_testing: ClockTesting, run_logger: logging.Logger,
                 raise PlainTestingError(FAILURE_MESSAGE)
 
 
-def _find_text(actual_texts: list[str], marker: str) -> str:
+def _retrieve_text(actual_texts: Iterable[str], marker: str) -> str:
     return next(actual_text for actual_text in actual_texts if marker in actual_text)
 
 
@@ -62,8 +64,8 @@ class TestBanners:
         actual_texts: list[str] = [breadcrumb_formatter.format(actual_log_record) for actual_log_record in record_capture.records]
 
         # Assert
-        AsserterRenderedText.assert_text(expected_started_banner, _find_text(actual_texts, "STEP 2: Metadata Audit - STARTED"))
-        AsserterRenderedText.assert_text(expected_complete_banner, _find_text(actual_texts, "STEP 2: Metadata Audit - COMPLETE"))
+        AsserterRenderedText.assert_text(expected_started_banner, _retrieve_text(actual_texts, "STEP 2: Metadata Audit - STARTED"))
+        AsserterRenderedText.assert_text(expected_complete_banner, _retrieve_text(actual_texts, "STEP 2: Metadata Audit - COMPLETE"))
 
     async def test_BreadcrumbFormatter_WhenAStepFailed_ThenTheBannerNamesTheFailure(
         self, clock_testing: ClockTesting, run_logger: logging.Logger, record_capture: RecordCapture
@@ -79,7 +81,7 @@ class TestBanners:
         actual_texts: list[str] = [breadcrumb_formatter.format(actual_log_record) for actual_log_record in record_capture.records]
 
         # Assert
-        AsserterRenderedText.assert_text(expected_failed_banner, _find_text(actual_texts, "STEP 2: Metadata Audit - FAILED"))
+        AsserterRenderedText.assert_text(expected_failed_banner, _retrieve_text(actual_texts, "STEP 2: Metadata Audit - FAILED"))
 
     async def test_BreadcrumbFormatter_WhenARunFailedBecauseAWorkItemFailed_ThenTheBannerShowsTheWorkItemCounts(
         self, clock_testing: ClockTesting, run_logger: logging.Logger, record_capture: RecordCapture
@@ -95,7 +97,7 @@ class TestBanners:
         actual_texts: list[str] = [breadcrumb_formatter.format(actual_log_record) for actual_log_record in record_capture.records]
 
         # Assert
-        AsserterRenderedText.assert_text(expected_run_banner, _find_text(actual_texts, f"RUN: {PIPELINE_NAME} - FAILED"))
+        AsserterRenderedText.assert_text(expected_run_banner, _retrieve_text(actual_texts, f"RUN: {PIPELINE_NAME} - FAILED"))
 
     async def test_BreadcrumbFormatter_WhenTheBannerWidthIsConfigured_ThenTheSeparatorUsesIt(
         self, clock_testing: ClockTesting, run_logger: logging.Logger, record_capture: RecordCapture
@@ -158,7 +160,7 @@ class TestTimeDisplay:
         actual_texts: list[str] = [breadcrumb_formatter.format(actual_log_record) for actual_log_record in record_capture.records]
 
         # Assert
-        AsserterRenderedText.assert_text(expected_progress_line, _find_text(actual_texts, PROGRESS_MESSAGE))
+        AsserterRenderedText.assert_text(expected_progress_line, _retrieve_text(actual_texts, PROGRESS_MESSAGE))
 
     @pytest.mark.parametrize("time_display", list(TimeDisplay))
     async def test_BreadcrumbFormatter_WhenAnyTimeDisplayIsChosen_ThenTheRecordsOwnMessageStaysOneCleanLine(
@@ -194,9 +196,9 @@ class TestPlainRecords:
 
     def test_BreadcrumbFormatter_WhenARecordCarriesAnException_ThenTheTracebackIsAppended(self) -> None:
         # Arrange
-        raised_error: PlainTestingError = PlainTestingError("boom")
+        plain_testing_error: PlainTestingError = PlainTestingError("boom")
         failed_log_record: logging.LogRecord = logging.LogRecord(
-            "x", logging.ERROR, "f.py", 1, "failed", (), (type(raised_error), raised_error, None)
+            "x", logging.ERROR, "f.py", 1, "failed", (), (type(plain_testing_error), plain_testing_error, None)
         )
         expected_rendered_text: ExpectedRenderedText = ExpectedRenderedText(starts_with="failed\n", ends_with="PlainTestingError: boom")
 
