@@ -3,17 +3,22 @@
 import asyncio
 import unicodedata
 from pathlib import Path
-from typing import final, override
+from typing import Final, final, override
 
 from pipeline_breadcrumbs.artifacts import Artifact, ArtifactSinkProtocol, RunArtifact
 from pipeline_breadcrumbs.exceptions import PipelineBreadcrumbsBusinessBaseException
+from pipeline_breadcrumbs.hosting.run_log import RUN_LOG_FILENAME
+from pipeline_breadcrumbs.manifest import MANIFEST_FILENAME
 from pipeline_breadcrumbs.path_components import safe_path_component
 from pipeline_breadcrumbs.work_items import WorkItem
+
+_RUN_CLAIMANT: Final[str] = "the run"
 
 
 @final
 class WorkItemFolderCollisionException(PipelineBreadcrumbsBusinessBaseException):
-    """Two work items in one run map to the same folder, so the second would overwrite the first's artifacts.
+    """Two work items in one run map to the same folder, or one maps to a name the run keeps for itself, such as
+    `manifest.json`, so one would overwrite the other's artifacts.
 
     The work items' names come from the caller, who can correct them, so it is a business exception.
     """
@@ -38,13 +43,18 @@ class ArtifactSinkFileSystem(ArtifactSinkProtocol):
     Work item names must be unique within a run, because the folder is named for the work
     item. Two items that map to the same folder raise rather than overwrite each other. Names
     that differ only by case count as the same folder, because Windows and macOS file systems
-    treat them that way. The sink remembers which work item claimed each folder; that
-    registry is the one piece of state it keeps across calls.
+    treat them that way. The run's own entries share the top level, so `manifest.json`,
+    `run.log` and every run artifact's filename are claimed for the run, and a work item
+    whose folder would take one of them raises too. The sink remembers who claimed each
+    top-level entry; that registry is the one piece of state it keeps across calls.
     """
 
     def __init__(self, run_directory: Path) -> None:
         self._run_directory: Path = run_directory
-        self._work_item_id_by_folder: dict[str, str] = {}
+        self._claimant_by_entry_key: dict[str, str] = {
+            _entry_key(MANIFEST_FILENAME): _RUN_CLAIMANT,
+            _entry_key(RUN_LOG_FILENAME): _RUN_CLAIMANT,
+        }
 
     @override
     async def persist(self, artifact: Artifact) -> None:
@@ -53,21 +63,30 @@ class ArtifactSinkFileSystem(ArtifactSinkProtocol):
 
     def _target_path(self, artifact: Artifact) -> Path:
         if isinstance(artifact, RunArtifact):
-            return self._run_directory / safe_path_component(artifact.filename)
-        return self._run_directory / self._claim_folder(artifact.work_item) / safe_path_component(artifact.filename)
+            return self._run_directory / self._claim_entry(safe_path_component(artifact.filename), _RUN_CLAIMANT)
+        folder_name: str = self._claim_entry(safe_path_component(artifact.work_item.stem), _work_item_claimant(artifact.work_item))
+        return self._run_directory / folder_name / safe_path_component(artifact.filename)
 
-    def _claim_folder(self, work_item: WorkItem) -> str:
-        folder_name: str = safe_path_component(work_item.stem)
-        # A file name can reach the same folder in composed or decomposed Unicode form (macOS file systems
-        # store decomposed names), so the claim key is the NFC form, case-folded for case-insensitive folders.
-        owner_id: str = self._work_item_id_by_folder.setdefault(unicodedata.normalize("NFC", folder_name).casefold(), work_item.id)
-        if owner_id != work_item.id:
+    def _claim_entry(self, entry_name: str, claimant: str) -> str:
+        owner: str = self._claimant_by_entry_key.setdefault(_entry_key(entry_name), claimant)
+        if owner != claimant:
             raise WorkItemFolderCollisionException(
-                f"Work items '{owner_id}' and '{work_item.id}' both map to the folder '{folder_name}'; work item names must be unique within a run"
+                f"Both {owner} and {claimant} map to the entry '{entry_name}' in the run directory; "
+                "work item names must be unique within a run and must not take the run's own entry names"
             )
-        return folder_name
+        return entry_name
 
     @staticmethod
     def _write(target: Path, content: bytes) -> None:
         target.parent.mkdir(parents=True, exist_ok=True)
         target.write_bytes(content)
+
+
+def _work_item_claimant(work_item: WorkItem) -> str:
+    return f"work item '{work_item.id}'"
+
+
+def _entry_key(entry_name: str) -> str:
+    # A file name can reach the same entry in composed or decomposed Unicode form (macOS file systems
+    # store decomposed names), so the claim key is the NFC form, case-folded for case-insensitive folders.
+    return unicodedata.normalize("NFC", entry_name).casefold()

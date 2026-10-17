@@ -121,7 +121,7 @@ class TestStepPathComposition:
         actual_segments_sorted_as_text: list[str] = sorted(step_path.padded() for step_path in step_paths)
         actual_segments_in_path_order: list[str] = [step_path.padded() for step_path in sorted(step_paths)]
 
-        # Assert - sorting the text and sorting the paths agree, and both are the pipeline order
+        # Assert
         assert (actual_segments_sorted_as_text, actual_segments_in_path_order) == (expected_segments, expected_segments)
 
     def test_StepPath_WhenTwoPathsDifferInTheirLastNumber_ThenTheyOrderNumericallyNotAlphabetically(self) -> None:

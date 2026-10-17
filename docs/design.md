@@ -532,7 +532,13 @@ FINAL_REPORT = ArtifactKind("final_report", "md", "text/markdown", role=Artifact
   a callback is explained in [the next section](#decision-how-the-host-receives-artifacts).
 - A sink that raises is translated to `ArtifactSinkException`, which carries the artifact's identity, so a
   storage outage does not read as a failure in the pipeline's logic. An implementation raises whatever
-  error is natural for its destination, and the run does the wrapping.
+  error is natural for its destination, and the run does the wrapping. The one exception is a business
+  exception from the sample's hierarchy, such as `WorkItemFolderCollisionException`: the caller can
+  correct it, so it passes through unwrapped and the host's business boundary handles it.
+- The run's own entries (`manifest.json`, `run.log` and every run artifact) share the top level with the
+  work-item folders. The bundled sinks claim those names for the run, so a work item named
+  `manifest.json.pdf`, whose folder would be `manifest.json`, is refused instead of colliding with the
+  manifest.
 - Steps never know where a file lands. They call `emit`, and the host owns the sink.
 - **Emit before you validate.** Capture a raw model reply before parsing it, so that a parse failure
   leaves its evidence on disk.
@@ -568,7 +574,8 @@ Consequences:
 - The method name is `persist`, and the parameter on `PipelineRun` is `artifact_sink`, so the call site
   names its type.
 - A sink raises whatever error is natural for its destination. `RunContext.persist` wraps it in
-  `ArtifactSinkException`, which keeps the artifact's identity.
+  `ArtifactSinkException`, which keeps the artifact's identity, and lets the sample's business
+  exceptions through unchanged.
 
 ### Run folder and manifest
 
@@ -627,14 +634,18 @@ branch, `PipelineBreadcrumbsBusinessBaseException`, for failures the caller can 
 branch, `PipelineBreadcrumbsTechnicalBaseException`, for failures the system's owner must correct. It lives
 in the package, the shared core, and the demo application derives its own exceptions from the same two
 branches instead of keeping a second root. The bases are abstract; only `@final` concrete exceptions,
-named `...Exception`, are raised (matlus/PWI-Code-Review#278).
+named `...Exception`, are raised (matlus/PWI-Code-Review#278). CPython does not enforce abstractness
+for exception classes, so the root's constructor refuses an abstract base with
+`AbstractExceptionRaisedException`.
 
 | Exception | Branch | Why |
 |---|---|---|
 | `InvalidDeclarationException` | business | The caller supplied the refused value, often from its data (a document's name). |
-| `WorkItemFolderCollisionException` | business | Two work items the caller named alike map to one folder. |
+| `WorkItemFolderCollisionException` | business | Two work items the caller named alike map to one folder, or one takes a name the run keeps for itself. |
 | `ArtifactSinkException` | technical | The host's storage failed; the request was fine. |
 | `WorkItemNotOpenException` | technical | The pipeline's code used a scope in the wrong order; no data causes it. |
+| `StepAlreadyEnteredException` | technical | The pipeline's code entered one step scope twice instead of opening the step again. |
+| `AbstractExceptionRaisedException` | technical | Code raised an abstract base instead of a concrete exception. |
 | `DocumentValidationException`, `InvalidFailPageException` | business | The document, or the page asked to fail, is wrong. |
 | `ModelResponseParseException`, `ConfigurationSettingException`, `ModelService...Exception` | technical | The model, the configuration or the model service failed. |
 
@@ -682,7 +693,7 @@ diagnosed by whether its file exists.
 | Role is information | Hosts can apply retention rules, such as colder storage for interim files. | Using the role as a filter |
 | Emit before validate | A malformed reply is the evidence you most need. | Emitting only after a successful parse |
 | The sink is a class that implements `ArtifactSinkProtocol` | A sink keeps state across calls, and a class owns it. The pipeline never knows whether files go to disk or blob storage. See [the decision](#decision-how-the-host-receives-artifacts). | A bare async callback; a storage path or client inside the steps |
-| Sink failures become `ArtifactSinkException` | A storage outage should not read as a bug in the pipeline's logic. | Letting the raw exception escape |
+| Sink failures become `ArtifactSinkException`, except the sample's business exceptions | A storage outage should not read as a bug in the pipeline's logic, and a name the caller can correct should not read as an outage. | Letting the raw exception escape; wrapping every failure, business ones included |
 | One folder per run, timestamp in the name | A repeat run never overwrites an earlier one. | A fixed output folder, cleaned by hand |
 | The manifest is built from immutable events | No record is edited after it is made. A retry or a per-page step keeps every opening. | Mutable records edited in place, which let a reopened id erase the first attempt |
 | Failure context is added to the exception | The failing step's identity travels with the exception to the place it is logged. | Logging at every step, which repeats the traceback |

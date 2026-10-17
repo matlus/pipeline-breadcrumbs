@@ -12,6 +12,7 @@ from pipeline_breadcrumbs.artifact_sink_exceptions import ArtifactSinkException
 from pipeline_breadcrumbs.artifacts import Artifact, ArtifactSinkProtocol
 from pipeline_breadcrumbs.attributes import AttributeBag, AttributeValue
 from pipeline_breadcrumbs.clock import Clock
+from pipeline_breadcrumbs.exceptions import PipelineBreadcrumbsBusinessBaseException
 from pipeline_breadcrumbs.manifest import RunRecorder
 
 
@@ -42,5 +43,8 @@ class RunContext:
     async def persist(self, artifact: Artifact) -> None:
         try:
             await self._artifact_sink.persist(artifact)
+        except PipelineBreadcrumbsBusinessBaseException:
+            # The caller can correct it, such as two work items named alike; reporting it as a storage failure would hide that.
+            raise
         except Exception as error:
             raise ArtifactSinkException(artifact) from error

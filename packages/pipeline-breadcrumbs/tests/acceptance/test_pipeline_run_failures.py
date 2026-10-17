@@ -125,7 +125,8 @@ class TestFailingStep:
         # Arrange
         pipeline_name: str = create_random_pipeline_name()
         work_item: WorkItem = create_random_work_item()
-        plain_testing_error: PlainTestingError = PlainTestingError("missing")
+        failure_message: str = create_random_failure_message()
+        plain_testing_error: PlainTestingError = PlainTestingError(failure_message)
         pipeline_run: PipelineRun = PipelineRun(pipeline_name=pipeline_name, artifact_sink=artifact_sink_testing, logger=run_logger)
 
         # Act
@@ -134,7 +135,14 @@ class TestFailingStep:
                 raise plain_testing_error
 
         # Assert
-        assert actual_raised.value is plain_testing_error
+        actual_untouched_state: tuple[bool, tuple[object, ...], dict[str, object]] = (
+            actual_raised.value is plain_testing_error,
+            actual_raised.value.args,
+            vars(actual_raised.value),
+        )
+        assert actual_untouched_state == (True, (failure_message,), {}), (
+            f"expected the very exception raised, args {(failure_message,)!r} and no added state, but found {actual_untouched_state!r}"
+        )
 
 
 @pytest.mark.acceptance
@@ -320,7 +328,7 @@ class TestRunSummary:
                 pass
             with pytest.raises(PlainTestingError):
                 async with pipeline_run.open_work_item(failing_work_item):
-                    raise PlainTestingError("boom")
+                    raise PlainTestingError(create_random_failure_message())
 
         # Assert
         LogRecordAsserter.assert_expected_and_actual_are_equal(expected_run_summary_log_record, record_capture.boundaries(EventKind.RUN)[-1])

@@ -17,7 +17,7 @@ another hierarchy shaped the same way (such as the Meridian application base exc
 """
 
 from abc import ABC
-from typing import Final, Protocol, runtime_checkable
+from typing import Final, Protocol, final, runtime_checkable
 
 type ContextualDataDict = dict[str, str | int | float | bool]
 
@@ -40,7 +40,7 @@ class PipelineBreadcrumbsBaseException(Exception, ABC):
     def __init__(self, message: str, contextual_data_by_name: ContextualDataDict | None = None) -> None:
         # CPython does not enforce ABC abstractness for exception classes, so the rule is enforced here.
         if not getattr(type(self), "__final__", False):
-            raise TypeError(f"{type(self).__name__} is abstract; raise a concrete @final exception that descends from it")
+            raise AbstractExceptionRaisedException(f"{type(self).__name__} is abstract; raise a concrete @final exception that descends from it")
         super().__init__(message)
         self._message: str = message
         self._contextual_data_by_name: ContextualDataDict = dict(contextual_data_by_name or {})
@@ -59,3 +59,11 @@ class PipelineBreadcrumbsBusinessBaseException(PipelineBreadcrumbsBaseException,
 
 class PipelineBreadcrumbsTechnicalBaseException(PipelineBreadcrumbsBaseException, ABC):
     """The system's owner must correct this: the request was fine, and something the system relies on failed or is misused."""
+
+
+@final
+class AbstractExceptionRaisedException(PipelineBreadcrumbsTechnicalBaseException):
+    """Code raised one of the abstract bases instead of a concrete exception that names the failure.
+
+    Only the code's owner can correct that, so it is technical. Being `@final`, it passes the guard it is raised from.
+    """

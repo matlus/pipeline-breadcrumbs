@@ -26,6 +26,27 @@ def _derive_key(display_name: str) -> str:
     return _NON_KEY_CHARACTERS.sub("_", display_name.lower()).strip("_")
 
 
+def _require_step_number(step_number: int) -> None:
+    if not 1 <= step_number <= MAX_STEP_NUMBER:
+        raise InvalidDeclarationException(f"Step number must be between 1 and {MAX_STEP_NUMBER}, got {step_number}")
+
+
+def _require_display_name(name: str, step_number: int) -> str:
+    display_name: str = name.strip()
+    if not display_name:
+        raise InvalidDeclarationException(f"Step {step_number} name must not be blank")
+    return display_name
+
+
+def _resolve_key(requested_key: str | None, display_name: str, step_number: int) -> str:
+    resolved_key: str = requested_key if requested_key is not None else _derive_key(display_name)
+    if not _KEY_PATTERN.fullmatch(resolved_key):
+        raise InvalidDeclarationException(
+            f"Step {step_number} '{display_name}' key '{resolved_key}' must be lowercase letters and digits separated by single underscores"
+        )
+    return resolved_key
+
+
 @final
 @dataclass(frozen=True, slots=True)
 class Step:
@@ -47,18 +68,10 @@ class Step:
     key: str = field(init=False)
 
     def __post_init__(self, requested_key: str | None) -> None:
-        if not 1 <= self.step_number <= MAX_STEP_NUMBER:
-            raise InvalidDeclarationException(f"Step number must be between 1 and {MAX_STEP_NUMBER}, got {self.step_number}")
-        display_name: str = self.name.strip()
-        if not display_name:
-            raise InvalidDeclarationException(f"Step {self.step_number} name must not be blank")
-        resolved_key: str = requested_key if requested_key is not None else _derive_key(display_name)
-        if not _KEY_PATTERN.fullmatch(resolved_key):
-            raise InvalidDeclarationException(
-                f"Step {self.step_number} '{display_name}' key '{resolved_key}' must be lowercase letters and digits separated by single underscores"
-            )
+        _require_step_number(self.step_number)
+        display_name: str = _require_display_name(self.name, self.step_number)
         object.__setattr__(self, "name", display_name)
-        object.__setattr__(self, "key", resolved_key)
+        object.__setattr__(self, "key", _resolve_key(requested_key, display_name, self.step_number))
 
 
 @final

@@ -190,25 +190,25 @@ async def _analyze_work_items(
             work_item_scope: WorkItemScope
             async with pipeline_run.open_work_item(WorkItem(id=str(uuid4()), name=document_name)) as work_item_scope:
                 await document_analysis_manager.analyze_document(work_item_scope, pages)
-        except PipelineBreadcrumbsBusinessBaseException as business_exception:
+        except PipelineBreadcrumbsBusinessBaseException as pipeline_breadcrumbs_business_base_exception:
             # The document itself cannot be analyzed; whoever sent it can correct it. A warning names every problem,
             # and no traceback, because nothing in the system failed.
             logger.warning(
                 "Work item '%s' was rejected:\n%s",
                 document_name,
-                _describe_contextual_data(business_exception),
+                _describe_contextual_data(pipeline_breadcrumbs_business_base_exception),
                 extra=_identify_work_item(pipeline_run, document_name),
             )
             failed_document_names.append(document_name)
-        except PipelineBreadcrumbsTechnicalBaseException as technical_exception:
+        except PipelineBreadcrumbsTechnicalBaseException as pipeline_breadcrumbs_technical_base_exception:
             # The application's single outer boundary for failures an operator owns: the exception is logged once,
             # with its traceback and every named fact it carries. Steps only leave breadcrumbs. The run and work
             # item identity travel as attributes, so telemetry can tell which run this was.
             logger.error(
                 "Work item '%s' failed:\n%s",
                 document_name,
-                _describe_contextual_data(technical_exception),
-                exc_info=technical_exception,
+                _describe_contextual_data(pipeline_breadcrumbs_technical_base_exception),
+                exc_info=pipeline_breadcrumbs_technical_base_exception,
                 extra=_identify_work_item(pipeline_run, document_name),
             )
             failed_document_names.append(document_name)

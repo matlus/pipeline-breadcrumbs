@@ -91,27 +91,19 @@ class ManifestAsserter:
             ManifestAsserter._compare(
                 f"{label} failure", expected_manifest_work_item.failure, actual_work_item_record_document["failure"], mismatches
             )
-            ManifestAsserter._compare_artifacts(
-                label,
-                expected_manifest_work_item.artifact_filenames,
-                expected_manifest_work_item.artifact_role_by_filename,
-                actual_work_item_record_document["artifact_records"],
-                mismatches,
+            mismatches.extend(
+                ManifestAsserter._compare_artifacts(
+                    label,
+                    expected_manifest_work_item.artifact_filenames,
+                    expected_manifest_work_item.artifact_role_by_filename,
+                    actual_work_item_record_document["artifact_records"],
+                )
             )
             ManifestAsserter._compare_steps(
                 label, expected_manifest_work_item.manifest_steps, actual_work_item_record_document["step_records"], mismatches
             )
-        ManifestAsserter._compare(
-            "run artifacts",
-            [
-                (expected_run_artifact.filename, expected_run_artifact.artifact_type, expected_run_artifact.role, expected_run_artifact.byte_count)
-                for expected_run_artifact in expected_manifest.manifest_run_artifacts
-            ],
-            [
-                ManifestAsserter._describe_run_artifact_record(actual_run_artifact_record_document)
-                for actual_run_artifact_record_document in actual_manifest_document["run_artifact_records"]
-            ],
-            mismatches,
+        ManifestAsserter._compare_run_artifacts(
+            expected_manifest.manifest_run_artifacts, actual_manifest_document["run_artifact_records"], mismatches
         )
         expected_manifest_work_item_count: int = len(expected_manifest.manifest_work_items)
         actual_work_item_record_document_count: int = len(actual_work_item_record_documents)
@@ -124,13 +116,39 @@ class ManifestAsserter:
         )
 
     @staticmethod
-    def _describe_run_artifact_record(actual_run_artifact_record_document: RunArtifactRecordDocument) -> tuple[str, str, str, int]:
-        return (
-            actual_run_artifact_record_document["filename"],
-            actual_run_artifact_record_document["artifact_type"],
-            actual_run_artifact_record_document["role"],
-            actual_run_artifact_record_document["byte_count"],
+    def _compare_run_artifacts(
+        expected_manifest_run_artifacts: Sequence[ExpectedManifestRunArtifact],
+        actual_run_artifact_record_documents: Sequence[RunArtifactRecordDocument],
+        mismatches: list[str],
+    ) -> None:
+        # The filenames line names every missing and unexpected record; each matched record then reports its own differing fields.
+        ManifestAsserter._compare(
+            "run artifact filenames",
+            [expected_manifest_run_artifact.filename for expected_manifest_run_artifact in expected_manifest_run_artifacts],
+            [actual_run_artifact_record_document["filename"] for actual_run_artifact_record_document in actual_run_artifact_record_documents],
+            mismatches,
         )
+        actual_run_artifact_record_document_by_filename: dict[str, RunArtifactRecordDocument] = {
+            actual_run_artifact_record_document["filename"]: actual_run_artifact_record_document
+            for actual_run_artifact_record_document in actual_run_artifact_record_documents
+        }
+        for expected_manifest_run_artifact in expected_manifest_run_artifacts:
+            actual_run_artifact_record_document: RunArtifactRecordDocument | None = actual_run_artifact_record_document_by_filename.get(
+                expected_manifest_run_artifact.filename
+            )
+            if actual_run_artifact_record_document is None:
+                continue
+            label: str = f"run artifact '{expected_manifest_run_artifact.filename}'"
+            ManifestAsserter._compare(
+                f"{label} artifact type",
+                expected_manifest_run_artifact.artifact_type,
+                actual_run_artifact_record_document["artifact_type"],
+                mismatches,
+            )
+            ManifestAsserter._compare(f"{label} role", expected_manifest_run_artifact.role, actual_run_artifact_record_document["role"], mismatches)
+            ManifestAsserter._compare(
+                f"{label} byte count", expected_manifest_run_artifact.byte_count, actual_run_artifact_record_document["byte_count"], mismatches
+            )
 
     @staticmethod
     def _compare_artifacts(
@@ -138,8 +156,8 @@ class ManifestAsserter:
         expected_artifact_filenames: Sequence[str],
         expected_artifact_role_by_filename: Mapping[str, str] | None,
         actual_artifact_record_documents: Sequence[ArtifactRecordDocument],
-        mismatches: list[str],
-    ) -> None:
+    ) -> list[str]:
+        mismatches: list[str] = []
         ManifestAsserter._compare(
             f"{label} artifact filenames",
             list(expected_artifact_filenames),
@@ -156,6 +174,7 @@ class ManifestAsserter:
                 },
                 mismatches,
             )
+        return mismatches
 
     @staticmethod
     def _compare_steps(

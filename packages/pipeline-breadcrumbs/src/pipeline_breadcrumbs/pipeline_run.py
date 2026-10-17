@@ -99,14 +99,7 @@ class PipelineRun:
         _require_run_artifact_kind(artifact_kind)
         run_artifact: RunArtifact = RunArtifact(artifact_kind=artifact_kind, content=content)
         await self._run_context.persist(run_artifact)
-        self._run_context.run_recorder.record_run_artifact(
-            RunArtifactRecord(
-                filename=run_artifact.filename,
-                artifact_type=run_artifact.artifact_type,
-                role=artifact_kind.role.value,
-                byte_count=len(content),
-            )
-        )
+        self._record_run_artifact(run_artifact)
         self._log_run_artifact_emitted(run_artifact)
         return run_artifact
 
@@ -157,6 +150,16 @@ class PipelineRun:
             run_status=run_status,
         )
         return RunArtifact(artifact_kind=MANIFEST_KIND, content=content)
+
+    def _record_run_artifact(self, run_artifact: RunArtifact) -> None:
+        self._run_context.run_recorder.record_run_artifact(
+            RunArtifactRecord(
+                filename=run_artifact.filename,
+                artifact_type=run_artifact.artifact_type,
+                role=run_artifact.artifact_kind.role.value,
+                byte_count=len(run_artifact.content),
+            )
+        )
 
     def _log_run_artifact_emitted(self, run_artifact: RunArtifact) -> None:
         byte_count: int = len(run_artifact.content)

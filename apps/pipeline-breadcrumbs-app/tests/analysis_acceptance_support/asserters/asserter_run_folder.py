@@ -117,17 +117,21 @@ class RunOutcomeAsserter:
         if expected_work_item_outcome.failure_phrase is not None and expected_work_item_outcome.failure_phrase not in (
             actual_work_item_record_document["failure"] or ""
         ):
-            mismatches.append(f"{work_item_label} failure: expected the phrase {expected_work_item_outcome.failure_phrase!r}")
+            mismatches.append(
+                f"{work_item_label} failure: expected the phrase {expected_work_item_outcome.failure_phrase!r} "
+                f"but found {actual_work_item_record_document['failure']!r}"
+            )
         actual_artifact_filenames: list[str] = [
             actual_artifact_record_document["filename"] for actual_artifact_record_document in actual_work_item_record_document["artifact_records"]
         ]
         mismatches.extend(
-            f"{work_item_label}: expected an artifact named with {expected_fragment!r}"
+            f"{work_item_label}: expected an artifact named with {expected_fragment!r} but found {actual_artifact_filenames}"
             for expected_fragment in expected_work_item_outcome.present_artifact_fragments
             if not any(expected_fragment in actual_filename for actual_filename in actual_artifact_filenames)
         )
         mismatches.extend(
-            f"{work_item_label}: expected no artifact named with {expected_fragment!r}"
+            f"{work_item_label}: expected no artifact named with {expected_fragment!r} but found "
+            f"{[actual_filename for actual_filename in actual_artifact_filenames if expected_fragment in actual_filename]}"
             for expected_fragment in expected_work_item_outcome.absent_artifact_fragments
             if any(expected_fragment in actual_filename for actual_filename in actual_artifact_filenames)
         )

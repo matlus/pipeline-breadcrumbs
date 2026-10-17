@@ -15,14 +15,16 @@ for the reasoning.
 | `ArtifactKind`, `Artifact`, `ArtifactSinkProtocol` | A declared kind of file, the complete frozen artifact, and the protocol a sink class implements with `persist(artifact)`. |
 | `BreadcrumbFormatter`, `TimeDisplay` | The human rendering of boundary records, and the single switch for time. |
 | `AttributeKey` | The names of the attributes every record carries. |
-| `PipelineBreadcrumbsBaseException`, `PipelineBreadcrumbsBusinessBaseException`, `PipelineBreadcrumbsTechnicalBaseException` | The sample's one exception hierarchy: an abstract root, and the business and technical branches every concrete exception descends through. |
-| `ArtifactSinkException`, `ContextualExceptionProtocol` | Sink failures (technical), and the shape an exception takes to receive step diagnostics. |
+| `PipelineBreadcrumbsBaseException`, `PipelineBreadcrumbsBusinessBaseException`, `PipelineBreadcrumbsTechnicalBaseException` | The sample's one exception hierarchy: an abstract root, and the business and technical branches every concrete exception descends through. Raising a base raises `AbstractExceptionRaisedException` (technical). |
+| `ArtifactSinkException`, `ContextualExceptionProtocol` | Sink failures (technical; a sink's business exceptions pass through unwrapped), and the shape an exception takes to receive step diagnostics. |
 | `InvalidDeclarationException` | A step, artifact kind, work item or run declared with a value the library refuses (business). |
 | `WorkItemNotOpenException` | A step opened, entered, skipped or emitted from outside its work item's `async with` block (technical). |
+| `StepAlreadyEnteredException` | A step scope entered a second time; call `step(...)` again for each opening (technical). |
 
 `pipeline_breadcrumbs.hosting` holds local file system helpers (`ArtifactSinkFileSystem`,
 `create_run_folder`, `attached_run_log`, and `safe_path_component` again). `ArtifactSinkFileSystem` raises
-`WorkItemFolderCollisionException` (business) when two work items in one run map to the same folder. `pipeline_breadcrumbs.testing` holds
+`WorkItemFolderCollisionException` (business) when two work items in one run map to the same folder, or
+a work item's folder would take one of the run's own names (`manifest.json`, `run.log`, a run artifact). `pipeline_breadcrumbs.testing` holds
 `ArtifactSinkTesting` and `RecordCapture` for acceptance tests.
 
 Create a run with `PipelineRun(pipeline_name=..., artifact_sink=...)` and open each item

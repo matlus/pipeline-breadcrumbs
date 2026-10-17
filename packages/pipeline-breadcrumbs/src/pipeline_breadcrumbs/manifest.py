@@ -18,6 +18,7 @@ from pipeline_breadcrumbs.artifacts import ArtifactKind, ArtifactRole
 from pipeline_breadcrumbs.steps import StepStatus
 
 MANIFEST_KIND: Final[ArtifactKind] = ArtifactKind("manifest", "json", "application/json", role=ArtifactRole.OUTPUT)
+MANIFEST_FILENAME: Final[str] = f"{MANIFEST_KIND.key}.{MANIFEST_KIND.extension}"
 
 _ELAPSED_SECONDS_DECIMALS: Final[int] = 3
 
@@ -166,12 +167,11 @@ def _apply_run_event(run_event: RunEvent, work_item_attempts: list[_WorkItemAtte
             attempt_index: int = latest_attempt_index_by_work_item_id[run_event.work_item_id]
             work_item_attempts[attempt_index] = _close_attempt(work_item_attempts[attempt_index], run_event)
         case StepRecorded():
-            work_item_attempt: _WorkItemAttempt = work_item_attempts[latest_attempt_index_by_work_item_id[run_event.work_item_id]]
-            work_item_attempt.step_record_by_step_instance_id[run_event.step_instance_id] = run_event.step_record
+            _record_step(work_item_attempts[latest_attempt_index_by_work_item_id[run_event.work_item_id]], run_event)
         case StepClosed():
             _close_step(work_item_attempts[latest_attempt_index_by_work_item_id[run_event.work_item_id]], run_event)
         case ArtifactRecorded():
-            work_item_attempts[latest_attempt_index_by_work_item_id[run_event.work_item_id]].artifact_records.append(run_event.artifact_record)
+            _record_artifact(work_item_attempts[latest_attempt_index_by_work_item_id[run_event.work_item_id]], run_event)
 
 
 def _open_attempt(work_item_opened: WorkItemOpened) -> _WorkItemAttempt:
@@ -199,6 +199,10 @@ def _close_attempt(work_item_attempt: _WorkItemAttempt, work_item_closed: WorkIt
     )
 
 
+def _record_step(work_item_attempt: _WorkItemAttempt, step_recorded: StepRecorded) -> None:
+    work_item_attempt.step_record_by_step_instance_id[step_recorded.step_instance_id] = step_recorded.step_record
+
+
 def _close_step(work_item_attempt: _WorkItemAttempt, step_closed: StepClosed) -> None:
     open_step_record: StepRecord = work_item_attempt.step_record_by_step_instance_id[step_closed.step_instance_id]
     work_item_attempt.step_record_by_step_instance_id[step_closed.step_instance_id] = replace(
@@ -208,6 +212,10 @@ def _close_step(work_item_attempt: _WorkItemAttempt, step_closed: StepClosed) ->
         outcome=step_closed.outcome,
         failure=step_closed.failure,
     )
+
+
+def _record_artifact(work_item_attempt: _WorkItemAttempt, artifact_recorded: ArtifactRecorded) -> None:
+    work_item_attempt.artifact_records.append(artifact_recorded.artifact_record)
 
 
 def _complete_attempt(work_item_attempt: _WorkItemAttempt) -> WorkItemRecord:

@@ -334,10 +334,14 @@ class TestRunManifest:
             ],
         )
 
+        # Pages close in the order 1, 2, 0: neither the opening order nor its reverse, so an outcome that reached
+        # the oldest or the newest open record at the same step path, rather than its own, would land on the wrong page.
+        event_loop_turn_count_by_page_number: dict[int, int] = {0: 3, 1: 1, 2: 2}
+
         async def load_one_page(work_item_scope: WorkItemScope, page_number: int) -> None:
             async with work_item_scope.step(LOAD_PAGES) as step_scope:
-                # Yield to the event loop so the other openings start before this one closes; without it they would run one after another.
-                await asyncio.sleep(0)
+                for _ in range(event_loop_turn_count_by_page_number[page_number]):
+                    await asyncio.sleep(0)
                 step_scope.outcome(f"page {page_number}")
 
         # Act - three scopes at the same step path run concurrently, the way a per-page fan-out does

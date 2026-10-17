@@ -4,6 +4,7 @@
 
 import logging
 import secrets
+from collections.abc import Sequence
 from typing import Final
 
 import pytest
@@ -43,11 +44,11 @@ def create_random_model_identifier() -> str:
     return f"publisher-{secrets.token_hex(_RANDOM_SUFFIX_BYTES)}/model-1.{secrets.randbelow(100)}"
 
 
-def _retrieve_emit_record(actual_log_records: list[logging.LogRecord]) -> logging.LogRecord:
+def _retrieve_emit_record(actual_log_records: Sequence[logging.LogRecord]) -> logging.LogRecord:
     actual_emit_log_record: logging.LogRecord | None = next(
         (actual_log_record for actual_log_record in actual_log_records if AttributeKey.ARTIFACT_FILENAME in actual_log_record.__dict__), None
     )
-    actual_messages: list[str] = [logged_record.getMessage() for logged_record in actual_log_records]
+    actual_messages: list[str] = [actual_log_record.getMessage() for actual_log_record in actual_log_records]
     assert actual_emit_log_record is not None, f"no record names an emitted artifact; the messages were {actual_messages!r}"
     return actual_emit_log_record
 

@@ -96,9 +96,13 @@ DETECTION_STEP_CONTEXTUAL_DATA: Final[dict[str, object]] = {
 }
 
 
+def create_title_reply_by_page_number(section_titles: Sequence[str]) -> dict[int, str]:
+    return {page_number: create_title_reply(section_titles[page_number]) for page_number in range(len(section_titles))}
+
+
 def create_confident_test_mediator(section_titles: Sequence[str], category: str) -> TestMediatorModelService:
     return TestMediatorModelService(
-        detection_reply_by_page_number={page_number: create_title_reply(title) for page_number, title in enumerate(section_titles)},
+        detection_reply_by_page_number=create_title_reply_by_page_number(section_titles),
         score_reply_by_title={title: create_score_reply(category, CONFIDENT) for title in section_titles},
     )
 
@@ -120,7 +124,7 @@ class TestAnalyzeDocumentExpectedPaths:
         document_analysis_manager: DocumentAnalysisManager = create_document_analysis_manager(test_mediator_model_service)
         pipeline_run: PipelineRun = create_pipeline_run(artifact_sink_testing, run_logger)
         expected_scored_sections: list[ScoredSection] = [
-            ScoredSection(page_number, title, category, CONFIDENT) for page_number, title in enumerate(section_titles)
+            ScoredSection(page_number, section_titles[page_number], category, CONFIDENT) for page_number in range(len(section_titles))
         ]
         expected_reconcile_request_count: int = 0
 
@@ -145,7 +149,7 @@ class TestAnalyzeDocumentExpectedPaths:
         confident_category: str = create_random_category()
         reconciled_category: str = create_random_category()
         test_mediator_model_service: TestMediatorModelService = TestMediatorModelService(
-            detection_reply_by_page_number={page_number: create_title_reply(title) for page_number, title in enumerate(section_titles)},
+            detection_reply_by_page_number=create_title_reply_by_page_number(section_titles),
             score_reply_by_title={
                 title: create_score_reply(confident_category, DOUBTFUL if title == doubtful_title else CONFIDENT) for title in section_titles
             },
@@ -185,7 +189,7 @@ class TestAnalyzeDocumentExpectedPaths:
         doubtful_title: str = section_titles[1]
         category: str = create_random_category()
         test_mediator_model_service: TestMediatorModelService = TestMediatorModelService(
-            detection_reply_by_page_number={page_number: create_title_reply(title) for page_number, title in enumerate(section_titles)},
+            detection_reply_by_page_number=create_title_reply_by_page_number(section_titles),
             score_reply_by_title={
                 title: create_score_reply(category, DOUBTFUL if title == doubtful_title else CONFIDENT) for title in section_titles
             },
@@ -194,11 +198,15 @@ class TestAnalyzeDocumentExpectedPaths:
         document_analysis_manager: DocumentAnalysisManager = create_document_analysis_manager(test_mediator_model_service)
         pipeline_run: PipelineRun = create_pipeline_run(artifact_sink_testing, run_logger)
         expected_section_detection_requests: list[SectionDetectionRequest] = [
-            {"page_number": page_number, "page_text": page_text} for page_number, page_text in enumerate(page_texts)
+            {"page_number": page_number, "page_text": page_texts[page_number]} for page_number in range(len(page_texts))
         ]
         expected_score_section_question_requests: list[SectionQuestionRequest] = [
-            {"page_number": page_number, "title": title, "text": f"Classify the section titled '{title}' on page {page_number} into one category."}
-            for page_number, title in enumerate(section_titles)
+            {
+                "page_number": page_number,
+                "title": section_titles[page_number],
+                "text": f"Classify the section titled '{section_titles[page_number]}' on page {page_number} into one category.",
+            }
+            for page_number in range(len(section_titles))
         ]
         expected_reconcile_section_question_requests: list[SectionQuestionRequest] = [
             {"page_number": 1, "title": doubtful_title, "text": f"Reconsider the section titled '{doubtful_title}'."}
@@ -343,8 +351,8 @@ class TestAnalyzeDocumentModelReplyFailures:
         malformed_reply: str = 'Sure! Here is the JSON you asked for: {"title": '
         test_mediator_model_service: TestMediatorModelService = TestMediatorModelService(
             detection_reply_by_page_number={
-                page_number: malformed_reply if page_number == malformed_page_number else create_title_reply(title)
-                for page_number, title in enumerate(section_titles)
+                page_number: malformed_reply if page_number == malformed_page_number else create_title_reply(section_titles[page_number])
+                for page_number in range(len(section_titles))
             },
         )
         document_analysis_manager: DocumentAnalysisManager = create_document_analysis_manager(test_mediator_model_service)

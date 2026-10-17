@@ -293,7 +293,14 @@ class TestDemoRunFailures:
         # Arrange
         missing_page_number: int = 99
         expected_exception: ExpectedException = ExpectedException(
-            InvalidFailPageException, message_phrases=[f"Page {missing_page_number} does not exist", CONTRACT_DOCUMENT_NAME]
+            InvalidFailPageException,
+            message_phrases=[f"Page {missing_page_number} does not exist", CONTRACT_DOCUMENT_NAME],
+            contextual_data_by_name={
+                "ExceptionType": "InvalidFailPageException",
+                "DocumentName": CONTRACT_DOCUMENT_NAME,
+                "PageNumber": missing_page_number,
+                "PageCount": CONTRACT_PAGE_COUNT,
+            },
         )
         expected_entry_names: set[str] = set()
 
