@@ -7,6 +7,8 @@ every decision the system must not make:
   application runs, because artifacts are the record of what each step did;
 * where log lines go: it builds the one logger the system shares and decides which handlers listen
   to it. That is the only thing a local run and a hosted run do differently;
+* which model service the system talks to: it hands the system `ServiceLocatorDemo`, whose transport
+  answers the model service's API in-process, so the demo runs offline with the system's real gateway;
 * what to run and what to do when it fails: it opens the run, opens one work item per document,
   calls the system, and logs a failure once, at this outer boundary.
 
@@ -42,9 +44,8 @@ from pipeline_breadcrumbs import (
 from pipeline_breadcrumbs.hosting import ArtifactSinkFileSystem, attached_run_log, create_run_folder
 from pipeline_breadcrumbs_app.document_analysis.document_analysis_manager import DocumentAnalysisManager
 from pipeline_breadcrumbs_app.document_analysis.exceptions import DocumentAnalysisError
-from pipeline_breadcrumbs_app.document_analysis.gateways.model_gateway_fake import ModelGatewayFake
-from pipeline_breadcrumbs_app.document_analysis.simulated_work import SimulatedWork
 from pipeline_breadcrumbs_app.sample_documents import SAMPLE_DOCUMENTS, InvalidFailPageError, with_malformed_reply
+from pipeline_breadcrumbs_app.service_locator_demo import ServiceLocatorDemo
 from pipeline_breadcrumbs_app.telemetry import TELEMETRY_FILENAME, attached_exception_telemetry
 
 PIPELINE_NAME: Final[str] = "document-analysis-demo"
@@ -166,16 +167,16 @@ async def run_demo(
     )
     run_directory: Path = create_run_folder(output_root, "batch")
     breadcrumb_formatter: BreadcrumbFormatter = BreadcrumbFormatter(time_display=time_display)
-    document_analysis_manager: DocumentAnalysisManager = DocumentAnalysisManager(ModelGatewayFake(pace_seconds), SimulatedWork(pace_seconds / 3))
     with ExitStack() as logging_scope:
         run_logger: logging.Logger = logger if logger is not None else logging_scope.enter_context(_console_logger(breadcrumb_formatter))
         if host_profile is HostProfile.LOCAL:
             logging_scope.enter_context(attached_run_log(run_logger, run_directory, breadcrumb_formatter))
         else:
             logging_scope.enter_context(attached_exception_telemetry(run_logger, run_directory / TELEMETRY_FILENAME))
-        failed_work_items: list[str] = await _analyze_documents(
-            pages_by_document_name, document_analysis_manager, _create_artifact_callback(run_directory), run_logger
-        )
+        async with DocumentAnalysisManager(ServiceLocatorDemo(pace_seconds)) as document_analysis_manager:
+            failed_work_items: list[str] = await _analyze_documents(
+                pages_by_document_name, document_analysis_manager, _create_artifact_callback(run_directory), run_logger
+            )
     return DemoResult(run_directory=run_directory, failed_work_items=failed_work_items)
 
 

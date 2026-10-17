@@ -7,11 +7,18 @@ it is given.
 
 The caller hands in the host (a work item scope). The scope carries the artifact callback and
 the logger the application chose, so the manager and everything below it know neither where
-artifacts land nor how the log is written.
+artifacts land nor how the log is written. The service locator supplies the rest of what a host
+may swap: the configuration source and the HTTP transport under the model service gateway.
 """
 
+from types import TracebackType
+from typing import Self
+
 from pipeline_breadcrumbs import StepHostProtocol
-from pipeline_breadcrumbs_app.document_analysis.gateways.model_gateway import ModelGatewayProtocol
+from pipeline_breadcrumbs_app.document_analysis.configuration_providers.configuration_provider import ConfigurationProvider
+from pipeline_breadcrumbs_app.document_analysis.configuration_providers.settings_models.model_service_settings import ModelServiceSettings
+from pipeline_breadcrumbs_app.document_analysis.configuration_providers.settings_models.simulated_work_settings import SimulatedWorkSettings
+from pipeline_breadcrumbs_app.document_analysis.gateways.gateway_model_service import GatewayModelService
 from pipeline_breadcrumbs_app.document_analysis.models import DetectedSection, DocumentAnalysis, ScoredSection
 from pipeline_breadcrumbs_app.document_analysis.processors.classification.prompt_builder import PromptBuilder
 from pipeline_breadcrumbs_app.document_analysis.processors.classification.score_reconciler import ScoreReconciler
@@ -20,20 +27,45 @@ from pipeline_breadcrumbs_app.document_analysis.processors.page_loader import Pa
 from pipeline_breadcrumbs_app.document_analysis.processors.report_assembler import ReportAssembler
 from pipeline_breadcrumbs_app.document_analysis.processors.section_classifier import SectionClassifier
 from pipeline_breadcrumbs_app.document_analysis.processors.section_detector import SectionDetector
+from pipeline_breadcrumbs_app.document_analysis.service_locators.service_locator_base import ServiceLocatorBase
+from pipeline_breadcrumbs_app.document_analysis.service_locators.service_locator_production import ServiceLocatorProduction
 from pipeline_breadcrumbs_app.document_analysis.simulated_work import SimulatedWork
 from pipeline_breadcrumbs_app.document_analysis.validators.document_analysis_validator import DocumentAnalysisValidator
 
 
 class DocumentAnalysisManager:
-    def __init__(self, model_gateway: ModelGatewayProtocol, simulated_work: SimulatedWork) -> None:
+    """Owns the model service gateway for its lifetime. Use `async with`, or call `close()`; both are safe."""
+
+    def __init__(self, service_locator: ServiceLocatorBase | None = None) -> None:
+        if service_locator is None:
+            service_locator = ServiceLocatorProduction()
+        # Configuration is read before anything that owns a resource is built: a configuration failure part way
+        # through would otherwise leave a constructed gateway that nothing ever closes.
+        configuration_provider: ConfigurationProvider = service_locator.get_configuration_provider()
+        model_service_settings: ModelServiceSettings = configuration_provider.get_model_service_settings()
+        simulated_work_settings: SimulatedWorkSettings = configuration_provider.get_simulated_work_settings()
+
+        simulated_work: SimulatedWork = SimulatedWork(simulated_work_settings.delay_seconds)
+        self._gateway_model_service: GatewayModelService = GatewayModelService(
+            model_service_settings.base_url, service_locator.create_http_transport()
+        )
         self._page_loader: PageLoader = PageLoader(simulated_work)
-        self._section_detector: SectionDetector = SectionDetector(model_gateway)
+        self._section_detector: SectionDetector = SectionDetector(self._gateway_model_service)
         self._section_classifier: SectionClassifier = SectionClassifier(
             PromptBuilder(simulated_work),
-            SectionScorer(model_gateway),
-            ScoreReconciler(model_gateway),
+            SectionScorer(self._gateway_model_service),
+            ScoreReconciler(self._gateway_model_service),
         )
         self._report_assembler: ReportAssembler = ReportAssembler(simulated_work)
+
+    async def __aenter__(self) -> Self:
+        return self
+
+    async def __aexit__(self, _exc_type: type[BaseException] | None, _exc: BaseException | None, _traceback: TracebackType | None) -> None:
+        await self.close()
+
+    async def close(self) -> None:
+        await self._gateway_model_service.close()
 
     async def analyze_document(self, step_host: StepHostProtocol, pages: list[str]) -> DocumentAnalysis:
         DocumentAnalysisValidator.validate(pages)

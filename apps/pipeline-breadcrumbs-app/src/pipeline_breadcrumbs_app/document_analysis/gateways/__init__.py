@@ -1,1 +1,1 @@
-"""Gateways to the outside world. The demo has one: a model, faked so it runs offline."""
+"""Gateways to the outside world. The system has one: the model service, reached over HTTP."""

@@ -1,0 +1,117 @@
+import asyncio
+import json
+from collections.abc import Mapping
+from dataclasses import dataclass
+from typing import ClassVar, Final, TypedDict, cast
+
+import httpx
+
+HTTP_STATUS_OK: Final[int] = 200
+HTTP_STATUS_BAD_REQUEST: Final[int] = 400
+HTTP_STATUS_SERVICE_UNAVAILABLE: Final[int] = 503
+
+_SECTION_DETECTIONS_PATH: Final[str] = "/section-detections"
+_SECTION_SCORES_PATH: Final[str] = "/section-scores"
+_SECTION_RECONCILIATIONS_PATH: Final[str] = "/section-reconciliations"
+
+
+class CapturedSectionDetectionRequest(TypedDict):
+    """One detection request exactly as the gateway put it on the wire."""
+
+    page_number: int
+    page_text: str
+
+
+class CapturedSectionRequest(TypedDict):
+    """One score or reconciliation request exactly as the gateway put it on the wire (mirrors ClassificationPrompt)."""
+
+    page_number: int
+    title: str
+    text: str
+
+
+# One scripted answer that replaces the model's reply: a failure status, or a success that breaks the API's envelope. State only.
+@dataclass(frozen=True)
+class ScriptedModelServiceResponse:
+    status_code: int
+    body_text: str
+
+
+class TestMediatorModelService:
+    # The Test Mediator/Spy for the model service's HTTP API.
+    #
+    # Terminates the gateway's calls at the HTTP transport, in-process: no port, no stub process, safe to
+    # run in parallel. The gateway above it runs for real - request building, response checking and
+    # exception translation are always production code paths; only the wire is swapped (through
+    # ServiceLocatorTesting).
+    #
+    # Two-way conversation. Going in, the test scripts what the model replies: detections by page
+    # number, scores and reconciliations by title, or one response that replaces every reply (a failure
+    # status, or a body that breaks the API's envelope), or an unreachable service. Coming out, it hands
+    # back every request that reached it, and the most detection requests it ever held at once.
+    #
+    # A request is captured only if it reached the service: a scripted failure status captures (the
+    # service saw it and refused), simulated unreachability does not (nothing arrived).
+
+    # Not a test class despite the Test* name - this tells pytest not to collect it.
+    __test__: ClassVar[bool] = False
+
+    def __init__(
+        self,
+        *,
+        detection_reply_by_page_number: Mapping[int, str] | None = None,
+        score_reply_by_title: Mapping[str, str] | None = None,
+        reconcile_reply_by_title: Mapping[str, str] | None = None,
+        scripted_response: ScriptedModelServiceResponse | None = None,
+        simulate_unreachable: bool = False,
+    ) -> None:
+        self._detection_reply_by_page_number: Mapping[int, str] = detection_reply_by_page_number or {}
+        self._score_reply_by_title: Mapping[str, str] = score_reply_by_title or {}
+        self._reconcile_reply_by_title: Mapping[str, str] = reconcile_reply_by_title or {}
+        self._scripted_response: ScriptedModelServiceResponse | None = scripted_response
+        self._simulate_unreachable: bool = simulate_unreachable
+        self._concurrent_detection_count: int = 0
+        self.captured_detection_requests: list[CapturedSectionDetectionRequest] = []
+        self.captured_score_requests: list[CapturedSectionRequest] = []
+        self.captured_reconcile_requests: list[CapturedSectionRequest] = []
+        self.maximum_concurrent_detection_count: int = 0
+
+    @property
+    def captured_request_count(self) -> int:
+        return len(self.captured_detection_requests) + len(self.captured_score_requests) + len(self.captured_reconcile_requests)
+
+    def create_http_transport(self) -> httpx.MockTransport:
+        return httpx.MockTransport(self._handle_model_service_request)
+
+    async def _handle_model_service_request(self, model_service_request: httpx.Request) -> httpx.Response:
+        if self._simulate_unreachable:
+            raise httpx.ConnectError("the model service is unreachable (simulated by TestMediatorModelService)")
+        resource_path: str = model_service_request.url.path
+        if resource_path == _SECTION_DETECTIONS_PATH:
+            return await self._answer_detection(cast(CapturedSectionDetectionRequest, json.loads(model_service_request.content)))
+        captured_section_request: CapturedSectionRequest = cast(CapturedSectionRequest, json.loads(model_service_request.content))
+        if resource_path == _SECTION_SCORES_PATH:
+            self.captured_score_requests.append(captured_section_request)
+            return self._answer(self._score_reply_by_title, captured_section_request["title"])
+        if resource_path == _SECTION_RECONCILIATIONS_PATH:
+            self.captured_reconcile_requests.append(captured_section_request)
+            return self._answer(self._reconcile_reply_by_title, captured_section_request["title"])
+        raise AssertionError(f"The gateway called a resource the model service does not have: {resource_path}")
+
+    async def _answer_detection(self, captured_detection_request: CapturedSectionDetectionRequest) -> httpx.Response:
+        self.captured_detection_requests.append(captured_detection_request)
+        self._concurrent_detection_count += 1
+        self.maximum_concurrent_detection_count = max(self.maximum_concurrent_detection_count, self._concurrent_detection_count)
+        try:
+            # Yield to the event loop so concurrent requests overlap here, where the count can see them.
+            await asyncio.sleep(0)
+            return self._answer(self._detection_reply_by_page_number, captured_detection_request["page_number"])
+        finally:
+            self._concurrent_detection_count -= 1
+
+    def _answer[ReplyKeyT](self, reply_by_key: Mapping[ReplyKeyT, str], reply_key: ReplyKeyT) -> httpx.Response:
+        if self._scripted_response is not None:
+            return httpx.Response(self._scripted_response.status_code, text=self._scripted_response.body_text)
+        if reply_key not in reply_by_key:
+            raise AssertionError(f"The scenario arranged no model reply for {reply_key!r}")
+        return httpx.Response(HTTP_STATUS_OK, json={"reply": reply_by_key[reply_key]})
